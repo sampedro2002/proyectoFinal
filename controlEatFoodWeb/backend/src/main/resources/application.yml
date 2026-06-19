@@ -1,0 +1,68 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: control-eat-food
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/control_eat_food?createDatabaseIfNotExist=true&serverTimezone=America/Guayaquil}
+    username: ${DB_USER:admin}
+    password: ${DB_PASSWORD:BN2002sg}
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 3
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: America/Guayaquil
+    open-in-view: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    # La BD de este entorno ya tiene V1/V2 aplicados manualmente; baseline en 2 evita
+    # re-ejecutarlos. En una BD vacía, Flyway corre todas las migraciones normalmente.
+    baseline-version: 2
+    locations: classpath:db/migration
+  jackson:
+    time-zone: America/Guayaquil
+    serialization:
+      write-dates-as-timestamps: false
+
+app:
+  security:
+    jwt:
+      # Clave en Base64 de al menos 256 bits. Sustituir en producción vía variable de entorno.
+      secret: ${JWT_SECRET:Y29udHJvbC1lYXQtZm9vZC1zZWNyZXQta2V5LWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==}
+      access-token-minutes: 30
+      refresh-token-days: 7
+    brute-force:
+      max-attempts: 5
+      lock-minutes: 15
+  catering:
+    max-devices: 2
+  biometric:
+    # provider: zk (SDK real libzkfp vía JNA) | sim (simulador en memoria)
+    provider: ${BIOMETRIC_PROVIDER:zk}
+    # Umbral de matching 1:N (score del SDK; típico 0-100+, recomendado >= 70)
+    match-threshold: 70
+    # Ruta donde se encuentran las librerías nativas del SDK ZKFinger (libzkfp.dll / .so)
+    native-lib-path: ${ZK_NATIVE_PATH:./native}
+  cors:
+    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:4173}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    com.eatfood: DEBUG
+    org.springframework.security: WARN

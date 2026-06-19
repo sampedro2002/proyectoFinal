@@ -1,0 +1,60 @@
+package com.eatfood.control.dto;
+
+import jakarta.validation.constraints.NotBlank;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+public final class ScanDtos {
+
+    /** Conexión de un dispositivo de catering (control de máx. 2 simultáneos). */
+    public record DeviceConnectRequest(
+            @NotBlank String cateringUsername,
+            @NotBlank String cateringPassword,
+            @NotBlank String deviceUid,
+            String deviceName) {}
+
+    public record DeviceConnectResponse(
+            Long cateringId,
+            String cateringName,
+            Long deviceId,
+            String sessionToken) {}
+
+    /** Petición de escaneo de huella desde el dispositivo de catering. */
+    public record ScanRequest(
+            @NotBlank String sessionToken,
+            @NotBlank String templateB64,
+            String mealTypeCode,           // opcional: si no se envía, se infiere por horario
+            UUID clientUuid,               // idempotencia (offline)
+            Boolean offline,
+            OffsetDateTime consumedAt) {}   // hora real del consumo (para registros offline)
+
+    /** Resultado mostrado en la pantalla del catering. */
+    public record ScanResponse(
+            String status,        // SUCCESS, NOT_FOUND, OUT_OF_SCHEDULE, DUPLICATE, NOT_ALLOWED
+            String message,       // mensaje a mostrar
+            String employeeName,
+            String mealName,
+            OffsetDateTime time) {}
+
+    /** Lote de registros offline para sincronización. */
+    public record SyncBatchRequest(
+            @NotBlank String sessionToken,
+            List<ScanRequest> records) {}
+
+    public record SyncBatchResponse(
+            int received,
+            int applied,
+            int duplicates,
+            int rejected,
+            List<SyncItemResult> results) {}
+
+    public record SyncItemResult(UUID clientUuid, String status, String message) {}
+
+    /** Entrada del feed de consumos del día para el Kiosk. */
+    public record TodayEntry(
+            String employeeName,
+            String mealName,
+            String time) {}
+}

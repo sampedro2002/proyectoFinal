@@ -1,0 +1,34 @@
+# AI / Asistentes
+.claude/
+.cursor/
+
+# Gradle
+.gradle/
+build/
+
+# Kotlin
+.kotlin/
+
+# Local config
+local.properties
+
+# IDE
+*.iml
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# APK / Bundle
+*.apk
+*.aab
+*.ap_
+
+# Signing
+*.jks
+*.keystore
+
+# Logs
+*.log

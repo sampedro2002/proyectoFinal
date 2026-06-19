@@ -1,0 +1,9 @@
+# AI / Asistentes
+.claude/
+.cursor/
+
+node_modules/
+dist/
+dev-dist/
+.env
+*.local

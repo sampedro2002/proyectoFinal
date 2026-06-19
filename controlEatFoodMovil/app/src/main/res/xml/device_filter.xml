@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- VID de ZKTeco para lectores ZK9500 / SLK20R. Ajusta si tu lector difiere. -->
+    <usb-device vendor-id="6997" />   <!-- 0x1B55 ZKTeco -->
+    <usb-device vendor-id="1947" />   <!-- 0x079B variante ZK -->
+</resources>

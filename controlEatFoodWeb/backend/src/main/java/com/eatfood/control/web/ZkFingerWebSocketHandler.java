@@ -1,0 +1,466 @@
+package com.eatfood.control.web;
+
+import com.eatfood.control.biometric.ZkBiometricMatcher;
+import com.eatfood.control.biometric.ZkfpSdk;
+import com.eatfood.control.domain.Fingerprint;
+import com.eatfood.control.repository.FingerprintRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.jna.Pointer;
+import com.sun.jna.ptr.IntByReference;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+import org.springframework.web.socket.CloseStatus;
+import org.springframework.web.socket.TextMessage;
+import org.springframework.web.socket.WebSocketSession;
+import org.springframework.web.socket.handler.TextWebSocketHandler;
+
+import jakarta.annotation.PreDestroy;
+import java.io.IOException;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.CopyOnWriteArraySet;
+
+/**
+ * WebSocket Handler que emula el protocolo del agente de escritorio ZKFinger WebAPI.
+ *
+ * TODAS las llamadas al SDK nativo (GetDeviceCount, OpenDevice,
+ * AcquireFingerprint, CloseDevice) se ejecutan en el mismo hilo del executor para
+ * mantener la afinidad de hilo que exige el SDK nativo de ZKTeco.
+ *
+ * Soporta múltiples sesiones WebSocket simultáneas (Kiosk + Admin).
+ * Solo una sesión puede capturar a la vez. El modo "register" no puede ser
+ * interrumpido por solicitudes de modo "continuous" del Kiosk.
+ */
+@Slf4j
+@Component
+public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
+
+    private final ObjectMapper mapper = new ObjectMapper();
+    private final FingerprintRepository fingerprintRepository;
+
+    @Autowired(required = false)
+    private ZkBiometricMatcher zkBiometricMatcher;
+
+    // Executor de un solo hilo: todas las operaciones nativas ocurren aquí.
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private Future<?> captureTask = null;
+
+    // Seguimiento de sesiones activas para notificaciones cruzadas
+    private final Set<WebSocketSession> sessions = new CopyOnWriteArraySet<>();
+    private volatile WebSocketSession activeCapturingSession = null;
+    private volatile String activeMode = null;
+
+    public ZkFingerWebSocketHandler(FingerprintRepository fingerprintRepository) {
+        this.fingerprintRepository = fingerprintRepository;
+    }
+
+    @Override
+    public void afterConnectionEstablished(WebSocketSession session) {
+        sessions.add(session);
+        log.info("Conexión WebSocket establecida: {}", session.getId());
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        String payload = message.getPayload();
+        log.debug("Mensaje WebSocket recibido: {}", payload);
+
+        Map<String, Object> command;
+        try {
+            command = mapper.readValue(payload, Map.class);
+        } catch (Exception e) {
+            log.warn("Payload JSON inválido: {}", payload);
+            return;
+        }
+
+        String cmd = (String) command.get("cmd");
+        if ("open".equalsIgnoreCase(cmd)) {
+            handleOpen(session);
+        } else if ("capture".equalsIgnoreCase(cmd)) {
+            String mode = command.getOrDefault("mode", "scan").toString();
+            handleCapture(session, mode);
+        } else if ("ping".equalsIgnoreCase(cmd)) {
+            Map<String, Object> response = new HashMap<>();
+            response.put("ret", "pong");
+            session.sendMessage(new TextMessage(mapper.writeValueAsString(response)));
+        } else {
+            log.warn("Comando desconocido: {}", cmd);
+        }
+    }
+
+    /**
+     * Verifica disponibilidad del lector. La comprobación se ejecuta en el executor
+     * para que quede en el mismo hilo donde se abrirá el dispositivo.
+     */
+    private void handleOpen(WebSocketSession session) throws IOException {
+        boolean result;
+
+        if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
+            // Si hay una tarea de captura activa, el dispositivo está en uso = disponible.
+            // Someter una tarea al executor cuando está ocupado provoca un timeout de 5 s.
+            if (captureTask != null && !captureTask.isDone()) {
+                log.info("Dispositivo en uso (captura activa) — respondiendo open=true sin bloquear executor.");
+                result = true;
+            } else {
+                Future<Boolean> check = executor.submit(() -> {
+                    try {
+                        ZkfpSdk sdk = zkBiometricMatcher.getSdk();
+                        int count = sdk.ZKFPM_GetDeviceCount();
+                        log.info("Dispositivos ZKFinger detectados: {}", count);
+                        return count > 0;
+                    } catch (Throwable t) {
+                        log.error("Error al obtener conteo de dispositivos: {}", t.getMessage(), t);
+                        return false;
+                    }
+                });
+                try {
+                    result = check.get(5, TimeUnit.SECONDS);
+                } catch (Exception e) {
+                    log.error("Timeout o error comprobando dispositivo: {}", e.getMessage());
+                    result = false;
+                }
+            }
+        } else {
+            log.info("Emulador ZKFinger en modo SIMULACIÓN.");
+            result = true;
+        }
+
+        Map<String, Object> response = new HashMap<>();
+        response.put("ret", "open");
+        response.put("result", result);
+        session.sendMessage(new TextMessage(mapper.writeValueAsString(response)));
+    }
+
+    /**
+     * Inicia la captura en el hilo del executor.
+     *
+     * Regla de prioridad: el modo "register" (enrolamiento admin) no puede ser
+     * interrumpido por solicitudes de modo "continuous" del Kiosk. Si el Kiosk intenta
+     * tomar el dispositivo mientras hay un enrolamiento en curso, recibe
+     * {@code capture_interrupted} y reintenta en 3 segundos. Cuando el enrolamiento
+     * termina, el executor notifica automáticamente a las demás sesiones para que
+     * reanuden su captura.
+     */
+    private synchronized void handleCapture(WebSocketSession session, String mode) {
+        boolean isContinuous = "continuous".equalsIgnoreCase(mode);
+
+        // El modo register no puede ser interrumpido por el Kiosk en modo continuous
+        if (isContinuous && "register".equals(activeMode) && captureTask != null && !captureTask.isDone()) {
+            log.info("Modo register activo — ignorando solicitud continuous de sesión {}. Reintentará.", session.getId());
+            sendMsg(session, "capture_interrupted");
+            return;
+        }
+
+        if (captureTask != null && !captureTask.isDone()) {
+            captureTask.cancel(true);
+            // Notificar a la sesión desplazada para que sepa que perdió el dispositivo
+            if (activeCapturingSession != null
+                    && !activeCapturingSession.equals(session)
+                    && activeCapturingSession.isOpen()) {
+                sendMsg(activeCapturingSession, "capture_interrupted");
+            }
+        }
+
+        activeCapturingSession = session;
+        activeMode = mode;
+
+        captureTask = executor.submit(() -> {
+            try {
+                boolean registerMode = "register".equalsIgnoreCase(mode);
+                if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
+                    captureWithDevice(session, mode);
+                } else {
+                    captureSimulated(session, registerMode);
+                }
+            } finally {
+                // Al terminar la tarea (enrolamiento o escaneo), liberar el dispositivo y
+                // notificar a las demás sesiones para que soliciten captura de nuevo.
+                activeMode = null;
+                if (session.equals(activeCapturingSession)) activeCapturingSession = null;
+                for (WebSocketSession s : sessions) {
+                    if (s.isOpen() && !s.equals(session)) {
+                        sendMsg(s, "capture_interrupted");
+                    }
+                }
+            }
+        });
+    }
+
+    /** Envía un mensaje con solo el campo "ret" a una sesión. */
+    private void sendMsg(WebSocketSession s, String ret) {
+        try {
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("ret", ret);
+            s.sendMessage(new TextMessage(mapper.writeValueAsString(msg)));
+        } catch (IOException ignored) {}
+    }
+
+    /** Captura real: abre el dispositivo, enruta por modo, cierra — todo en el mismo hilo. */
+    private void captureWithDevice(WebSocketSession session, String mode) {
+        boolean registerMode = "register".equalsIgnoreCase(mode);
+        boolean continuous = "continuous".equalsIgnoreCase(mode);
+        ZkfpSdk sdk = zkBiometricMatcher.getSdk();
+        Pointer hDevice = null;
+        try {
+            hDevice = sdk.ZKFPM_OpenDevice(0);
+            if (hDevice == null) {
+                log.error("ZKFPM_OpenDevice retornó null — lector no disponible.");
+                sendCaptureError(session);
+                return;
+            }
+            log.info("Lector USB ZKFinger abierto (modo={}).", registerMode ? "register" : "scan");
+
+            // Buffer de imagen fijo: 1 MB cubre cualquier sensor ZKTeco (ZK9500 = 256×360 = 92 KB)
+            byte[] imgBuf = new byte[1024 * 1024];
+
+            // Drenar imagen residual del sensor (stale buffer)
+            {
+                byte[] drainTpl = new byte[2048];
+                IntByReference drainLen = new IntByReference(2048);
+                if (sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, drainTpl, drainLen) == 0) {
+                    log.debug("Buffer residual drenado. Esperando 800 ms...");
+                    Thread.sleep(800);
+                }
+            }
+
+            if (registerMode) {
+                captureRegisterMode(session, sdk, hDevice, imgBuf);
+            } else {
+                captureScanMode(session, sdk, hDevice, imgBuf, continuous);
+            }
+
+        } catch (InterruptedException e) {
+            log.debug("Hilo de captura interrumpido.");
+        } catch (Throwable t) {
+            log.error("Error nativo en captura de huella: {}", t.getMessage(), t);
+            sendCaptureError(session);
+        } finally {
+            if (hDevice != null) {
+                try {
+                    sdk.ZKFPM_CloseDevice(hDevice);
+                    log.info("Lector USB cerrado.");
+                } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    /** Modo scan: espera y devuelve una única captura sin fusión. */
+    private void captureScanMode(WebSocketSession session, ZkfpSdk sdk, Pointer hDevice, byte[] imgBuf, boolean continuous)
+            throws InterruptedException {
+        byte[] tplBuf = new byte[2048];
+        IntByReference tplLen = new IntByReference(2048);
+        log.info("Esperando huella (modo {})...", continuous ? "continuous" : "scan");
+        while (!Thread.currentThread().isInterrupted() && session.isOpen()) {
+            tplLen.setValue(2048);
+            int rc = sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, tplBuf, tplLen);
+            if (rc == 0) {
+                byte[] tpl = Arrays.copyOf(tplBuf, tplLen.getValue());
+                log.info("Huella capturada (longitud={}).", tpl.length);
+                sendCaptureResult(session, Base64.getEncoder().encodeToString(tpl));
+
+                if (continuous) {
+                    waitForFingerLift(sdk, hDevice, imgBuf);
+                } else {
+                    return;
+                }
+            } else if (rc == -28 || rc == -23 || rc == 1) {
+                Thread.sleep(100);
+            } else {
+                log.debug("AcquireFingerprint rc={} (esperando dedo...)", rc);
+                Thread.sleep(200);
+            }
+        }
+    }
+
+    /**
+     * Modo register: 3 capturas con levantamiento intermedio + ZKFPM_DBMerge.
+     * Envía {@code capture_progress} tras cada captura (salvo la última) para que
+     * el frontend pida al usuario que levante el dedo antes del siguiente intento.
+     */
+    private void captureRegisterMode(WebSocketSession session, ZkfpSdk sdk, Pointer hDevice, byte[] imgBuf)
+            throws InterruptedException {
+        final int TOTAL = 3;
+        byte[][] temps = new byte[TOTAL][];
+
+        for (int step = 1; step <= TOTAL; step++) {
+            if (Thread.currentThread().isInterrupted() || !session.isOpen()) return;
+
+            log.info("Registro: esperando captura {}/{}...", step, TOTAL);
+            byte[] tplBuf = new byte[2048];
+            IntByReference tplLen = new IntByReference(2048);
+
+            while (!Thread.currentThread().isInterrupted() && session.isOpen()) {
+                tplLen.setValue(2048);
+                int rc = sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, tplBuf, tplLen);
+                if (rc == 0) {
+                    temps[step - 1] = Arrays.copyOf(tplBuf, tplLen.getValue());
+                    log.info("Captura {}/{} exitosa (longitud={}).", step, TOTAL, temps[step - 1].length);
+                    break;
+                } else if (rc == -28 || rc == -23 || rc == 1) {
+                    Thread.sleep(100);
+                } else {
+                    Thread.sleep(200);
+                }
+            }
+
+            if (temps[step - 1] == null) return; // hilo interrumpido
+
+            if (step < TOTAL) {
+                sendCaptureProgress(session, step, TOTAL);
+                waitForFingerLift(sdk, hDevice, imgBuf);
+            }
+        }
+
+        mergeAndSend(session, temps);
+    }
+
+    /** Espera hasta que el sensor deje de detectar el dedo (máx. 6 s de fallback). */
+    private void waitForFingerLift(ZkfpSdk sdk, Pointer hDevice, byte[] imgBuf) throws InterruptedException {
+        byte[] dummy = new byte[2048];
+        IntByReference dummyLen = new IntByReference(2048);
+        for (int i = 0; i < 60 && !Thread.currentThread().isInterrupted(); i++) {
+            dummyLen.setValue(2048);
+            int rc = sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, dummy, dummyLen);
+            if (rc != 0) {
+                Thread.sleep(300);
+                return;
+            }
+            Thread.sleep(100);
+        }
+        Thread.sleep(300);
+    }
+
+    /**
+     * Fusiona 3 plantillas con ZKFPM_DBMerge y envía el resultado.
+     * Usa el dbCache principal de ZkBiometricMatcher como workspace para evitar crear/liberar
+     * un handle temporal que puede corromper el estado global del SDK ZKFinger.
+     */
+    private void mergeAndSend(WebSocketSession session, byte[][] temps) {
+        if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
+            byte[] finalTpl = zkBiometricMatcher.mergeTemplates(temps[0], temps[1], temps[2]);
+            if (finalTpl != null) {
+                sendCaptureResult(session, Base64.getEncoder().encodeToString(finalTpl));
+                return;
+            }
+            log.warn("ZKFPM_DBMerge falló. Usando plantilla individual como fallback.");
+        }
+        byte[] best = temps[0];
+        for (byte[] t : temps) { if (t != null && t.length > best.length) best = t; }
+        log.info("Fallback register: plantilla individual (longitud={}).", best.length);
+        sendCaptureResult(session, Base64.getEncoder().encodeToString(best));
+    }
+
+    private void sendCaptureProgress(WebSocketSession session, int step, int total) {
+        try {
+            Map<String, Object> msg = new HashMap<>();
+            msg.put("ret", "capture_progress");
+            msg.put("step", step);
+            msg.put("total", total);
+            session.sendMessage(new TextMessage(mapper.writeValueAsString(msg)));
+        } catch (IOException e) {
+            log.debug("No se pudo enviar progreso de captura: {}", e.getMessage());
+        }
+    }
+
+    private void sendCaptureResult(WebSocketSession session, String templateB64) {
+        try {
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("ret", "capture");
+            resp.put("result", true);
+            resp.put("template", templateB64);
+            session.sendMessage(new TextMessage(mapper.writeValueAsString(resp)));
+        } catch (IOException e) {
+            log.debug("No se pudo enviar resultado de captura: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Captura simulada.
+     * <ul>
+     *   <li><b>registerMode=true</b>: genera siempre un template aleatorio único —
+     *       nunca reutiliza plantillas de la BD para evitar colisiones en el check de
+     *       duplicados ({@code SimBiometricMatcher.identify} compara por igualdad de bytes).</li>
+     *   <li><b>registerMode=false</b> (kiosk scan): devuelve la primera huella activa
+     *       de la BD para que la identificación 1:N simulada funcione correctamente.</li>
+     * </ul>
+     */
+    private void captureSimulated(WebSocketSession session, boolean registerMode) {
+        try {
+            log.info("Simulando captura de huella (esperando 2s, modo={})...",
+                    registerMode ? "register" : "scan");
+            Thread.sleep(2000);
+
+            if (Thread.currentThread().isInterrupted() || !session.isOpen()) return;
+
+            String b64;
+            if (registerMode) {
+                byte[] dummy = new byte[512];
+                new Random().nextBytes(dummy);
+                b64 = Base64.getEncoder().encodeToString(dummy);
+                log.info("Simulación register: plantilla aleatoria única generada.");
+            } else {
+                List<Fingerprint> activeFps = fingerprintRepository.findByActiveTrue();
+                if (!activeFps.isEmpty()) {
+                    Fingerprint fp = activeFps.get(0);
+                    b64 = Base64.getEncoder().encodeToString(fp.getTemplate());
+                    log.info("Simulación scan: usando huella del empleado ID={}", fp.getEmployee().getId());
+                } else {
+                    byte[] dummy = new byte[512];
+                    new Random().nextBytes(dummy);
+                    b64 = Base64.getEncoder().encodeToString(dummy);
+                    log.info("Simulación scan: plantilla aleatoria (BD vacía).");
+                }
+            }
+
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("ret", "capture");
+            resp.put("result", true);
+            resp.put("template", b64);
+            session.sendMessage(new TextMessage(mapper.writeValueAsString(resp)));
+        } catch (InterruptedException e) {
+            log.debug("Hilo de captura simulada interrumpido.");
+        } catch (Throwable t) {
+            log.error("Error en captura simulada: {}", t.getMessage(), t);
+            sendCaptureError(session);
+        }
+    }
+
+    private void sendCaptureError(WebSocketSession session) {
+        try {
+            Map<String, Object> resp = new HashMap<>();
+            resp.put("ret", "capture");
+            resp.put("result", false);
+            session.sendMessage(new TextMessage(mapper.writeValueAsString(resp)));
+        } catch (IOException e) {
+            log.error("No se pudo enviar error de captura: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    public synchronized void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        sessions.remove(session);
+        log.info("Conexión WebSocket cerrada: {} ({})", session.getId(), status);
+
+        // Solo cancelar la tarea si la sesión que cierra es la propietaria.
+        // Si el Kiosk cierra su WS mientras el Admin está enrolando, no interrumpir el enrolamiento.
+        if (session.equals(activeCapturingSession)) {
+            if (captureTask != null && !captureTask.isDone()) {
+                captureTask.cancel(true);
+            }
+            activeCapturingSession = null;
+            activeMode = null;
+            // Notificar a las sesiones restantes para que soliciten captura de nuevo
+            for (WebSocketSession s : sessions) {
+                if (s.isOpen()) {
+                    sendMsg(s, "capture_interrupted");
+                }
+            }
+        }
+    }
+
+    @PreDestroy
+    public void destroy() {
+        executor.shutdownNow();
+    }
+}

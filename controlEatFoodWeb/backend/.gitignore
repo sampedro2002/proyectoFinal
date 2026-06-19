@@ -1,0 +1,13 @@
+# AI / Asistentes
+.claude/
+.cursor/
+CONTEXTO_IA.md
+
+target/
+*.class
+.idea/
+*.iml
+.vscode/
+native/*.dll
+native/*.so
+!native/README.md

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Paleta alineada al frontend web (tema oscuro slate) -->
+    <color name="bg">#0F172A</color>
+    <color name="surface">#1E293B</color>
+    <color name="surface_variant">#334155</color>
+    <color name="on_surface">#E2E8F0</color>
+    <color name="muted">#94A3B8</color>
+    <color name="primary">#38BDF8</color>
+    <color name="primary_dark">#0EA5E9</color>
+    <color name="on_primary">#04263A</color>
+    <color name="success">#16A34A</color>
+    <color name="error">#DC2626</color>
+    <color name="warning">#F59E0B</color>
+    <color name="sim">#8B5CF6</color>
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+</resources>

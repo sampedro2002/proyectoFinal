@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Tema base (sólo atributos de framework android:) para que el linking de
+         recursos no dependa de librerías de vistas. La UI real es Jetpack Compose. -->
+    <style name="Theme.EatFood" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:colorBackground">@color/bg</item>
+    </style>
+
+    <style name="Theme.EatFood.Kiosk" parent="Theme.EatFood">
+        <item name="android:windowFullscreen">true</item>
+    </style>
+</resources>

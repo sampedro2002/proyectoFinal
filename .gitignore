@@ -1,0 +1,26 @@
+# AI / Asistentes
+.claude/
+.cursor/
+CONTEXTO_IA.md
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Dependencias
+node_modules/
+
+# Build
+target/
+build/
+dist/
+.gradle/
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
