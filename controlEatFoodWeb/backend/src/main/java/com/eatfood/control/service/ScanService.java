@@ -30,6 +30,7 @@ public class ScanService {
     private final MealTypeRepository mealTypeRepository;
     private final FailedScanRepository failedScanRepository;
     private final DeviceRepository deviceRepository;
+    private final CateringRepository cateringRepository;
 
     /**
      * Procesa un escaneo de huella y registra el consumo según las reglas de negocio.
@@ -63,7 +64,7 @@ public class ScanService {
         if (match.isEmpty()) {
             log.debug("[SCAN] NOT_FOUND → huella no matchea con ningún empleado");
             registerFailed(catering.getId(), device.getId(), "NOT_FOUND", null, null);
-            return new ScanResponse("NOT_FOUND", "HUELLA NO ENCONTRADA", null, null, when);
+            return new ScanResponse("NOT_FOUND", "HUELLA NO ENCONTRADA", null, null, null, when);
         }
 
         log.debug("[SCAN] MATCH → employeeId={}, score={}",
@@ -75,7 +76,7 @@ public class ScanService {
                     employee != null ? employee.getId() : "null");
             registerFailed(catering.getId(), device.getId(), "NOT_ALLOWED", null,
                     employee != null ? employee.getId() : null);
-            return new ScanResponse("NOT_ALLOWED", "EMPLEADO INACTIVO", null, null, when);
+            return new ScanResponse("NOT_ALLOWED", "EMPLEADO INACTIVO", null, null, null, when);
         }
 
         log.debug("[SCAN] Empleado identificado: id={}, nombre='{}'", employee.getId(), employee.getFullName());
@@ -86,7 +87,7 @@ public class ScanService {
             log.debug("[SCAN] OUT_OF_SCHEDULE → no se pudo resolver tipo de comida para hora={}", when.toLocalTime());
             registerFailed(catering.getId(), device.getId(), "OUT_OF_SCHEDULE", null, employee.getId());
             return new ScanResponse("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO",
-                    employee.getFullName(), null, when);
+                    employee.getFullName(), null, null, when);
         }
 
         log.debug("[SCAN] MealType resuelto: id={}, code='{}', name='{}'", meal.getId(), meal.getCode(), meal.getName());
@@ -99,7 +100,7 @@ public class ScanService {
                     when.toLocalTime());
             registerFailed(catering.getId(), device.getId(), "OUT_OF_SCHEDULE", meal.getId(), employee.getId());
             return new ScanResponse("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO",
-                    employee.getFullName(), meal.getName(), when);
+                    employee.getFullName(), meal.getName(), null, when);
         }
 
         // 4) Validar permiso del empleado para ese tipo de comida
@@ -108,7 +109,7 @@ public class ScanService {
                     employee.getFullName(), meal.getCode());
             registerFailed(catering.getId(), device.getId(), "NOT_ALLOWED", meal.getId(), employee.getId());
             return new ScanResponse("NOT_ALLOWED", "CONSUMO NO PERMITIDO",
-                    employee.getFullName(), meal.getName(), when);
+                    employee.getFullName(), meal.getName(), null, when);
         }
 
         // 5) Antiduplicado por día de negocio
@@ -122,15 +123,19 @@ public class ScanService {
                     employee.getFullName(), employee.getId(), meal.getName(), meal.getId(), businessDate);
             registerFailed(catering.getId(), device.getId(), "DUPLICATE", meal.getId(), employee.getId());
             return new ScanResponse("DUPLICATE", meal.getName().toUpperCase() + " YA REGISTRADO",
-                    employee.getFullName(), meal.getName(), when);
+                    employee.getFullName(), meal.getName(), null, when);
         }
 
         // 6) Registrar consumo
+        int effectivePlates = employee.getAllowedPlates() != null
+                ? employee.getAllowedPlates()
+                : (employee.getPosition() != null ? employee.getPosition().getDefaultPlates() : 1);
         Consumption consumption = Consumption.builder()
                 .employee(employee)
                 .catering(catering)
                 .mealType(meal)
                 .device(device)
+                .plates(effectivePlates)
                 .consumedAt(when)
                 .businessDate(businessDate)
                 .offline(offline)
@@ -145,7 +150,7 @@ public class ScanService {
 
     private ScanResponse success(Consumption c) {
         return new ScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                c.getEmployee().getFullName(), c.getMealType().getName(), c.getConsumedAt());
+                c.getEmployee().getFullName(), c.getMealType().getName(), c.getPlates(), c.getConsumedAt());
     }
 
     private MealType resolveMealType(String code, LocalTime time) {
@@ -190,6 +195,65 @@ public class ScanService {
                         c.getMealType().getName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))))
                 .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public ManualScanResponse manualScan(ManualScanRequest req) {
+        log.info("[MANUAL] Registro manual: empleado='{}', mealType='{}', cateringId={}",
+                req.employeeName(), req.mealTypeCode(), req.cateringId());
+
+        List<Employee> candidates = employeeRepository.searchActiveByName(req.employeeName().trim());
+        if (candidates.isEmpty()) {
+            return new ManualScanResponse("NOT_FOUND", "Empleado no encontrado", req.employeeName(), null);
+        }
+        Employee employee = candidates.get(0);
+
+        MealType meal = mealTypeRepository.findByCode(req.mealTypeCode()).orElse(null);
+        if (meal == null) {
+            return new ManualScanResponse("ERROR", "Tipo de comida no válido", employee.getFullName(), null);
+        }
+
+        Catering catering;
+        if (req.cateringId() != null) {
+            catering = cateringRepository.findById(req.cateringId()).orElse(null);
+        } else {
+            catering = cateringRepository.findAll().stream()
+                    .filter(Catering::isActive).findFirst().orElse(null);
+        }
+        if (catering == null) {
+            return new ManualScanResponse("ERROR", "No hay catering activo disponible", employee.getFullName(), null);
+        }
+
+        LocalDate businessDate = LocalDate.now();
+        boolean duplicate = consumptionRepository.existsByEmployeeIdAndMealTypeIdAndBusinessDate(
+                employee.getId(), meal.getId(), businessDate);
+        if (duplicate) {
+            return new ManualScanResponse("DUPLICATE",
+                    meal.getName().toUpperCase() + " YA REGISTRADO",
+                    employee.getFullName(), meal.getName());
+        }
+
+        int effectivePlates = employee.getAllowedPlates() != null
+                ? employee.getAllowedPlates()
+                : (employee.getPosition() != null ? employee.getPosition().getDefaultPlates() : 1);
+
+        Consumption consumption = Consumption.builder()
+                .employee(employee)
+                .catering(catering)
+                .mealType(meal)
+                .plates(effectivePlates)
+                .consumedAt(OffsetDateTime.now())
+                .businessDate(businessDate)
+                .offline(false)
+                .syncStatus(SyncStatus.SYNCED)
+                .clientUuid(UUID.randomUUID())
+                .build();
+        consumptionRepository.save(consumption);
+
+        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', comida='{}', catering='{}'",
+                employee.getFullName(), meal.getName(), catering.getName());
+        return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
+                employee.getFullName(), meal.getName());
     }
 
     private byte[] decode(String b64) {

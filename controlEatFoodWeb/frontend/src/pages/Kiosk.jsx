@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
-import { ZkFingerClient, isSimulated, getWsUrl, setWsUrl } from '../biometric/zkfinger.js';
+import { ZkFingerClient, getWsUrl, setWsUrl } from '../biometric/zkfinger.js';
 import { enqueue, pending, remove, newUuid } from '../offline/queue.js';
 import { playSuccess, playError } from '../offline/sound.js';
 
@@ -16,16 +16,14 @@ const READER_STATUS = {
   NO_DEVICE: 'no-device',
   ERROR: 'error',
   DISCONNECTED: 'disconnected',
-  SIM: 'ready-sim',
 };
 
 const readerStatusLabel = {
-  [READER_STATUS.CONNECTING]:   { text: 'Conectando lector…',         color: '#f59e0b' },
-  [READER_STATUS.READY]:        { text: 'Lector listo ✓',              color: '#16a34a' },
-  [READER_STATUS.NO_DEVICE]:    { text: 'Lector no detectado',         color: '#dc2626' },
+  [READER_STATUS.CONNECTING]:   { text: 'Detectando lector...',       color: '#f59e0b' },
+  [READER_STATUS.READY]:        { text: 'ZKTeco Conectado ✓',          color: '#16a34a' },
+  [READER_STATUS.NO_DEVICE]:    { text: 'Conecte el ZKTeco',          color: '#dc2626' },
   [READER_STATUS.ERROR]:        { text: 'Error de conexión al agente', color: '#dc2626' },
-  [READER_STATUS.DISCONNECTED]: { text: 'Agente desconectado',         color: '#dc2626' },
-  [READER_STATUS.SIM]:          { text: 'Modo SIMULADO (sin ZK9500)',  color: '#8b5cf6' },
+  [READER_STATUS.DISCONNECTED]: { text: 'Conecte el ZKTeco',          color: '#dc2626' },
 };
 
 export default function Kiosk() {
@@ -402,20 +400,20 @@ export default function Kiosk() {
         <>
           <div className="title">{session.cateringName?.toUpperCase()}</div>
           <div className="fingerprint-icon" style={{
-            opacity: readerStatus === READER_STATUS.READY || readerStatus === READER_STATUS.SIM ? 1 : 0.25
+            opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25
           }}>🖐️</div>
           <div className="waiting">
-            {readerStatus === READER_STATUS.CONNECTING && 'Conectando lector…'}
+            {readerStatus === READER_STATUS.CONNECTING && 'Detectando si está conectado el ZKTeco...'}
             {readerStatus === READER_STATUS.ERROR && 'No se puede conectar al agente ZKFinger'}
-            {readerStatus === READER_STATUS.NO_DEVICE && 'Conecte el lector al USB'}
-            {readerStatus === READER_STATUS.DISCONNECTED && 'Reconectando…'}
-            {(readerStatus === READER_STATUS.READY || readerStatus === READER_STATUS.SIM) &&
-              (scanning ? 'Coloque el dedo…' : 'Esperando huella…')}
+            {readerStatus === READER_STATUS.NO_DEVICE && 'Conecte el ZKTeco al puerto USB'}
+            {readerStatus === READER_STATUS.DISCONNECTED && 'Conecte el ZKTeco — esperando conexión…'}
+            {readerStatus === READER_STATUS.READY &&
+              (scanning ? 'ZKTeco conectado. Coloque el dedo...' : 'ZKTeco conectado. Esperando huella...')}
           </div>
-          {(readerStatus === READER_STATUS.ERROR || readerStatus === READER_STATUS.DISCONNECTED) && (
+          {(readerStatus === READER_STATUS.ERROR || readerStatus === READER_STATUS.DISCONNECTED || readerStatus === READER_STATUS.NO_DEVICE) && (
             <p style={{ color: '#94a3b8', fontSize: 14, maxWidth: 380, textAlign: 'center' }}>
-              Verifique que el agente <strong>ZKFinger WebAPI</strong> esté en ejecución en{' '}
-              <code style={{ color: '#38bdf8' }}>{getWsUrl()}</code>.
+              Conecte el lector <strong>ZKTeco9500</strong> al puerto USB del servidor donde corre el
+              backend en <code style={{ color: '#38bdf8' }}>{getWsUrl()}</code>.
               Se intentará reconectar automáticamente.
             </p>
           )}

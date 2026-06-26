@@ -109,14 +109,11 @@ mvn spring-boot:run
 > Stop-Process -Id (Get-NetTCPConnection -LocalPort 8080).OwningProcess -Force
 > ```
 
-> **Sin hardware ZK9500:** arranca con `BIOMETRIC_PROVIDER=sim` y en el frontend
-> usa `VITE_BIOMETRIC_SIM=true` para probar todo el flujo de extremo a extremo.
-
 ### 3. Frontend
 
 ```bash
 cd frontend
-cp .env.example .env     # ajusta VITE_ZKFINGER_WS / VITE_BIOMETRIC_SIM
+cp .env.example .env     # ajusta VITE_ZKFINGER_WS
 npm install
 npm run dev              # http://localhost:5173
 ```

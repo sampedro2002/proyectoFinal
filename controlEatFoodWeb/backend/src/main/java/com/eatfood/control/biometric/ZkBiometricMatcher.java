@@ -16,6 +16,10 @@ import java.io.File;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Implementación real del motor biométrico usando el SDK nativo ZKFinger (libzkfp)
@@ -39,6 +43,9 @@ public class ZkBiometricMatcher implements BiometricMatcher {
     private Pointer dbCache;
     private boolean ready = false;
 
+    private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
+    private ScheduledFuture<?> retryTask = null;
+
     /** fid del SDK (= fingerprintId) -> employeeId */
     private final Map<Integer, Long> fidToEmployee = new ConcurrentHashMap<>();
 
@@ -51,32 +58,54 @@ public class ZkBiometricMatcher implements BiometricMatcher {
     @PostConstruct
     public synchronized void init() {
         try {
-            sdk = loadSdk();
-            if (sdk == null) return;
+            if (sdk == null) {
+                sdk = loadSdk();
+                if (sdk == null) {
+                    scheduleRetry();
+                    return;
+                }
+            }
 
             int rc = sdk.ZKFPM_Init();
             if (rc != ZKFP_ERR_OK) {
                 String hint = rc == -1 ? " (sin dispositivo o driver no instalado)" :
                               rc == -2 ? " (driver USB no instalado o ZK9500 no conectado)" : "";
-                log.error("ZKFPM_Init falló (código {}){} — verifica que el ZK9500 esté conectado y que el driver ZKTeco esté instalado.", rc, hint);
+                log.warn("ZKFPM_Init falló (código {}){} — reintentando en 10 segundos...", rc, hint);
+                scheduleRetry();
                 return;
             }
             dbCache = sdk.ZKFPM_DBInit();
             if (dbCache == null) {
-                log.error("ZKFPM_DBInit devolvió null. El matching biométrico no estará disponible.");
+                log.error("ZKFPM_DBInit devolvió null. Reintentando en 10 segundos...");
+                scheduleRetry();
                 return;
             }
-            // ready se activa DESPUÉS de rebuildIndex para que un fallo allí no deje el flag sucio
             rebuildIndex();
             ready = true;
-            log.info("Motor biométrico ZKFinger inicializado (umbral={}).", threshold);
+            cancelRetry();
+            log.info("Motor biométrico ZKFinger inicializado correctamente (umbral={}).", threshold);
         } catch (UnsatisfiedLinkError e) {
             log.error("No se pudo cargar el SDK nativo ZKFinger desde '{}'. " +
                     "Coloque las DLL/.so del SDK ZK9500 en esa ruta. Detalle: {}", nativeLibPath, e.getMessage());
+            scheduleRetry();
         } catch (Throwable e) {
             ready = false;
-            log.error("Error inesperado al inicializar el motor ZKFinger: {}. " +
-                    "El matching biométrico no estará disponible.", e.getMessage());
+            log.error("Error inesperado al inicializar el motor ZKFinger: {}. Reintentando en 10 segundos...", e.getMessage());
+            scheduleRetry();
+        }
+    }
+
+    private void scheduleRetry() {
+        if (retryTask != null && !retryTask.isDone()) return;
+        retryTask = retryScheduler.scheduleWithFixedDelay(this::init, 10, 10, TimeUnit.SECONDS);
+        log.info("Programado reintento de inicialización del ZKTeco9500 cada 10 segundos.");
+    }
+
+    private void cancelRetry() {
+        if (retryTask != null) {
+            retryTask.cancel(false);
+            retryTask = null;
+            log.info("Reintentos de inicialización cancelados — motor listo.");
         }
     }
 
@@ -122,6 +151,8 @@ public class ZkBiometricMatcher implements BiometricMatcher {
 
     @PreDestroy
     public synchronized void shutdown() {
+        cancelRetry();
+        retryScheduler.shutdownNow();
         if (sdk != null && ready) {
             if (dbCache != null) sdk.ZKFPM_DBFree(dbCache);
             sdk.ZKFPM_Terminate();

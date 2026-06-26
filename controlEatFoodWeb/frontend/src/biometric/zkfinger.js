@@ -15,17 +15,12 @@
  *   -> { cmd: "capture", fakeData: false }   solicita una captura
  *   <- { ret: "capture", result: true, template: "<base64>", image: "..." }
  *
- * Modo simulado: define VITE_BIOMETRIC_SIM=true para pruebas sin hardware; genera
- * una plantilla pseudoaleatoria estable por sesión.
- *
  * Resolución de URL (de mayor a menor prioridad):
  *   1. localStorage('zkfingerWsUrl') — override manual desde el Kiosk (p. ej. lector en otro PC).
  *   2. VITE_ZKFINGER_WS — override por entorno (normalmente vacío).
  *   3. Agente embebido del backend, derivado del origen de la página: funciona igual en
  *      desarrollo (proxy de Vite hacia :8080) y en producción (mismo host / reverse proxy).
  */
-
-const SIM = String(import.meta.env.VITE_BIOMETRIC_SIM || 'false') === 'true';
 
 /**
  * URL del agente biométrico EMBEBIDO en el backend, derivada del origen actual.
@@ -70,7 +65,6 @@ export class ZkFingerClient {
   }
 
   async connect() {
-    if (SIM) { this.ready = true; this.onStatus('ready-sim'); return; }
     return new Promise((resolve, reject) => {
       try {
         const token = localStorage.getItem('accessToken') || '';
@@ -186,7 +180,6 @@ export class ZkFingerClient {
    * @param {'scan'|'register'} mode  'register' activa post-drain en el backend.
    */
   capture(timeoutMs = 15000, mode = 'scan') {
-    if (SIM) return Promise.resolve(simulateTemplate());
     return new Promise((resolve, reject) => {
       if (!this.ready) return reject(new Error('Lector no disponible'));
       this._pendingCapture = { resolve, reject };
@@ -206,18 +199,3 @@ export class ZkFingerClient {
     this.ready = false;
   }
 }
-
-/** Genera una plantilla simulada estable (para pruebas sin ZK9500). */
-let simSeed = null;
-function simulateTemplate() {
-  if (!simSeed) simSeed = localStorage.getItem('simFinger') || null;
-  // Si hay una huella "guardada" para simular identificación, úsala; si no, genera una.
-  const bytes = new Uint8Array(512);
-  const base = simSeed ? simSeed.split(',').map(Number) : null;
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = base ? base[i % base.length] : Math.floor(Math.random() * 256);
-  }
-  return btoa(String.fromCharCode(...bytes));
-}
-
-export const isSimulated = SIM;

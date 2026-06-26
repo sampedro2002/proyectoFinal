@@ -2,7 +2,6 @@ package com.eatfood.control.web;
 
 import com.eatfood.control.biometric.ZkBiometricMatcher;
 import com.eatfood.control.biometric.ZkfpSdk;
-import com.eatfood.control.domain.Fingerprint;
 import com.eatfood.control.repository.FingerprintRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.jna.Pointer;
@@ -122,8 +121,8 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
                 }
             }
         } else {
-            log.info("Emulador ZKFinger en modo SIMULACIÓN.");
-            result = true;
+            log.warn("ZkBiometricMatcher no disponible — lector ZKTeco9500 no conectado.");
+            result = false;
         }
 
         Map<String, Object> response = new HashMap<>();
@@ -171,7 +170,8 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
                 if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
                     captureWithDevice(session, mode);
                 } else {
-                    captureSimulated(session, registerMode);
+                    log.warn("Intento de captura sin lector ZKTeco9500 conectado.");
+                    sendCaptureError(session);
                 }
             } finally {
                 // Al terminar la tarea (enrolamiento o escaneo), liberar el dispositivo y
@@ -372,57 +372,6 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
             session.sendMessage(new TextMessage(mapper.writeValueAsString(resp)));
         } catch (IOException e) {
             log.debug("No se pudo enviar resultado de captura: {}", e.getMessage());
-        }
-    }
-
-    /**
-     * Captura simulada.
-     * <ul>
-     *   <li><b>registerMode=true</b>: genera siempre un template aleatorio único —
-     *       nunca reutiliza plantillas de la BD para evitar colisiones en el check de
-     *       duplicados ({@code SimBiometricMatcher.identify} compara por igualdad de bytes).</li>
-     *   <li><b>registerMode=false</b> (kiosk scan): devuelve la primera huella activa
-     *       de la BD para que la identificación 1:N simulada funcione correctamente.</li>
-     * </ul>
-     */
-    private void captureSimulated(WebSocketSession session, boolean registerMode) {
-        try {
-            log.info("Simulando captura de huella (esperando 2s, modo={})...",
-                    registerMode ? "register" : "scan");
-            Thread.sleep(2000);
-
-            if (Thread.currentThread().isInterrupted() || !session.isOpen()) return;
-
-            String b64;
-            if (registerMode) {
-                byte[] dummy = new byte[512];
-                new Random().nextBytes(dummy);
-                b64 = Base64.getEncoder().encodeToString(dummy);
-                log.info("Simulación register: plantilla aleatoria única generada.");
-            } else {
-                List<Fingerprint> activeFps = fingerprintRepository.findByActiveTrue();
-                if (!activeFps.isEmpty()) {
-                    Fingerprint fp = activeFps.get(0);
-                    b64 = Base64.getEncoder().encodeToString(fp.getTemplate());
-                    log.info("Simulación scan: usando huella del empleado ID={}", fp.getEmployee().getId());
-                } else {
-                    byte[] dummy = new byte[512];
-                    new Random().nextBytes(dummy);
-                    b64 = Base64.getEncoder().encodeToString(dummy);
-                    log.info("Simulación scan: plantilla aleatoria (BD vacía).");
-                }
-            }
-
-            Map<String, Object> resp = new HashMap<>();
-            resp.put("ret", "capture");
-            resp.put("result", true);
-            resp.put("template", b64);
-            session.sendMessage(new TextMessage(mapper.writeValueAsString(resp)));
-        } catch (InterruptedException e) {
-            log.debug("Hilo de captura simulada interrumpido.");
-        } catch (Throwable t) {
-            log.error("Error en captura simulada: {}", t.getMessage(), t);
-            sendCaptureError(session);
         }
     }
 

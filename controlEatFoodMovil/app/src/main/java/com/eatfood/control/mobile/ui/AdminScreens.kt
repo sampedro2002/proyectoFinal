@@ -95,7 +95,7 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 // ───────────────────────────── Empleados ─────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EmployeesScreen(isAdmin: Boolean) {
+fun EmployeesScreen(canModify: Boolean) {
     val context = LocalContext.current
     val api = remember { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
@@ -122,7 +122,7 @@ fun EmployeesScreen(isAdmin: Boolean) {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         floatingActionButton = {
-            if (isAdmin) FloatingActionButton(onClick = { creating = true }) {
+            if (canModify) FloatingActionButton(onClick = { creating = true }) {
                 Icon(Icons.Default.Add, "Nuevo")
             }
         }
@@ -154,9 +154,9 @@ fun EmployeesScreen(isAdmin: Boolean) {
             title = { Text(e.fullName) },
             text = {
                 Column {
-                    if (isAdmin) TextButton(onClick = { editing = e; actionsFor = null }) { Text("Editar") }
+                    if (canModify) TextButton(onClick = { editing = e; actionsFor = null }) { Text("Editar") }
                     TextButton(onClick = { fpEmployee = e; actionsFor = null }) { Text("Huellas") }
-                    if (isAdmin) TextButton(onClick = {
+                    if (canModify) TextButton(onClick = {
                         val emp = e; actionsFor = null
                         scope.launch {
                             runCatching { api.deleteEmployee(emp.id) }
@@ -531,5 +531,114 @@ fun SchedulesScreen() {
             },
             dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }
         )
+    }
+}
+
+// ───────────────────────────── Almuerzos Extra ───────────────────────────────
+@Composable
+fun ExtraMealsScreen() {
+    val context = LocalContext.current
+    val api = remember { ApiClient.api(context) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+
+    var employees by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
+    var term by remember { mutableStateOf("") }
+    var selectedEmployee by remember { mutableStateOf<EmployeeResponse?>(null) }
+    var almuerzo by remember { mutableStateOf(false) }
+    var merienda by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var results by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    suspend fun searchEmployees() {
+        if (term.isBlank()) { employees = emptyList(); return }
+        employees = runCatching { api.employees(term, 0, 20).content ?: emptyList() }.getOrDefault(emptyList())
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+        Column(
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Registrar Almuerzos Extra", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(16.dp))
+
+            OutlinedTextField(
+                value = term, onValueChange = { term = it },
+                label = { Text("Buscar empleado por nombre") }, singleLine = true,
+                trailingIcon = { TextButton(onClick = { scope.launch { searchEmployees() } }) { Text("Buscar") } },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (employees.isNotEmpty() && selectedEmployee == null) {
+                Spacer(Modifier.height(8.dp))
+                Card(Modifier.fillMaxWidth()) {
+                    Column {
+                        employees.forEach { e ->
+                            RowItem(
+                                title = e.fullName,
+                                subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"}",
+                                onClick = { selectedEmployee = e; employees = emptyList() }
+                            )
+                        }
+                    }
+                }
+            }
+
+            selectedEmployee?.let { emp ->
+                Spacer(Modifier.height(16.dp))
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text("Empleado seleccionado", style = MaterialTheme.typography.titleMedium)
+                        Text(emp.fullName, style = MaterialTheme.typography.bodyLarge)
+                        Text("CI ${emp.identityCard}", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.height(12.dp))
+                        Text("Tipo de comida:", style = MaterialTheme.typography.titleSmall)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(almuerzo, { almuerzo = it })
+                            Text("Almuerzo")
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(merienda, { merienda = it })
+                            Text("Merienda")
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            enabled = !busy && (almuerzo || merienda),
+                            onClick = {
+                                busy = true
+                                scope.launch {
+                                    val codes = mutableListOf<String>()
+                                    if (almuerzo) codes.add("LUNCH")
+                                    if (merienda) codes.add("SNACK")
+                                    val res = mutableListOf<String>()
+                                    for (code in codes) {
+                                        runCatching { api.manualScan(ManualScanRequest(emp.fullName, code)) }
+                                            .onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
+                                            .onFailure { e -> res.add("${code}: ${e.apiMessage("Error")}") }
+                                    }
+                                    results = res
+                                    almuerzo = false; merienda = false
+                                    selectedEmployee = null
+                                    busy = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (busy) "Registrando…" else "Registrar") }
+                        TextButton(onClick = { selectedEmployee = null }) { Text("Cancelar") }
+                    }
+                }
+            }
+
+            if (results.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Resultados", style = MaterialTheme.typography.titleMedium)
+                results.forEach { r ->
+                    Text(r, style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 2.dp))
+                }
+            }
+        }
     }
 }

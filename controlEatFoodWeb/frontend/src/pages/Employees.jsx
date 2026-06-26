@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
-import { ZkFingerClient, isSimulated } from '../biometric/zkfinger.js';
+import { ZkFingerClient } from '../biometric/zkfinger.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
 const FINGERS = [
@@ -112,13 +112,23 @@ export default function Employees() {
     try {
       setBioStatus('connecting');
       const client = new ZkFingerClient({
-        onStatus: () => {},
+        onStatus: (s) => {
+          if (s === 'no-device' || s === 'error' || s === 'disconnected') {
+            setBioStatus('idle');
+            setBioMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
+          }
+        },
         onProgress: (step, total) => {
           setBioMsg(`Captura ${step}/${total} completada — levante el dedo y vuelva a colocarlo...`);
         },
       });
       zkRef.current = client;
       await client.connect();
+      if (!client.ready) {
+        setBioStatus('idle');
+        setBioMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
+        return;
+      }
       setBioStatus('capturing');
       setBioMsg('Coloque el dedo en el lector... (1/3)');
       const templateB64 = await client.capture(60000, 'register');
@@ -275,12 +285,6 @@ export default function Employees() {
               <h4 style={{ margin: '0 0 12px' }}>
                 Huellas digitales ({fingerprints.length}/3)
               </h4>
-
-              {isSimulated && (
-                <p className="error-text" style={{ marginTop: 0 }}>
-                  Modo simulado activo — sin hardware ZK9500.
-                </p>
-              )}
 
               <table>
                 <thead>

@@ -36,6 +36,7 @@ public final class ScanDtos {
             String message,       // mensaje a mostrar
             String employeeName,
             String mealName,
+            Integer plates,
             OffsetDateTime time) {}
 
     /** Lote de registros offline para sincronización. */
@@ -57,4 +58,16 @@ public final class ScanDtos {
             String employeeName,
             String mealName,
             String time) {}
+
+    /** Registro manual de consumo (sin huella) — solo ADMIN. */
+    public record ManualScanRequest(
+            @NotBlank String employeeName,
+            @NotBlank String mealTypeCode,
+            Long cateringId) {}
+
+    public record ManualScanResponse(
+            String status,
+            String message,
+            String employeeName,
+            String mealName) {}
 }

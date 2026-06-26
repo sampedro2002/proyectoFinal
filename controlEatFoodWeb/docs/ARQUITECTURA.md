@@ -145,7 +145,6 @@ classDiagram
         +identify(template) MatchResult
     }
     class ZkBiometricMatcher
-    class SimBiometricMatcher
     class DeviceService {
         +connect(req) DeviceConnectResponse
         +validateSession(token) Device
@@ -162,7 +161,6 @@ classDiagram
     class AuditService
 
     BiometricMatcher <|.. ZkBiometricMatcher
-    BiometricMatcher <|.. SimBiometricMatcher
     ScanService --> BiometricMatcher
     ScanService --> DeviceService
     SyncService --> ScanService

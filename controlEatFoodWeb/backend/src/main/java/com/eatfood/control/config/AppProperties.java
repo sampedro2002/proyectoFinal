@@ -42,7 +42,6 @@ public class AppProperties {
 
     @Getter @Setter
     public static class Biometric {
-        private String provider = "zk";
         private int matchThreshold = 70;
         private String nativeLibPath = "./native";
     }

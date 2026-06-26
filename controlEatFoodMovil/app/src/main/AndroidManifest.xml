@@ -4,6 +4,7 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- USB OTG para el lector de huellas ZK9500 -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
@@ -17,7 +18,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.EatFood"
         android:usesCleartextTraffic="true"
-        tools:targetApi="26">
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:extractNativeLibs="true"
+        tools:targetApi="34">
 
         <activity
             android:name=".ui.MainActivity"
@@ -34,8 +37,9 @@
             android:name=".ui.kiosk.KioskActivity"
             android:exported="true"
             android:theme="@style/Theme.EatFood.Kiosk"
-            android:screenOrientation="portrait"
-            android:launchMode="singleTask">
+            android:screenOrientation="fullSensor"
+            android:launchMode="singleTask"
+            tools:ignore="LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>

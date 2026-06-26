@@ -1,6 +1,8 @@
 package com.eatfood.control.mobile.biometric
 
 import android.content.Context
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.util.Base64
 import android.util.Log
 import com.zkteco.android.biometric.FingerprintExceptionListener
@@ -12,28 +14,10 @@ import com.zkteco.android.biometric.core.device.TransportType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-/**
- * Adaptador real del lector ZK9500 usando el SDK ZKTeco Biometric para Android
- * (jars en app/libs: zkandroidcore, zkandroidfpreader, zkandroidfingerservice; y
- * librerías nativas .so en src/main/jniLibs/).
- *
- * Flujo del SDK (basado en la API real de FingerprintSensor):
- *   1. FingerprintFactory.createFingerprintSensor(context, TransportType.USB, params)
- *   2. sensor.setFingerprintCaptureListener(0, listener)   // extractOK entrega la PLANTILLA
- *   3. sensor.open(0); sensor.startCapture(0)
- *   4. El listener dispara extractOK(byte[] template) en cada huella colocada
- *   5. sensor.stopCapture(0); sensor.close(0); sensor.destroy()
- *
- * La plantilla se devuelve en Base64 para enviarla al backend (identificación 1:N),
- * igual que en el frontend web.
- *
- * Nota USB: la lectura por USB-OTG requiere permiso de USB. Al conectar el lector,
- * Android puede pedirlo; si se abre el kiosco desde el evento USB_DEVICE_ATTACHED el
- * permiso se concede automáticamente para ese dispositivo.
- */
 class ZkBiometricReader(private val context: Context) : BiometricReader {
 
     private var sensor: FingerprintSensor? = null
@@ -43,8 +27,9 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
     override suspend fun open(onStatus: (ReaderStatus) -> Unit) = withContext(Dispatchers.IO) {
         onStatus(ReaderStatus.CONNECTING)
 
-        // El SDK no pide el permiso de USB; debemos asegurarlo antes de abrir el sensor.
-        when (val perm = UsbPermission.ensure(context)) {
+        logUsbDevices()
+
+        val usbDevice = when (val perm = UsbPermission.ensure(context)) {
             is UsbPermission.Result.NoDevice -> {
                 onStatus(ReaderStatus.NO_DEVICE)
                 throw BiometricException("Lector ZK9500 no detectado. Conéctelo por USB-OTG.")
@@ -53,15 +38,20 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
                 onStatus(ReaderStatus.ERROR)
                 throw BiometricException("Permiso de USB rechazado para el lector ZK9500.")
             }
-            is UsbPermission.Result.Granted -> { /* continuar */ }
+            is UsbPermission.Result.Granted -> {
+                Log.i(TAG, "Permiso USB concedido: VID=${perm.device.vendorId} PID=${perm.device.productId}")
+                delay(1500)
+                perm.device
+            }
         }
 
         try {
-            val params = HashMap<String, Any>()
-            val s = FingerprintFactory.createFingerprintSensor(context, TransportType.USB, params)
+            val s = FingerprintFactory.createFingerprintSensor(context, TransportType.USB, HashMap<String, Any>())
+            sensor = s
+            Log.i(TAG, "Sensor creado")
 
             s.setFingerprintCaptureListener(0, object : FingerprintCaptureListener {
-                override fun captureOK(fpImage: ByteArray?) { /* imagen; no se usa */ }
+                override fun captureOK(fpImage: ByteArray?) {}
                 override fun captureError(e: FingerprintException?) {
                     Log.w(TAG, "captureError: ${e?.message}")
                 }
@@ -78,16 +68,57 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
                 Log.w(TAG, "onDeviceException")
             })
 
-            s.open(0)
+            openSensorWithRetries(s, usbDevice)
+
             s.startCapture(0)
-            sensor = s
+            Log.i(TAG, "Captura iniciada")
             deviceError = false
             onStatus(ReaderStatus.READY)
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Librerías nativas no encontradas", e)
+            close()
+            onStatus(ReaderStatus.ERROR)
+            throw BiometricException("Librerías nativas del lector no encontradas. Reinstale la aplicación.")
         } catch (e: Throwable) {
             Log.e(TAG, "Error abriendo ZK9500", e)
+            close()
             onStatus(ReaderStatus.ERROR)
-            throw BiometricException("No se pudo abrir el lector ZK9500: ${e.message}")
+            val msg = when {
+                e.message?.contains("permission") == true -> "Sin permiso de acceso al USB."
+                else -> e.message ?: "Error desconocido al inicializar hardware."
+            }
+            throw BiometricException(msg)
         }
+    }
+
+    private fun openSensorWithRetries(s: FingerprintSensor, usbDevice: UsbDevice) {
+        var retries = 3
+        while (retries > 0) {
+            try {
+                Log.i(TAG, "Abriendo sensor con UsbDevice directo (intentos: $retries)…")
+                s.open(usbDevice)
+                Log.i(TAG, "Sensor abierto correctamente")
+                return
+            } catch (e: FingerprintException) {
+                Log.w(TAG, "open(UsbDevice) falló: errorCode=${e.errorCode}, msg=${e.message}")
+                if (e.errorCode == -3) {
+                    Log.i(TAG, "Sensor ya estaba abierto")
+                    return
+                }
+                retries--
+                if (retries <= 0) throw e
+                Thread.sleep(1000)
+            }
+        }
+    }
+
+    private fun logUsbDevices() {
+        val um = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        Log.i(TAG, "─── Dispositivos USB ───")
+        um.deviceList.forEach { (name, dev) ->
+            Log.i(TAG, "  $name  VID=0x${dev.vendorId.toString(16)}  PID=0x${dev.productId.toString(16)}  ${dev.productName ?: "?"}")
+        }
+        if (um.deviceList.isEmpty()) Log.w(TAG, "  (ningún dispositivo USB)")
     }
 
     override suspend fun capture(timeoutMs: Long): String {
@@ -116,7 +147,6 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
     companion object {
         private const val TAG = "ZkBiometricReader"
 
-        /** ¿Está el SDK ZKFinger disponible en el classpath? */
         fun sdkAvailable(): Boolean = try {
             Class.forName("com.zkteco.android.biometric.module.fingerprintreader.FingerprintFactory")
             true

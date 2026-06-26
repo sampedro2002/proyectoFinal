@@ -27,4 +27,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     List<Employee> findByDeletedFalseAndStatus(com.eatfood.control.domain.EmployeeStatus status);
 
     long countByDeletedFalseAndStatus(com.eatfood.control.domain.EmployeeStatus status);
+
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.deleted = false AND e.status = com.eatfood.control.domain.EmployeeStatus.ACTIVE
+              AND LOWER(e.fullName) LIKE LOWER(CONCAT('%', :name, '%'))
+            ORDER BY e.fullName
+            """)
+    List<Employee> searchActiveByName(@Param("name") String name);
 }

@@ -180,3 +180,16 @@ data class ApiError(
     val code: String? = null,
     val message: String? = null
 )
+
+data class ManualScanRequest(
+    val employeeName: String,
+    val mealTypeCode: String,
+    val cateringId: Long? = null
+)
+
+data class ManualScanResponse(
+    val status: String,
+    val message: String?,
+    val employeeName: String?,
+    val mealName: String?
+)

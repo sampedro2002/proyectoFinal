@@ -108,4 +108,8 @@ interface ApiService {
         @Query("size") size: Int = 100,
         @Query("sort") sort: String = "createdAt,desc"
     ): Page<AuditRow>
+
+    // ── Registro Manual de Consumos ────────────────────────────────────────────
+    @POST("manual-consumptions")
+    suspend fun manualScan(@Body body: ManualScanRequest): ManualScanResponse
 }

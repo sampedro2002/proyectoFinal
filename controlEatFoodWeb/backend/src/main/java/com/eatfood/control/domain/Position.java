@@ -15,6 +15,10 @@ public class Position extends Auditable {
     @Column(nullable = false, unique = true, length = 120)
     private String name;
 
+    @Column(name = "default_plates", nullable = false)
+    @Builder.Default
+    private int defaultPlates = 1;
+
     @Column(name = "allows_snack", nullable = false)
     @Builder.Default
     private boolean allowsSnack = false;

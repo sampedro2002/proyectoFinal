@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../api/client.js';
-import { ZkFingerClient, isSimulated } from '../biometric/zkfinger.js';
+import { ZkFingerClient } from '../biometric/zkfinger.js';
 
 const FINGERS = [
   'Pulgar derecho', 'Índice derecho', 'Medio derecho', 'Anular derecho', 'Meñique derecho',
@@ -39,13 +39,23 @@ export default function EmployeeFingerprints() {
     try {
       setStatus('connecting');
       const client = new ZkFingerClient({
-        onStatus: () => {},
+        onStatus: (s) => {
+          if (s === 'no-device' || s === 'error' || s === 'disconnected') {
+            setStatus('idle');
+            setMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
+          }
+        },
         onProgress: (step, total) => {
           setMsg(`Captura ${step}/${total} completada — levante el dedo y vuelva a colocarlo...`);
         },
       });
       clientRef.current = client;
       await client.connect();
+      if (!client.ready) {
+        setStatus('idle');
+        setMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
+        return;
+      }
       setStatus('capturing');
       setMsg('Coloque el dedo en el lector... (1/3)');
       const templateB64 = await client.capture(60000, 'register');
@@ -79,7 +89,6 @@ export default function EmployeeFingerprints() {
       {loadError && <p className="error-text">{loadError}</p>}
 
       <div className="card" style={{ maxWidth: 560 }}>
-        {isSimulated && <p className="error-text">Modo biométrico SIMULADO activo (sin hardware ZK9500).</p>}
         <div className="field">
           <label>Dedo a registrar</label>
           <select value={fingerIndex} onChange={(e) => setFingerIndex(e.target.value)}>

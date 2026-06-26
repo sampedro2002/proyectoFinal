@@ -47,9 +47,7 @@ app:
   catering:
     max-devices: 2
   biometric:
-    # provider: zk (SDK real libzkfp vía JNA) | sim (simulador en memoria)
     provider: ${BIOMETRIC_PROVIDER:zk}
-    # Umbral de matching 1:N (score del SDK; típico 0-100+, recomendado >= 70)
     match-threshold: 70
     # Ruta donde se encuentran las librerías nativas del SDK ZKFinger (libzkfp.dll / .so)
     native-lib-path: ${ZK_NATIVE_PATH:./native}

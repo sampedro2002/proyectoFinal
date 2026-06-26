@@ -1,9 +1,16 @@
 package com.eatfood.control.mobile.ui
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -15,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -31,6 +39,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent { EatFoodTheme { AppRoot() } }
     }
@@ -40,11 +49,12 @@ class MainActivity : ComponentActivity() {
 enum class Screen(val title: String, val roles: List<String>) {
     DASHBOARD("Dashboard", listOf("ADMIN", "SUPERVISOR", "CATERING")),
     EMPLOYEES("Empleados", listOf("ADMIN", "SUPERVISOR")),
-    POSITIONS("Cargos", listOf("ADMIN", "SUPERVISOR")),
-    CATERINGS("Caterings", listOf("ADMIN", "SUPERVISOR")),
+    POSITIONS("Cargos", listOf("SUPERVISOR")),
+    CATERINGS("Caterings", listOf("SUPERVISOR")),
     SCHEDULES("Horarios", listOf("ADMIN")),
     REPORTS("Reportes", listOf("ADMIN", "SUPERVISOR")),
-    AUDIT("Auditoría", listOf("ADMIN"))
+    AUDIT("Auditoría", listOf("SUPERVISOR")),
+    EXTRA_MEALS("Almuerzos Extra", listOf("ADMIN"))
 }
 
 @Composable
@@ -53,6 +63,24 @@ fun AppRoot() {
     val store = remember { SessionStore.get(context) }
     var user by remember { mutableStateOf(store.user) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // Solicitar permiso de notificaciones en Android 13+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        val launcher = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission(),
+        ) { isGranted ->
+            if (!isGranted) {
+                // El usuario rechazó las notificaciones; el permiso USB se pedirá igual,
+                // pero no saldrá la notificación de apoyo.
+                Log.w("MainActivity", "Permiso de notificaciones denegado")
+            }
+        }
+        LaunchedEffect(Unit) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+    }
 
     when {
         showSettings -> SettingsScreen(onClose = { showSettings = false })
@@ -138,12 +166,13 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (current) {
                     Screen.DASHBOARD -> DashboardScreen()
-                    Screen.EMPLOYEES -> EmployeesScreen(isAdmin = "ADMIN" in roles)
+                    Screen.EMPLOYEES -> EmployeesScreen(canModify = "SUPERVISOR" in roles)
                     Screen.POSITIONS -> PositionsScreen(isAdmin = "ADMIN" in roles)
                     Screen.CATERINGS -> CateringsScreen(isAdmin = "ADMIN" in roles)
                     Screen.SCHEDULES -> SchedulesScreen()
                     Screen.REPORTS -> ReportsScreen()
                     Screen.AUDIT -> AuditScreen()
+                    Screen.EXTRA_MEALS -> ExtraMealsScreen()
                 }
             }
         }
@@ -220,7 +249,6 @@ fun SettingsScreen(onClose: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
     var serverUrl by remember { mutableStateOf(store.serverUrl) }
-    var provider by remember { mutableStateOf(store.biometricProvider) }
     val sdkAvailable = remember { com.eatfood.control.mobile.biometric.ZkBiometricReader.sdkAvailable() }
 
     Scaffold(topBar = {
@@ -244,17 +272,10 @@ fun SettingsScreen(onClose: () -> Unit) {
             )
             Spacer(Modifier.height(24.dp))
             Text("Lector biométrico", style = MaterialTheme.typography.titleMedium)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = provider == "zk", onClick = { provider = "zk" })
-                Text("ZK9500 por USB-OTG (recomendado)")
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = provider == "sim", onClick = { provider = "sim" })
-                Text("Simulado (sin hardware)")
-            }
+            Text("ZK9500 por USB-OTG", style = MaterialTheme.typography.bodyMedium)
             Text(
                 if (sdkAvailable) "SDK ZKFinger detectado ✓"
-                else "SDK ZKFinger no detectado. Agrega el .jar/.aar en app/libs/ para el modo ZK9500.",
+                else "SDK ZKFinger no detectado. Agrega el .jar/.aar en app/libs/.",
                 style = MaterialTheme.typography.bodySmall,
                 color = if (sdkAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
@@ -262,7 +283,6 @@ fun SettingsScreen(onClose: () -> Unit) {
             Button(
                 onClick = {
                     store.serverUrl = serverUrl
-                    store.biometricProvider = provider
                     ApiClient.reset()
                     onClose()
                 },

@@ -1,7 +1,10 @@
 package com.eatfood.control.mobile.ui.kiosk
 
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.net.Network
 import android.os.Build
@@ -9,6 +12,7 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,9 +47,11 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 class KioskActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent { EatFoodTheme { KioskRoot() } }
@@ -128,7 +134,7 @@ private fun ConnectPanel(onConnected: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text("Conectar") }
                 Text(
-                    "ℹ️ Lector ZK9500: conéctalo por USB-OTG y elige el proveedor 'ZK9500' en Ajustes. Sin hardware, usa el modo 'Simulado'.",
+                    "ℹ️ Lector ZK9500: conéctalo por USB-OTG.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp)
@@ -149,8 +155,11 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     var online by remember { mutableStateOf(isOnline(context)) }
     var queued by remember { mutableStateOf(0) }
     var readerStatus by remember { mutableStateOf(ReaderStatus.CONNECTING) }
+    var lastError by remember { mutableStateOf("") }
     var result by remember { mutableStateOf<ScanResponse?>(null) }
     var feed by remember { mutableStateOf<List<TodayFeedEntry>>(emptyList()) }
+    val usbDisconnected = remember { AtomicBoolean(false) }
+    var currentReader by remember { mutableStateOf<BiometricReader?>(null) }
 
     suspend fun refreshQueued() { queued = runCatching { dao.count() }.getOrDefault(0) }
 
@@ -201,6 +210,30 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
         onDispose { runCatching { cm.unregisterNetworkCallback(cb) } }
     }
 
+    // Monitoreo de desconexión USB
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                    usbDisconnected.set(true)
+                    readerStatus = ReaderStatus.DISCONNECTED
+                    lastError = ""
+                    result = null
+                    runCatching { currentReader?.close() }
+                    currentReader = null
+                }
+            }
+        }
+        val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(receiver, filter)
+        }
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
+
     // Sincronización periódica
     LaunchedEffect(online) {
         while (isActive) {
@@ -213,28 +246,36 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     // Bucle de captura
     LaunchedEffect(Unit) {
         while (isActive) {
+            usbDisconnected.set(false)
             readerStatus = ReaderStatus.CONNECTING
+            lastError = ""
             val reader = BiometricReader.create(context)
+            currentReader = reader
             try {
-                reader.open { st -> readerStatus = st }
+                reader.open { st ->
+                    if (!usbDisconnected.get()) readerStatus = st
+                }
             } catch (e: Exception) {
-                // open() ya fijó NO_DEVICE / ERROR según el caso; no lo pisamos.
+                currentReader = null
+                lastError = e.message ?: "Error desconocido"
                 if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
                 delay(5_000); continue
             }
-            while (isActive) {
+            while (isActive && !usbDisconnected.get()) {
                 try {
                     result = null
                     val template = reader.capture(20_000)
-                    processCapture(template)
+                    if (!usbDisconnected.get()) processCapture(template)
                     delay(10_000)
                     result = null
                 } catch (e: Exception) {
+                    if (usbDisconnected.get()) break
                     delay(800)
-                    if (readerStatus != ReaderStatus.READY && readerStatus != ReaderStatus.SIM) break
+                    if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
                 }
             }
-            reader.close()
+            runCatching { reader.close() }
+            currentReader = null
         }
     }
 
@@ -267,7 +308,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
                         Text(
                             when (readerStatus) {
                                 ReaderStatus.CONNECTING -> "Conectando lector…"
-                                ReaderStatus.ERROR -> "No se puede abrir el lector"
+                                ReaderStatus.ERROR -> "Error: $lastError"
                                 ReaderStatus.NO_DEVICE -> "Conecte el lector por USB-OTG"
                                 ReaderStatus.DISCONNECTED -> "Reconectando…"
                                 else -> "Esperando huella…"
@@ -320,7 +361,6 @@ private fun ReaderPill(status: ReaderStatus, modifier: Modifier) {
         ReaderStatus.NO_DEVICE -> "Lector no detectado" to ErrorRed
         ReaderStatus.ERROR -> "Error de conexión al lector" to ErrorRed
         ReaderStatus.DISCONNECTED -> "Lector desconectado" to ErrorRed
-        ReaderStatus.SIM -> "Modo SIMULADO (sin ZK9500)" to Sim
     }
     Text(text, color = color, modifier = modifier)
 }

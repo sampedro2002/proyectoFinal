@@ -100,9 +100,10 @@ dependencies {
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // Cola offline (Room) — reemplaza IndexedDB del frontend web
-    implementation("androidx.room:room-runtime:2.6.1")
-    implementation("androidx.room:room-ktx:2.6.1")
-    ksp("androidx.room:room-compiler:2.6.1")
+    val room_version = "2.7.0-alpha12"
+    implementation("androidx.room:room-runtime:$room_version")
+    implementation("androidx.room:room-ktx:$room_version")
+    ksp("androidx.room:room-compiler:$room_version")
 
     // SDK del lector ZK9500 (ZKTeco Biometric SDK: zkandroidcore/fpreader/fingerservice).
     // Los .jar están en app/libs/ y las librerías nativas (.so) en src/main/jniLibs/.

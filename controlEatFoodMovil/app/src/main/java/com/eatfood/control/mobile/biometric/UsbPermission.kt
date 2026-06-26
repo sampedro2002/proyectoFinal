@@ -1,5 +1,6 @@
 package com.eatfood.control.mobile.biometric
 
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -9,6 +10,9 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
+import com.eatfood.control.mobile.EatFoodApp
+import com.eatfood.control.mobile.R
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -28,21 +32,39 @@ object UsbPermission {
     private const val TAG = "UsbPermission"
     private const val ACTION_USB_PERMISSION = "com.eatfood.control.mobile.USB_PERMISSION"
 
-    /** VIDs de ZKTeco (0x1B55 y 0x079B). Mantener en sync con device_filter.xml. */
-    private val ZK_VENDOR_IDS = setOf(6997, 1947)
+    private val ZK_VENDOR_IDS = setOf(6997, 1947, 0x1B55, 0x079B, 0x28E9, 0x0783)
+
+    private val ZK_PRODUCT_KEYWORDS = listOf("zk", "fingerprint", "biometric", "slk", "9500")
 
     sealed class Result {
         data class Granted(val device: UsbDevice) : Result()
-        /** El lector no está conectado por USB-OTG. */
         object NoDevice : Result()
-        /** El usuario rechazó el permiso de acceso al dispositivo. */
         object Denied : Result()
     }
 
-    /** Busca el lector ZK conectado por USB-OTG, o null si no hay ninguno. */
     fun findReader(context: Context): UsbDevice? {
         val um = context.getSystemService(Context.USB_SERVICE) as? UsbManager ?: return null
-        return um.deviceList.values.firstOrNull { it.vendorId in ZK_VENDOR_IDS }
+        val allDevices = um.deviceList.values.toList()
+        Log.i(TAG, "Buscando lector ZK entre ${allDevices.size} dispositivo(s) USB…")
+        allDevices.forEach { dev ->
+            Log.i(TAG, "  → VID=${dev.vendorId} (0x${dev.vendorId.toString(16)})  PID=${dev.productId} (0x${dev.productId.toString(16)})  producto='${dev.productName ?: "?"}'  fabricante='${dev.manufacturerName ?: "?"}'")
+        }
+        val byVid = allDevices.firstOrNull { it.vendorId in ZK_VENDOR_IDS }
+        if (byVid != null) {
+            Log.i(TAG, "Lector encontrado por VID: ${byVid.vendorId}")
+            return byVid
+        }
+        val byName = allDevices.firstOrNull { dev ->
+            val name = (dev.productName ?: "").lowercase()
+            val mfg = (dev.manufacturerName ?: "").lowercase()
+            ZK_PRODUCT_KEYWORDS.any { it in name || it in mfg }
+        }
+        if (byName != null) {
+            Log.i(TAG, "Lector encontrado por nombre: '${byName.productName}' (fabricante: '${byName.manufacturerName}')")
+            return byName
+        }
+        Log.w(TAG, "No se encontró ningún lector ZK entre los dispositivos USB conectados")
+        return null
     }
 
     /**
@@ -83,7 +105,21 @@ object UsbPermission {
             cont.invokeOnCancellation { runCatching { context.unregisterReceiver(receiver) } }
 
             Log.i(TAG, "Solicitando permiso USB para ${device.deviceName} (VID ${device.vendorId})")
+            showNotification(context)
             um.requestPermission(device, pending)
         }
+    }
+
+    private fun showNotification(context: Context) {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val notification = NotificationCompat.Builder(context, EatFoodApp.CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // Asegúrate de que este icono existe o usa uno válido
+            .setContentTitle("Lector USB Detectado")
+            .setContentText("Pulsa para conceder permisos al lector biométrico ZKTeco.")
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .build()
+
+        notificationManager.notify(1001, notification)
     }
 }
