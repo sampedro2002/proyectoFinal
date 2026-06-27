@@ -1,9 +1,9 @@
 package com.eatfood.control.security;
 
+import com.eatfood.control.config.AppProperties;
 import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.Cipher;
@@ -32,12 +32,24 @@ public class AesFingerprintConverter implements AttributeConverter<byte[], byte[
     private static final String ALGORITHM = "AES/CBC/PKCS5Padding";
     private static final int IV_LENGTH = 16;
     private static final int KEY_LENGTH = 16;
+    /**
+     * Clave por defecto usada sólo si no se define {@code app.biometric.encryption-key}
+     * ni la variable de entorno {@code BIOMETRIC_ENCRYPTION_KEY}.
+     * <p><b>Importante:</b> en producción SIEMPRE debe definirse la env var para evitar
+     * usar esta clave compartida.</p>
+     */
+    private static final String DEFAULT_KEY = "DefaultSecretKeyForFpEncryption123";
 
     private final SecretKeySpec keySpec;
     private final SecureRandom secureRandom = new SecureRandom();
 
-    public AesFingerprintConverter(
-            @Value("${app.biometric.encryption-key:DefaultSecretKeyForFpEncryption123}") String secretKey) {
+    public AesFingerprintConverter(AppProperties props) {
+        String secretKey = props.getBiometric().getEncryptionKey();
+        if (secretKey == null || secretKey.isBlank()) {
+            log.warn("[CRYPT] No se configuró 'app.biometric.encryption-key'. " +
+                    "Se usará la clave por defecto (NO recomendado para producción).");
+            secretKey = DEFAULT_KEY;
+        }
         byte[] keyBytes = new byte[KEY_LENGTH];
         byte[] sourceBytes = secretKey.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         System.arraycopy(sourceBytes, 0, keyBytes, 0, Math.min(sourceBytes.length, KEY_LENGTH));

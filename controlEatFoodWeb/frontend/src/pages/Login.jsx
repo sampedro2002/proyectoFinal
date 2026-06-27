@@ -5,7 +5,7 @@ import { useAuth } from '../auth/AuthContext.jsx';
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [username, setUsername] = useState('admin');
+  const [username, setUsername] = useState(import.meta.env.DEV ? 'admin' : '');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -31,7 +31,7 @@ export default function Login() {
         <h1>🍽 Control de Alimentos</h1>
         <div className="field">
           <label>Usuario</label>
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+          <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
         </div>
         <div className="field">
           <label>Contraseña</label>

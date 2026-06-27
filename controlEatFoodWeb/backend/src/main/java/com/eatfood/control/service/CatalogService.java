@@ -135,7 +135,10 @@ public class CatalogService {
         if (!req.endTime().isAfter(req.startTime())) {
             throw new BusinessException("INVALID_RANGE", "La hora fin debe ser posterior a la hora inicio.");
         }
-        Schedule s = scheduleRepository.findByMealTypeIdAndActiveTrue(req.mealTypeId())
+        // Reutilizar el Schedule existente para el MealType (sin importar si está activo
+        // o inactivo) en lugar de crear uno nuevo: el índice UNIQUE uq_schedule_meal
+        // impide tener dos filas para el mismo meal_type_id.
+        Schedule s = scheduleRepository.findByMealTypeId(req.mealTypeId())
                 .orElseGet(Schedule::new);
         s.setMealType(meal);
         s.setStartTime(req.startTime());

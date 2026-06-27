@@ -58,10 +58,16 @@ export class ZkFingerClient {
     this.ready = false;
     this.onStatus = onStatus || (() => {});
     this.onProgress = onProgress || (() => {});
+    this.onCapture = null;
     this._pendingCapture = null;
     // Permite sobrescribir la URL por instancia; si no, usa la guardada/default
     this.wsUrl = wsUrl || getWsUrl();
     this.heartbeatTimer = null;
+    // Cola FIFO para serializar las capturas en modo continuo: evita que dos
+    // plantillas lleguen casi simultáneas y se procesen en paralelo (lo que
+    // causaría registros dobles / parpadeos en el Kiosk).
+    this._captureQueue = [];
+    this._captureProcessing = false;
   }
 
   async connect() {
@@ -89,12 +95,15 @@ export class ZkFingerClient {
       const timeout = setTimeout(() => {
         if (!this.ready) {
           reject(new Error('No se pudo conectar al agente ZKFinger en ' + this.wsUrl));
+          // Cerrar el ws para no dejar la conexión colgada tras el timeout.
+          try { this.ws && this.ws.close(); } catch (_) {}
         }
       }, 5000);
 
       this.ws.onopen = () => {
         this.send({ cmd: 'open' });
-        this.startHeartbeat();
+        // El heartbeat arranca cuando el dispositivo responde 'open' exitosamente
+        // (ver parseMessage), no aquí, para evitar latidos sobre una sesión aún no abierta.
       };
       this.ws.onerror = () => {
         clearTimeout(timeout);
@@ -112,11 +121,12 @@ export class ZkFingerClient {
 
   parseMessage(data, resolveConnect, onResolved) {
     let msg;
-    try { msg = JSON.parse(data); } catch { return; }
+    try { msg = JSON.parse(data); } catch { console.warn('[ZkFingerClient] Mensaje no-JSON ignorado:', data); return; }
 
     if (msg.ret === 'open') {
       this.ready = !!msg.result;
       this.onStatus(this.ready ? 'ready' : 'no-device');
+      if (this.ready) this.startHeartbeat();
       if (onResolved) onResolved();
       if (resolveConnect) resolveConnect();
     }
@@ -136,19 +146,43 @@ export class ZkFingerClient {
       this.onProgress(msg.step, msg.total);
       return;
     }
-    if (msg.ret === 'capture' || msg.template) {
-      const template = msg.template || null;
+    if (msg.ret === 'capture' && msg.template) {
+      const template = msg.template;
       console.log('[ZkFingerClient] Mensaje capture recibido, template present:', !!template);
-      if (this.onCapture && template) {
-        this.onCapture(template);
+      if (this.onCapture) {
+        // Encolar y procesar de a una para evitar capturas paralelas en el Kiosk.
+        this._captureQueue.push(template);
+        this._drainCaptureQueue();
       } else if (this._pendingCapture) {
-        const { resolve, reject } = this._pendingCapture;
+        const { resolve, timer } = this._pendingCapture;
         this._pendingCapture = null;
+        if (timer) clearTimeout(timer);
         console.log('[ZkFingerClient] Resolviendo promesa pendiente...');
-        template ? resolve(template) : reject(new Error('Captura sin plantilla'));
+        resolve(template);
       } else {
         console.warn('[ZkFingerClient] Se recibió captura pero no había promesa pendiente (posible timeout previo).');
       }
+    }
+  }
+
+  /**
+   * Procesa la cola de capturas en modo continuo, una a la vez, invocando
+   * `onCapture` y esperando a que termine antes de despachar la siguiente.
+   */
+  async _drainCaptureQueue() {
+    if (this._captureProcessing) return;
+    if (!this.onCapture) return;
+    const next = this._captureQueue.shift();
+    if (!next) return;
+    this._captureProcessing = true;
+    try {
+      await this.onCapture(next);
+    } catch (e) {
+      console.error('[ZkFingerClient] Error en onCapture:', e);
+    } finally {
+      this._captureProcessing = false;
+      // Si quedan más capturas encoladas, seguir drenando.
+      if (this._captureQueue.length > 0) this._drainCaptureQueue();
     }
   }
 
@@ -182,20 +216,32 @@ export class ZkFingerClient {
   capture(timeoutMs = 15000, mode = 'scan') {
     return new Promise((resolve, reject) => {
       if (!this.ready) return reject(new Error('Lector no disponible'));
-      this._pendingCapture = { resolve, reject };
-      this.send({ cmd: 'capture', mode, fakeData: false });
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (this._pendingCapture) {
           this._pendingCapture = null;
           reject(new Error('Tiempo de espera agotado'));
         }
       }, timeoutMs);
+      this._pendingCapture = { resolve, reject, timer };
+      this.send({ cmd: 'capture', mode, fakeData: false });
     });
   }
 
   close() {
     this.stopHeartbeat();
-    if (this.ws) this.ws.close();
+    if (this.ws) {
+      // Nular handlers antes de cerrar para que eventos residuales (onclose/onerror)
+      // no disparen callbacks sobre un cliente ya cerrado.
+      this.ws.onopen = null;
+      this.ws.onerror = null;
+      this.ws.onclose = null;
+      this.ws.onmessage = null;
+      try { this.ws.close(); } catch (_) {}
+      this.ws = null;
+    }
     this.ready = false;
+    this._pendingCapture = null;
+    this._captureQueue = [];
+    this._captureProcessing = false;
   }
 }

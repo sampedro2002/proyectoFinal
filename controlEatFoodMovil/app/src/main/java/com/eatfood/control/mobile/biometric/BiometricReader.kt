@@ -3,7 +3,7 @@ package com.eatfood.control.mobile.biometric
 import android.content.Context
 
 /** Estado del lector, equivalente a los READER_STATUS del Kiosk web. */
-enum class ReaderStatus { CONNECTING, READY, NO_DEVICE, ERROR, DISCONNECTED }
+enum class ReaderStatus { CONNECTING, READY, NO_DEVICE, ERROR, DISCONNECTED, SIM }
 
 /**
  * Abstracción del lector biométrico. La salida es SIEMPRE una plantilla
@@ -20,7 +20,14 @@ interface BiometricReader {
     fun close()
 
     companion object {
-        /** Crea el lector ZK9500. */
-        fun create(context: Context): BiometricReader = ZkBiometricReader(context)
+        /** Crea el lector según la preferencia guardada (zk por defecto). */
+        fun create(context: Context): BiometricReader {
+            val store = com.eatfood.control.mobile.data.prefs.SessionStore.get(context)
+            return if (store.biometricProvider == "zk") {
+                ZkBiometricReader(context)
+            } else {
+                SimBiometricReader()
+            }
+        }
     }
 }

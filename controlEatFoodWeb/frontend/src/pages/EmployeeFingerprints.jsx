@@ -33,6 +33,15 @@ export default function EmployeeFingerprints() {
   }
   useEffect(() => { load(); }, [id]);
 
+  // Cerrar el WebSocket del lector si el componente se desmonta en medio de una
+  // captura (p. ej. el usuario navega a otra página mientras enrola).
+  useEffect(() => {
+    return () => {
+      try { clientRef.current && clientRef.current.close(); } catch (_) {}
+      clientRef.current = null;
+    };
+  }, []);
+
   async function enroll() {
     setMsg('');
     if (fingerprints.length >= 3) { setMsg('Máximo 3 huellas por empleado.'); return; }
@@ -60,6 +69,7 @@ export default function EmployeeFingerprints() {
       setMsg('Coloque el dedo en el lector... (1/3)');
       const templateB64 = await client.capture(60000, 'register');
       client.close();
+      clientRef.current = null;
       setStatus('saving');
       setMsg('');
       await api.post('/fingerprints/enroll', {
@@ -69,6 +79,8 @@ export default function EmployeeFingerprints() {
       setMsg('Huella registrada correctamente.');
       load();
     } catch (err) {
+      try { clientRef.current && clientRef.current.close(); } catch (_) {}
+      clientRef.current = null;
       setStatus('idle');
       setMsg(err.response?.data?.message || err.message || 'Error al registrar la huella');
     }
@@ -76,8 +88,12 @@ export default function EmployeeFingerprints() {
 
   async function removeFp(fpId) {
     if (!confirm('¿Eliminar esta huella?')) return;
-    await api.delete(`/fingerprints/${fpId}`);
-    load();
+    try {
+      await api.delete(`/fingerprints/${fpId}`);
+      load();
+    } catch (err) {
+      setMsg(err.response?.data?.message || 'Error al eliminar la huella');
+    }
   }
 
   return (

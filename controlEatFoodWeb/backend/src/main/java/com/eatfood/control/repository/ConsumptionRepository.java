@@ -1,6 +1,7 @@
 package com.eatfood.control.repository;
 
 import com.eatfood.control.domain.Consumption;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,10 +15,19 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     boolean existsByEmployeeIdAndMealTypeIdAndBusinessDate(Long employeeId, Long mealTypeId, LocalDate businessDate);
 
+    Optional<Consumption> findByEmployeeIdAndMealTypeIdAndBusinessDate(Long employeeId, Long mealTypeId, LocalDate businessDate);
+
     Optional<Consumption> findByClientUuid(UUID clientUuid);
 
     List<Consumption> findByBusinessDateAndCateringId(LocalDate businessDate, Long cateringId);
 
+    /**
+     * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
+     * las relaciones LAZY ({@code employee.position}, {@code catering}, {@code mealType})
+     * que {@link com.eatfood.control.service.ReportService#toRow} accede después,
+     * evitando un problema de N+1 SELECT.
+     */
+    @EntityGraph(attributePaths = {"employee.position", "catering", "mealType"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to

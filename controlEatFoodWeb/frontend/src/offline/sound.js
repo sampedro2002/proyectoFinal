@@ -2,6 +2,11 @@
 let ctx;
 function audio() {
   if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // En navegadores modernos el AudioContext arranca "suspended" hasta que hay un
+  // gesto del usuario; intentar resume() aquí (silencioso si ya está running).
+  if (ctx.state === 'suspended') {
+    ctx.resume().catch(() => {});
+  }
   return ctx;
 }
 

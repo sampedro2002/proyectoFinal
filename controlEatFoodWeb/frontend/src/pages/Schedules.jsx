@@ -6,14 +6,20 @@ export default function Schedules() {
   const [meals, setMeals] = useState([]);
   const [edit, setEdit] = useState({});
   const [errors, setErrors] = useState({});
+  const [loadError, setLoadError] = useState('');
 
   async function load() {
-    const [s, m] = await Promise.all([api.get('/schedules'), api.get('/meal-types')]);
-    setSchedules(s.data);
-    setMeals(m.data);
-    const map = {};
-    s.data.forEach((x) => { map[x.mealTypeId] = { startTime: x.startTime, endTime: x.endTime }; });
-    setEdit(map);
+    setLoadError('');
+    try {
+      const [s, m] = await Promise.all([api.get('/schedules'), api.get('/meal-types')]);
+      setSchedules(s.data);
+      setMeals(m.data);
+      const map = {};
+      s.data.forEach((x) => { map[x.mealTypeId] = { startTime: x.startTime, endTime: x.endTime }; });
+      setEdit(map);
+    } catch (err) {
+      setLoadError(err.response?.data?.message || 'No se pudieron cargar los horarios');
+    }
   }
   useEffect(() => { load(); }, []);
 
@@ -31,6 +37,7 @@ export default function Schedules() {
   return (
     <div>
       <h2>Horarios (globales)</h2>
+      {loadError && <p className="error-text">{loadError}</p>}
       <div className="card" style={{ maxWidth: 560 }}>
         <table>
           <thead><tr><th>Comida</th><th>Inicio</th><th>Fin</th><th></th></tr></thead>

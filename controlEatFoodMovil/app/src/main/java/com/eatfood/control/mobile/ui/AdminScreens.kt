@@ -1,5 +1,6 @@
 package com.eatfood.control.mobile.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -8,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -542,13 +544,37 @@ fun ExtraMealsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
+    // Catálogos cargados al inicio: caterings y tipos de comida
+    var caterings by remember { mutableStateOf<List<CateringResponse>>(emptyList()) }
+    var mealTypes by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
+    var selectedCateringId by remember { mutableStateOf<Long?>(null) }
+
+    // Búsqueda de empleado existente
     var employees by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
     var term by remember { mutableStateOf("") }
     var selectedEmployee by remember { mutableStateOf<EmployeeResponse?>(null) }
+
+    // Persona externa
+    var isExternal by remember { mutableStateOf(false) }
+    var extName by remember { mutableStateOf("") }
+    var extCard by remember { mutableStateOf("") }
+
+    // Comidas a registrar (LUNCH / SNACK)
     var almuerzo by remember { mutableStateOf(false) }
     var merienda by remember { mutableStateOf(false) }
+
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isEditing by remember { mutableStateOf(false) }
+
+    // Carga inicial de caterings y meal types
+    LaunchedEffect(Unit) {
+        runCatching { api.caterings() }.onSuccess { list ->
+            caterings = list
+            if (selectedCateringId == null && list.isNotEmpty()) selectedCateringId = list.first().id
+        }
+        runCatching { api.mealTypes() }.onSuccess { mealTypes = it }
+    }
 
     suspend fun searchEmployees() {
         if (term.isBlank()) { employees = emptyList(); return }
@@ -560,52 +586,148 @@ fun ExtraMealsScreen() {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Registrar Almuerzos Extra", style = MaterialTheme.typography.titleLarge)
+            Text("Gestión de Almuerzos Extra", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))
 
-            OutlinedTextField(
-                value = term, onValueChange = { term = it },
-                label = { Text("Buscar empleado por nombre") }, singleLine = true,
-                trailingIcon = { TextButton(onClick = { scope.launch { searchEmployees() } }) { Text("Buscar") } },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            if (employees.isNotEmpty() && selectedEmployee == null) {
-                Spacer(Modifier.height(8.dp))
-                Card(Modifier.fillMaxWidth()) {
-                    Column {
-                        employees.forEach { e ->
-                            RowItem(
-                                title = e.fullName,
-                                subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"}",
-                                onClick = { selectedEmployee = e; employees = emptyList() }
+            if (!isEditing) {
+                // Selector de catering (el backend lo exige @NotNull)
+                Text("Catering:", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                Box {
+                    var catMenu by remember { mutableStateOf(false) }
+                    OutlinedTextField(
+                        value = caterings.firstOrNull { it.id == selectedCateringId }?.name
+                            ?: "Seleccione catering",
+                        onValueChange = {},
+                        readOnly = true,
+                        enabled = caterings.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth().clickable { catMenu = true }
+                    )
+                    DropdownMenu(catMenu, { catMenu = false }) {
+                        caterings.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text(c.name) },
+                                onClick = { selectedCateringId = c.id; catMenu = false }
                             )
                         }
                     }
                 }
-            }
 
-            selectedEmployee?.let { emp ->
                 Spacer(Modifier.height(16.dp))
+                OutlinedTextField(
+                    value = term, onValueChange = { term = it },
+                    label = { Text("Buscar empleado existente") }, singleLine = true,
+                    trailingIcon = { IconButton(onClick = { scope.launch { searchEmployees() } }) { Icon(Icons.Default.Search, null) } },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                if (employees.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Card(Modifier.fillMaxWidth()) {
+                        Column {
+                            employees.forEach { e ->
+                                RowItem(
+                                    title = e.fullName,
+                                    subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"}",
+                                    onClick = {
+                                        selectedEmployee = e
+                                        isExternal = false
+                                        isEditing = true
+                                        employees = emptyList()
+                                        term = ""
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        selectedEmployee = null
+                        extName = ""
+                        extCard = ""
+                        isExternal = true
+                        isEditing = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                ) {
+                    Icon(Icons.Default.Add, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Agregar persona externa")
+                }
+            } else {
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp)) {
-                        Text("Empleado seleccionado", style = MaterialTheme.typography.titleMedium)
-                        Text(emp.fullName, style = MaterialTheme.typography.bodyLarge)
-                        Text("CI ${emp.identityCard}", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            if (isExternal) "Nueva Persona Externa" else "Registrar para Empleado",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                         Spacer(Modifier.height(12.dp))
-                        Text("Tipo de comida:", style = MaterialTheme.typography.titleSmall)
+
+                        // Catering seleccionado (sólo lectura en modo edición)
+                        Text(
+                            "Catering: ${caterings.firstOrNull { it.id == selectedCateringId }?.name ?: "—"}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(12.dp))
+
+                        if (isExternal) {
+                            OutlinedTextField(
+                                value = extName, onValueChange = { extName = it },
+                                label = { Text("Nombre completo") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = extCard, onValueChange = { extCard = it },
+                                label = { Text("Cédula / ID") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        } else {
+                            // Empleado seleccionado: mostrar datos (sólo lectura)
+                            OutlinedTextField(
+                                value = selectedEmployee?.fullName ?: "",
+                                onValueChange = {},
+                                label = { Text("Nombre") },
+                                readOnly = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = selectedEmployee?.identityCard ?: "",
+                                onValueChange = {},
+                                label = { Text("Cédula") },
+                                readOnly = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(almuerzo, { almuerzo = it })
-                            Text("Almuerzo")
-                        }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Almuerzo", Modifier.clickable { almuerzo = !almuerzo })
+                            Spacer(Modifier.width(20.dp))
                             Checkbox(merienda, { merienda = it })
-                            Text("Merienda")
+                            Text("Merienda", Modifier.clickable { merienda = !merienda })
                         }
-                        Spacer(Modifier.height(12.dp))
+
+                        Spacer(Modifier.height(20.dp))
+                        val canSubmit = !busy && (almuerzo || merienda) &&
+                            selectedCateringId != null &&
+                            if (isExternal) extName.isNotBlank() && extCard.isNotBlank()
+                            else selectedEmployee != null
+
                         Button(
-                            enabled = !busy && (almuerzo || merienda),
+                            enabled = canSubmit,
                             onClick = {
                                 busy = true
                                 scope.launch {
@@ -613,30 +735,59 @@ fun ExtraMealsScreen() {
                                     if (almuerzo) codes.add("LUNCH")
                                     if (merienda) codes.add("SNACK")
                                     val res = mutableListOf<String>()
+                                    val cateringId = selectedCateringId!!
                                     for (code in codes) {
-                                        runCatching { api.manualScan(ManualScanRequest(emp.fullName, code)) }
-                                            .onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
-                                            .onFailure { e -> res.add("${code}: ${e.apiMessage("Error")}") }
+                                        if (isExternal) {
+                                            runCatching {
+                                                api.manualScanExternal(
+                                                    ExternalScanRequest(extCard.trim(), extName.trim(), code, cateringId)
+                                                )
+                                            }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
+                                             .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
+                                        } else {
+                                            runCatching {
+                                                api.manualScan(
+                                                    ManualScanRequest(selectedEmployee!!.id, code, cateringId)
+                                                )
+                                            }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
+                                             .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
+                                        }
                                     }
                                     results = res
-                                    almuerzo = false; merienda = false
-                                    selectedEmployee = null
+                                    if (res.none { it.contains("Error") }) {
+                                        snackbar.showSnackbar("Registros guardados con éxito")
+                                        isEditing = false
+                                        almuerzo = false; merienda = false
+                                        selectedEmployee = null
+                                        extName = ""; extCard = ""
+                                    }
                                     busy = false
                                 }
                             },
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (busy) "Registrando…" else "Registrar") }
-                        TextButton(onClick = { selectedEmployee = null }) { Text("Cancelar") }
+                        ) { Text(if (busy) "Guardando…" else "Confirmar Registro") }
+
+                        TextButton(
+                            onClick = {
+                                isEditing = false
+                                results = emptyList()
+                                selectedEmployee = null
+                                extName = ""; extCard = ""
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Cancelar") }
                     }
                 }
             }
 
             if (results.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
-                Text("Resultados", style = MaterialTheme.typography.titleMedium)
                 results.forEach { r ->
-                    Text(r, style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(vertical = 2.dp))
+                    Text(
+                        r,
+                        color = if (r.contains("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
                 }
             }
         }

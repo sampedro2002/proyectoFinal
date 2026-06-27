@@ -283,6 +283,7 @@ public class ZkBiometricMatcher implements BiometricMatcher {
     }
 
     /** Devuelve el número de plantillas actualmente cargadas en el índice en memoria. */
+    @Override
     public int indexSize() {
         return fidToEmployee.size();
     }
@@ -345,6 +346,7 @@ public class ZkBiometricMatcher implements BiometricMatcher {
         return Optional.of(new MatchResult(employeeId, fid.getValue(), score.getValue()));
     }
 
+    @Override
     public boolean isReady() {
         return ready;
     }

@@ -8,10 +8,13 @@ export default function Reports() {
   const [rows, setRows] = useState([]);
   const [caterings, setCaterings] = useState([]);
   const [meals, setMeals] = useState([]);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    api.get('/caterings').then((r) => setCaterings(r.data));
-    api.get('/meal-types').then((r) => setMeals(r.data));
+    Promise.all([
+      api.get('/caterings').then((r) => setCaterings(r.data)).catch(() => {}),
+      api.get('/meal-types').then((r) => setMeals(r.data)).catch(() => {}),
+    ]);
   }, []);
 
   function params() {
@@ -22,25 +25,39 @@ export default function Reports() {
   }
 
   async function search() {
-    const { data } = await api.get('/reports/consumptions', { params: params() });
-    setRows(data);
+    setError('');
+    try {
+      const { data } = await api.get('/reports/consumptions', { params: params() });
+      setRows(data);
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo cargar el reporte');
+    }
   }
 
   async function exportFile(format) {
-    const res = await api.get('/reports/export', {
-      params: { ...params(), format }, responseType: 'blob'
-    });
-    const url = URL.createObjectURL(res.data);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `consumos.${format === 'excel' ? 'xlsx' : format}`;
-    a.click();
-    URL.revokeObjectURL(url);
+    setError('');
+    try {
+      const res = await api.get('/reports/export', {
+        params: { ...params(), format }, responseType: 'blob'
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `consumos.${format === 'excel' ? 'xlsx' : format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Retrasar el revoke para que Firefox no interrumpa la descarga.
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudo exportar el reporte');
+    }
   }
 
   return (
     <div>
       <h2>Reportes de consumo</h2>
+      {error && <p className="error-text">{error}</p>}
       <div className="card">
         <div className="row">
           <div className="field"><label>Desde</label>

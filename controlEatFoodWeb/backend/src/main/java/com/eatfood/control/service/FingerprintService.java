@@ -75,17 +75,22 @@ public class FingerprintService {
             }
         }
 
-        // Si existe una huella inactiva para el mismo dedo, reactivarla en lugar de insertar una nueva
-        // fila. Esto evita violar la UNIQUE (employee_id, finger_index) del esquema cuando el usuario
-        // borró la huella anterior del mismo dedo y desea re-registrarla.
-        Optional<Fingerprint> inactive = fingerprintRepository
+        // Si existe una huella (activa o inactiva) para el mismo dedo, reutilizarla en
+        // lugar de insertar una nueva fila. Esto evita violar la UNIQUE
+        // (employee_id, finger_index) del esquema cuando el usuario re-registra un dedo
+        // que ya tenía una huella (activa o previamente borrada).
+        Optional<Fingerprint> existing = fingerprintRepository
                 .findByEmployeeIdAndFingerIndexAndActiveFalse(employee.getId(), req.fingerIndex());
+        if (existing.isEmpty()) {
+            existing = fingerprintRepository
+                    .findByEmployeeIdAndFingerIndexAndActiveTrue(employee.getId(), req.fingerIndex());
+        }
 
         Fingerprint fp;
-        if (inactive.isPresent()) {
-            log.info("enroll: reactivando huella inactiva id={} para empleado={}, dedo={}.",
-                    inactive.get().getId(), employee.getId(), req.fingerIndex());
-            fp = inactive.get();
+        if (existing.isPresent()) {
+            log.info("enroll: reactivando/actualizando huella id={} para empleado={}, dedo={}.",
+                    existing.get().getId(), employee.getId(), req.fingerIndex());
+            fp = existing.get();
             fp.setTemplate(template);
             fp.setEnrolledBy(currentUserId());
             fp.setEnrolledAt(OffsetDateTime.now());

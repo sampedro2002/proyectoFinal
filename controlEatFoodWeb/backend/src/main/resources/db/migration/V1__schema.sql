@@ -86,18 +86,10 @@ CREATE TABLE fingerprint (
 );
 CREATE INDEX idx_fingerprint_employee ON fingerprint(employee_id);
 
-DELIMITER $$
-CREATE TRIGGER check_max_fingerprints
-BEFORE INSERT ON fingerprint
-FOR EACH ROW
-BEGIN
-    DECLARE cnt INT;
-    SELECT COUNT(*) INTO cnt FROM fingerprint WHERE employee_id = NEW.employee_id AND active = TRUE;
-    IF cnt >= 3 THEN
-        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Un empleado no puede tener mas de 3 huellas activas';
-    END IF;
-END$$
-DELIMITER ;
+-- Nota: el límite de 3 huellas activas por empleado se impone en FingerprintService
+-- (MAX_FINGERPRINTS = 3). Originalmente se planteó un TRIGGER MySQL, pero Flyway no
+-- soporta la directiva DELIMITER (propia del cliente `mysql`) y la unicidad lógica ya
+-- está garantizada por el servicio.
 
 -- ----------------------------------------------------------------------------
 -- CATERINGS

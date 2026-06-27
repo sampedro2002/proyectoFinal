@@ -49,6 +49,9 @@ app:
   biometric:
     provider: ${BIOMETRIC_PROVIDER:zk}
     match-threshold: 70
+    # Clave AES (mín. 16 bytes) para cifrar plantillas biométricas en BD.
+    # En producción defina BIOMETRIC_ENCRYPTION_KEY con un valor aleatorio.
+    encryption-key: ${BIOMETRIC_ENCRYPTION_KEY:}
     # Ruta donde se encuentran las librerías nativas del SDK ZKFinger (libzkfp.dll / .so)
     native-lib-path: ${ZK_NATIVE_PATH:./native}
   cors:

@@ -11,4 +11,5 @@ public interface FingerprintRepository extends JpaRepository<Fingerprint, Long> 
     long countByEmployeeIdAndActiveTrue(Long employeeId);
     List<Fingerprint> findByActiveTrue();
     Optional<Fingerprint> findByEmployeeIdAndFingerIndexAndActiveFalse(Long employeeId, Short fingerIndex);
+    Optional<Fingerprint> findByEmployeeIdAndFingerIndexAndActiveTrue(Long employeeId, Short fingerIndex);
 }

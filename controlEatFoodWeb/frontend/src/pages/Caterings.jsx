@@ -10,8 +10,11 @@ export default function Caterings() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
-  const load = () => api.get('/caterings').then((r) => setItems(r.data));
+  const load = () => api.get('/caterings')
+    .then((r) => { setItems(r.data); setLoadError(''); })
+    .catch((err) => { setItems([]); setLoadError(err.response?.data?.message || 'No se pudieron cargar los caterings'); });
   useEffect(() => { load(); }, []);
 
   async function save(e) {
@@ -32,6 +35,7 @@ export default function Caterings() {
         <h2 style={{ margin: 0 }}>Caterings</h2>
         {isAdmin && <button onClick={() => setForm({ ...empty })}>+ Nuevo</button>}
       </div>
+      {loadError && <p className="error-text">{loadError}</p>}
       <div className="card">
         <table>
           <thead><tr><th>Nombre</th><th>Ubicación</th><th>Máx. disp.</th><th>Conectados</th><th>Activo</th><th></th></tr></thead>
@@ -57,7 +61,10 @@ export default function Caterings() {
             <input value={form.location || ''} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
           <div className="field"><label>Máximo de dispositivos</label>
             <input type="number" min="1" value={form.maxDevices}
-              onChange={(e) => setForm({ ...form, maxDevices: Number(e.target.value) })} /></div>
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                setForm({ ...form, maxDevices: Number.isFinite(n) && n >= 1 ? n : 1 });
+              }} /></div>
           {error && <p className="error-text">{error}</p>}
           <div className="row">
             <button type="submit">Guardar</button>

@@ -112,4 +112,7 @@ interface ApiService {
     // ── Registro Manual de Consumos ────────────────────────────────────────────
     @POST("manual-consumptions")
     suspend fun manualScan(@Body body: ManualScanRequest): ManualScanResponse
+
+    @POST("manual-consumptions/external")
+    suspend fun manualScanExternal(@Body body: ExternalScanRequest): ManualScanResponse
 }

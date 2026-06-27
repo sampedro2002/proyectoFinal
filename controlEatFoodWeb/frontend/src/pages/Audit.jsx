@@ -4,9 +4,11 @@ import api from '../api/client.js';
 export default function Audit() {
   const [rows, setRows] = useState([]);
   const [entity, setEntity] = useState('');
+  const [error, setError] = useState('');
 
   const load = () => api.get('/audit', { params: { entity, size: 100, sort: 'createdAt,desc' } })
-    .then((r) => setRows(r.data.content || r.data));
+    .then((r) => { setRows(r.data.content || r.data); setError(''); })
+    .catch((err) => { setRows([]); setError(err.response?.data?.message || 'No se pudo cargar la auditoría'); });
   useEffect(() => { load(); }, []);
 
   return (
@@ -19,6 +21,7 @@ export default function Audit() {
           <button onClick={load}>Filtrar</button>
         </div>
       </div>
+      {error && <p className="error-text">{error}</p>}
       <div className="card">
         <table>
           <thead><tr>

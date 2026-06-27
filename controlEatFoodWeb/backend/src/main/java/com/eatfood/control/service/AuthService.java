@@ -9,9 +9,12 @@ import com.eatfood.control.repository.AppUserRepository;
 import com.eatfood.control.repository.LoginSessionRepository;
 import com.eatfood.control.security.JwtService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -28,6 +31,15 @@ public class AuthService {
     private final JwtService jwtService;
     private final AppProperties props;
     private final AuditService auditService;
+    /**
+     * Auto-referencia para invocar {@link #registerFailedAttempt} en una transacción
+     * independiente ({@link Propagation#REQUIRES_NEW}) y que el rollback del login
+     * NO revierta el registro del intento fallido (de lo contrario el contador de
+     * intentos nunca persistiría y la cuenta jamás se bloquearía).
+     */
+    @Autowired
+    @Lazy
+    private AuthService self;
 
     @Transactional
     public AuthResponse login(LoginRequest req) {
@@ -43,7 +55,9 @@ public class AuthService {
         }
 
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
-            registerFailedAttempt(user);
+            // Se invoca vía proxy (self) para que abra en una tx nueva y persista aunque
+            // el login termine lanzando BadCredentialsException (que revierte la tx padre).
+            self.registerFailedAttempt(user);
             throw new BadCredentialsException("Credenciales inválidas");
         }
 
@@ -56,7 +70,13 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    private void registerFailedAttempt(AppUser user) {
+    /**
+     * Registra un intento fallido de login en una transacción independiente
+     * ({@link Propagation#REQUIRES_NEW}) de modo que el rollback producido por el
+     * {@code BadCredentialsException} del método llamador NO deshaga este cambio.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void registerFailedAttempt(AppUser user) {
         int attempts = user.getFailedAttempts() + 1;
         user.setFailedAttempts(attempts);
         if (attempts >= props.getSecurity().getBruteForce().getMaxAttempts()) {
@@ -73,8 +93,9 @@ public class AuthService {
         LoginSession session = sessionRepository.findByRefreshTokenAndRevokedFalse(req.refreshToken())
                 .orElseThrow(() -> new BusinessException("INVALID_REFRESH", "Refresh token inválido."));
         if (session.getExpiresAt().isBefore(OffsetDateTime.now())) {
-            session.setRevoked(true);
-            sessionRepository.save(session);
+            // Revocar en tx nueva para que el revoke persista aunque el lanzamiento de
+            // la excepción revierta la tx padre.
+            self.revokeSession(session);
             throw new BusinessException("EXPIRED_REFRESH", "Sesión expirada, inicie sesión nuevamente.");
         }
         AppUser user = userRepository.findById(session.getUserId())
@@ -82,6 +103,12 @@ public class AuthService {
         session.setRevoked(true);
         sessionRepository.save(session);
         return issueTokens(user);
+    }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void revokeSession(LoginSession session) {
+        session.setRevoked(true);
+        sessionRepository.save(session);
     }
 
     @Transactional

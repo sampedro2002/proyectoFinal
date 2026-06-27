@@ -9,9 +9,10 @@ import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.net.URI;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @Slf4j
@@ -26,10 +27,10 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) throws Exception {
         URI uri = request.getURI();
-        Map<String, String> queryParams = parseQueryParams(uri.getQuery());
+        Map<String, List<String>> queryParams = UriComponentsBuilder.fromUri(uri).build().getQueryParams();
 
-        String token = queryParams.get("token");
-        String deviceToken = queryParams.get("deviceToken");
+        String token = first(queryParams.get("token"));
+        String deviceToken = first(queryParams.get("deviceToken"));
 
         // ── Ruta 1: JWT (panel de administración / registro de huellas) ──────
         if (token != null && !token.isBlank() && jwtService.isValid(token)) {
@@ -79,18 +80,10 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         // No requiere lógica adicional post-handshake
     }
 
-    private Map<String, String> parseQueryParams(String query) {
-        Map<String, String> params = new HashMap<>();
-        if (query == null || query.isBlank()) {
-            return params;
-        }
-        String[] pairs = query.split("&");
-        for (String pair : pairs) {
-            int idx = pair.indexOf("=");
-            if (idx > 0 && idx < pair.length() - 1) {
-                params.put(pair.substring(0, idx), pair.substring(idx + 1));
-            }
-        }
-        return params;
+    /** Devuelve el primer valor de una lista de parámetros (o null si no existe). */
+    private static String first(List<String> values) {
+        if (values == null || values.isEmpty()) return null;
+        String v = values.get(0);
+        return v == null ? null : v;
     }
 }

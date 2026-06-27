@@ -17,6 +17,7 @@ val OnPrimary = Color(0xFF04263A)
 val Success = Color(0xFF16A34A)
 val ErrorRed = Color(0xFFDC2626)
 val Warning = Color(0xFFF59E0B)
+val Sim = Color(0xFF8B5CF6)
 
 private val DarkColors = darkColorScheme(
     primary = Primary,

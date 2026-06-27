@@ -16,7 +16,7 @@ let refreshing = null;
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    const original = error.config;
+    const original = error?.config || {};
     const status = error.response?.status;
 
     if (status === 401 && !original._retry) {
@@ -26,15 +26,17 @@ api.interceptors.response.use(
       try {
         refreshing = refreshing || axios.post('/api/auth/refresh', { refreshToken });
         const { data } = await refreshing;
-        refreshing = null;
-        localStorage.setItem('accessToken', data.accessToken);
-        localStorage.setItem('refreshToken', data.refreshToken);
+        if (data?.accessToken) localStorage.setItem('accessToken', data.accessToken);
+        // Sólo sobrescribir el refreshToken si el backend entregó uno nuevo;
+        // si no, conservamos el anterior para no dejarlo como "undefined".
+        if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch (e) {
-        refreshing = null;
         onAuthFailure();
         return Promise.reject(e);
+      } finally {
+        refreshing = null;
       }
     }
 

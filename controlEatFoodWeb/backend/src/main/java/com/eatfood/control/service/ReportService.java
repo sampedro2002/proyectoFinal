@@ -24,6 +24,9 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class ReportService {
 
+    /** Huso horario de negocio (Ecuador). Coincide con spring.jpa.properties.hibernate.jdbc.time_zone. */
+    private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Guayaquil");
+
     private final ConsumptionRepository consumptionRepository;
     private final EmployeeRepository employeeRepository;
     private final MealTypeRepository mealTypeRepository;
@@ -48,7 +51,7 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public DashboardStats dashboard(LocalDate date) {
-        if (date == null) date = LocalDate.now();
+        if (date == null) date = LocalDate.now(BUSINESS_ZONE);
 
         Long lunchId = mealTypeRepository.findByCode("LUNCH").map(m -> m.getId()).orElse(null);
         Long snackId = mealTypeRepository.findByCode("SNACK").map(m -> m.getId()).orElse(null);
@@ -62,8 +65,8 @@ public class ReportService {
         long pending = Math.max(0, expected - consumed);
         double pct = expected == 0 ? 0 : Math.round((consumed * 10000.0 / expected)) / 100.0;
 
-        OffsetDateTime start = date.atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
-        OffsetDateTime end = date.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toOffsetDateTime();
+        OffsetDateTime start = date.atStartOfDay(BUSINESS_ZONE).toOffsetDateTime();
+        OffsetDateTime end = date.plusDays(1).atStartOfDay(BUSINESS_ZONE).toOffsetDateTime();
         List<com.eatfood.control.domain.FailedScan> failed = failedScanRepository.between(start, end);
         long notFound = failed.stream().filter(f -> "NOT_FOUND".equals(f.getReason())).count();
         long outOfSchedule = failed.stream().filter(f -> "OUT_OF_SCHEDULE".equals(f.getReason())).count();
@@ -74,7 +77,7 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public List<EmployeeNotConsumed> notConsumed(LocalDate date) {
-        if (date == null) date = LocalDate.now();
+        if (date == null) date = LocalDate.now(BUSINESS_ZONE);
         Set<Long> consumed = new HashSet<>(consumptionRepository.findConsumedEmployeeIds(date));
         List<EmployeeNotConsumed> result = new ArrayList<>();
         for (Employee e : employeeRepository.findByDeletedFalseAndStatus(EmployeeStatus.ACTIVE)) {

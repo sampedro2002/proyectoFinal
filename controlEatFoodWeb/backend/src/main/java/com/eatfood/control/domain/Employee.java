@@ -27,9 +27,6 @@ public class Employee extends Auditable {
     @Builder.Default
     private EmployeeStatus status = EmployeeStatus.ACTIVE;
 
-    @Column(name = "allowed_plates")
-    private Integer allowedPlates;
-
     @Column(name = "allows_lunch", nullable = false)
     @Builder.Default
     private boolean allowsLunch = true;

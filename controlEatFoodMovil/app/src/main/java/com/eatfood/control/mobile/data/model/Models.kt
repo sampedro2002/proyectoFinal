@@ -100,11 +100,13 @@ data class DeviceConnectResponse(
 
 data class ScanRequest(
     val sessionToken: String? = null,
-    val templateB64: String,
+    val templateB64: String? = null,
     val mealTypeCode: String? = null,
     val clientUuid: String? = null,
     val offline: Boolean? = null,
-    val consumedAt: String? = null
+    val consumedAt: String? = null,
+    val manualIdentityCard: String? = null,
+    val manualFullName: String? = null
 )
 
 data class ScanResponse(
@@ -182,9 +184,16 @@ data class ApiError(
 )
 
 data class ManualScanRequest(
-    val employeeName: String,
+    val employeeId: Long,
     val mealTypeCode: String,
-    val cateringId: Long? = null
+    val cateringId: Long
+)
+
+data class ExternalScanRequest(
+    val identityCard: String,
+    val fullName: String,
+    val mealTypeCode: String,
+    val cateringId: Long
 )
 
 data class ManualScanResponse(

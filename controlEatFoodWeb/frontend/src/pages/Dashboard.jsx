@@ -44,7 +44,7 @@ export default function Dashboard() {
         <Stat value={stats.expectedEmployees} label="Empleados esperados" />
         <Stat value={stats.employeesConsumed} label="Empleados que consumieron" />
         <Stat value={stats.employeesPending} label="Empleados pendientes" />
-        <Stat value={`${stats.consumptionPercentage}%`} label="Porcentaje de consumo" />
+        <Stat value={`${stats.consumptionPercentage ?? 0}%`} label="Porcentaje de consumo" />
       </div>
       <div className="grid cols-2">
         <Stat value={stats.failedNotFound} label="Huellas no reconocidas" />

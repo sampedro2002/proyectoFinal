@@ -1,6 +1,7 @@
 package com.eatfood.control.service;
 
 import com.eatfood.control.dto.ReportDtos.ConsumptionRow;
+import com.eatfood.control.exception.BusinessException;
 import com.lowagie.text.Document;
 import com.lowagie.text.Font;
 import com.lowagie.text.PageSize;
@@ -33,13 +34,13 @@ public class ExportService {
         StringBuilder sb = new StringBuilder();
         sb.append(String.join(";", HEADERS)).append("\n");
         for (ConsumptionRow r : rows) {
-            sb.append(r.businessDate()).append(';')
-              .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
-              .append(safe(r.identityCard())).append(';')
-              .append(safe(r.employeeName())).append(';')
-              .append(safe(r.positionName())).append(';')
-              .append(safe(r.cateringName())).append(';')
-              .append(safe(r.mealName())).append(';')
+            sb.append(csv(r.businessDate() != null ? r.businessDate().toString() : "")).append(';')
+              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+              .append(csv(r.identityCard())).append(';')
+              .append(csv(r.employeeName())).append(';')
+              .append(csv(r.positionName())).append(';')
+              .append(csv(r.cateringName())).append(';')
+              .append(csv(r.mealName())).append(';')
               .append(r.offline() ? "Sí" : "No").append('\n');
         }
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
@@ -75,7 +76,7 @@ public class ExportService {
             wb.write(out);
             return out.toByteArray();
         } catch (Exception e) {
-            throw new RuntimeException("Error generando Excel", e);
+            throw new BusinessException("EXPORT_FAILED", "No se pudo generar el Excel.");
         }
     }
 
@@ -112,8 +113,25 @@ public class ExportService {
             doc.close();
             return out.toByteArray();
         } catch (Exception e) {
-            throw new RuntimeException("Error generando PDF", e);
+            throw new BusinessException("EXPORT_FAILED", "No se pudo generar el PDF.");
         }
+    }
+
+    /**
+     * Escapa un valor para CSV según RFC 4180: si contiene comillas, punto y coma,
+     * salto de línea o comienza con caracteres que un visor podría interpretar como
+     * fórmula (=, +, -, @), se envuelve entre comillas duplicando las comillas internas.
+     */
+    private String csv(String v) {
+        if (v == null || v.isEmpty()) return "";
+        String s = v.replace(";", ","); // mantener separador ';'
+        boolean needsQuoting = s.indexOf(';') >= 0 || s.indexOf(',') >= 0
+                || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
+        boolean formulaLike = !s.isEmpty() && "=+-@".indexOf(s.charAt(0)) >= 0;
+        if (needsQuoting || formulaLike) {
+            s = "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
     }
 
     private String safe(String v) {

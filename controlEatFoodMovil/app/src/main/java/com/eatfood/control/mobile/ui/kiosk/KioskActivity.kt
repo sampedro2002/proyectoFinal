@@ -13,18 +13,26 @@ import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -39,6 +47,7 @@ import com.eatfood.control.mobile.data.model.TodayFeedEntry
 import com.eatfood.control.mobile.data.model.*
 import com.eatfood.control.mobile.data.prefs.SessionStore
 import com.eatfood.control.mobile.data.remote.ApiClient
+import com.eatfood.control.mobile.data.remote.apiError
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.ui.theme.*
 import com.eatfood.control.mobile.util.ToneFeedback
@@ -160,8 +169,16 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     var feed by remember { mutableStateOf<List<TodayFeedEntry>>(emptyList()) }
     val usbDisconnected = remember { AtomicBoolean(false) }
     var currentReader by remember { mutableStateOf<BiometricReader?>(null) }
+    var showTable by remember { mutableStateOf(true) }
 
     suspend fun refreshQueued() { queued = runCatching { dao.count() }.getOrDefault(0) }
+
+    suspend fun refreshFeed() {
+        runCatching {
+            val data = scanApi.todayFeed(session.sessionToken)
+            feed = data
+        }
+    }
 
     suspend fun syncQueue() {
         val items = dao.pending()
@@ -173,6 +190,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             res.results?.forEach { r -> if (r.status != "ERROR" && r.clientUuid != null) dao.remove(r.clientUuid) }
         }
         refreshQueued()
+        refreshFeed()
     }
 
     suspend fun processCapture(template: String) {
@@ -181,9 +199,42 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
         if (online) {
             try {
                 result = scanApi.scan(ScanRequest(session.sessionToken, template, null, clientUuid, false, consumedAt))
-                if (result?.status == "SUCCESS") ToneFeedback.success() else ToneFeedback.error()
+                if (result?.status == "SUCCESS") {
+                    ToneFeedback.success()
+                    refreshFeed()
+                } else {
+                    ToneFeedback.error()
+                }
                 return
-            } catch (_: Exception) { /* degradar a offline */ }
+            } catch (e: retrofit2.HttpException) {
+                val parsed = e.apiError()
+                // Sesión de dispositivo inválida/expirada → forzar reconexión
+                // (no encolar: el registro no podría sincronizarse tampoco).
+                if (parsed?.code == "INVALID_SESSION") {
+                    ToneFeedback.error()
+                    store.kioskSession = null
+                    onDisconnect()
+                    return
+                }
+                // Otros 4xx del backend (INVALID_TEMPLATE, VALIDATION, etc.) son
+                // errores reproducibles: mostrar el mensaje real antes que esconder
+                // el problema en la cola offline.
+                if (e.code() in 400..499) {
+                    result = ScanResponse("ERROR", e.apiMessage("Error del servidor"), null, null, null, consumedAt)
+                    ToneFeedback.error()
+                    return
+                }
+                // 5xx u otros errores HTTP → degradar a offline (pueden ser transitorios)
+            } catch (_: java.net.UnknownHostException) { /* sin red → offline */ }
+              catch (_: java.net.ConnectException) { /* servidor caído → offline */ }
+              catch (_: java.net.SocketTimeoutException) { /* timeout → offline */ }
+              catch (e: Exception) {
+                // Cualquier otro fallo inesperado: mostrarlo en lugar de encolar a
+                // ciegas, para no esconder bugs reales detrás de un "REGISTRO EN COLA".
+                result = ScanResponse("ERROR", e.apiMessage("No se pudo validar la huella"), null, null, null, consumedAt)
+                ToneFeedback.error()
+                return
+            }
         }
         dao.enqueue(PendingScan(clientUuid, template, null, consumedAt))
         refreshQueued()
@@ -193,9 +244,10 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 
     // Feed de consumos del día (equivalente al feedPanel del Kiosk web)
     LaunchedEffect(Unit) {
+        refreshFeed()
         while (isActive) {
-            runCatching { feed = scanApi.todayFeed(session.sessionToken) }
             delay(10_000)
+            refreshFeed()
         }
     }
 
@@ -266,7 +318,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
                     result = null
                     val template = reader.capture(20_000)
                     if (!usbDisconnected.get()) processCapture(template)
-                    delay(10_000)
+                    delay(1_000) // Se redujo de 10s a 1s para agilizar el flujo
                     result = null
                 } catch (e: Exception) {
                     if (usbDisconnected.get()) break
@@ -287,67 +339,97 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     }
 
     Surface(color = bg, modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(16.dp)) {
-            // ── Pills superiores ─────────────────────────────────────────────────
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
+            // ── Fila superior: Estado del Lector (Pill centralizada) ───────────────
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ReaderPill(readerStatus, Modifier)
-                Text(
-                    (if (online) "En línea" else "Sin conexión") + if (queued > 0) " · $queued en cola" else "",
-                    color = if (online) Success else Warning
-                )
             }
 
-            // ── Centro: resultado o espera ───────────────────────────────────────
+            Spacer(Modifier.height(40.dp))
+
+            // ── Centro: Título de Catering y Animación/Estado ─────────────────────
             val r = result
-            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.weight(1f).fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 if (r == null) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(session.cateringName?.uppercase() ?: "CATERING",
-                            style = MaterialTheme.typography.headlineMedium)
-                        Text("🖐️", fontSize = 110.sp, modifier = Modifier.padding(vertical = 16.dp))
-                        Text(
-                            when (readerStatus) {
-                                ReaderStatus.CONNECTING -> "Conectando lector…"
-                                ReaderStatus.ERROR -> "Error: $lastError"
-                                ReaderStatus.NO_DEVICE -> "Conecte el lector por USB-OTG"
-                                ReaderStatus.DISCONNECTED -> "Reconectando…"
-                                else -> "Esperando huella…"
-                            },
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 18.sp
-                        )
-                    }
+                    Text(
+                        session.cateringName?.uppercase() ?: "CATERING",
+                        style = MaterialTheme.typography.headlineMedium,
+                        letterSpacing = 2.sp,
+                        fontWeight = FontWeight.Light,
+                        color = OnSurface
+                    )
+                    
+                    Spacer(Modifier.height(30.dp))
+                    
+                    Text("🖐️", fontSize = 120.sp, modifier = Modifier.padding(vertical = 20.dp))
+                    
+                    Text(
+                        when (readerStatus) {
+                            ReaderStatus.CONNECTING -> "Conectando lector…"
+                            ReaderStatus.ERROR -> "Error: $lastError"
+                            ReaderStatus.NO_DEVICE -> "Conecte el lector por USB-OTG"
+                            ReaderStatus.DISCONNECTED -> "Reconectando…"
+                            else -> "Coloque su dedo en el lector…"
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        textAlign = TextAlign.Center,
+                        color = Primary
+                    )
+                    Text(
+                        "Asegúrese de colocar la huella completa",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Muted,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
                 } else {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            when (r.status) {
-                                "SUCCESS" -> "✓ REGISTRO EXITOSO"
-                                "QUEUED" -> "✓ REGISTRO EN COLA"
-                                else -> "✕ ${r.message ?: "ERROR"}"
-                            },
-                            color = Color.White, fontSize = 30.sp, textAlign = TextAlign.Center
-                        )
-                        r.employeeName?.let { Text(it, color = Color.White, fontSize = 26.sp, modifier = Modifier.padding(top = 12.dp)) }
-                        r.mealName?.let { Text(it, color = Color.White, fontSize = 18.sp) }
-                        r.plates?.let { Text("Platos: $it", color = Color.White, fontSize = 18.sp) }
-                        if (r.status == "QUEUED") Text("Se sincronizará al recuperar la conexión.",
-                            color = Color.White, fontSize = 14.sp)
+                    // Pantalla de Resultado (Éxito o Error)
+                    Text(
+                        when (r.status) {
+                            "SUCCESS" -> "✓ REGISTRO EXITOSO"
+                            "QUEUED" -> "✓ REGISTRO EN COLA"
+                            else -> "✕ ${r.message ?: "ERROR"}"
+                        },
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    r.employeeName?.let { 
+                        Text(it.uppercase(), color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center) 
+                    }
+                    r.mealName?.let { Text(it, color = Color.White, fontSize = 20.sp, modifier = Modifier.padding(top = 8.dp)) }
+                    r.plates?.let { Text("$it Platos entregados", color = Color.White, fontSize = 18.sp, modifier = Modifier.padding(top = 4.dp)) }
+                    
+                    if (r.status == "QUEUED") {
+                        Spacer(Modifier.height(16.dp))
+                        Text("Sincronización pendiente (sin conexión)", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
                     }
                 }
             }
 
-            // ── Panel de consumos del día (equivalente al feedPanel del Kiosk web) ─
-            if (feed.isNotEmpty()) {
-                TodayFeedPanel(feed, Modifier.heightIn(max = 180.dp))
-                Spacer(Modifier.height(8.dp))
-            }
+            // ── Panel de registros de hoy (Diseño Tabla) ─────────────────────────
+            TodayFeedPanel(
+                feed = feed, online = online, queued = queued,
+                showTable = showTable, onToggle = { showTable = !showTable },
+                modifier = Modifier.heightIn(max = 280.dp)
+            )
+            
+            Spacer(Modifier.height(16.dp))
 
             // ── Fila inferior ────────────────────────────────────────────────────
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 TextButton(onClick = {
                     scope.launch { runCatching { scanApi.disconnect(session.sessionToken) } }
                     store.kioskSession = null
                     onDisconnect()
-                }) { Text("Desconectar", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }) { 
+                    Text("Cerrar Sesión de Catering", color = Muted) 
+                }
             }
         }
     }
@@ -356,48 +438,110 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 @Composable
 private fun ReaderPill(status: ReaderStatus, modifier: Modifier) {
     val (text, color) = when (status) {
-        ReaderStatus.CONNECTING -> "Conectando lector…" to Warning
-        ReaderStatus.READY -> "Lector listo ✓" to Success
+        ReaderStatus.CONNECTING -> "Conectando…" to Warning
+        ReaderStatus.READY -> "ZKTeco Conectado ✓" to Success
         ReaderStatus.NO_DEVICE -> "Lector no detectado" to ErrorRed
-        ReaderStatus.ERROR -> "Error de conexión al lector" to ErrorRed
-        ReaderStatus.DISCONNECTED -> "Lector desconectado" to ErrorRed
+        ReaderStatus.ERROR -> "Error de Hardware" to ErrorRed
+        ReaderStatus.DISCONNECTED -> "Desconectado" to ErrorRed
+        ReaderStatus.SIM -> "Modo Simulado" to Sim
     }
-    Text(text, color = color, modifier = modifier)
+    
+    Surface(
+        modifier = modifier.clip(CircleShape),
+        color = Color.Black.copy(alpha = 0.3f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+            Spacer(Modifier.width(8.dp))
+            Text(text, color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+        }
+    }
 }
 
-/** Panel lateral de consumos del día (espejo del feedPanel del Kiosk web). */
+/** Panel lateral de consumos del día (espejo del diseño web). */
 @Composable
-private fun TodayFeedPanel(feed: List<TodayFeedEntry>, modifier: Modifier = Modifier) {
-    Card(modifier.fillMaxWidth()) {
-        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+private fun TodayFeedPanel(
+    feed: List<TodayFeedEntry>,
+    online: Boolean,
+    queued: Int,
+    showTable: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier.fillMaxWidth()) {
+        // Título de sección con líneas (clickeable para colapsar/expandir)
+        Row(
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggle() }.padding(vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            HorizontalDivider(Modifier.weight(1f), color = SurfaceVariant)
             Text(
-                "Hoy — ${feed.size} ${if (feed.size == 1) "comensal" else "comensales"}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                "  REGISTROS DE HOY ${if (showTable) "▲" else "▼"}  ",
+                style = MaterialTheme.typography.labelLarge,
+                color = Primary,
+                fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(4.dp))
-            LazyColumn {
-                items(feed.takeLast(8)) { e ->
+            HorizontalDivider(Modifier.weight(1f), color = SurfaceVariant)
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        if (showTable) {
+            Card(
+                Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Surface.copy(alpha = 0.5f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceVariant)
+            ) {
+                Column(Modifier.padding(8.dp)) {
+                    // Header de Tabla
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                        Text("#", Modifier.width(30.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("NOMBRE", Modifier.weight(1f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("HORA", Modifier.width(60.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
+                        Text("TIPO", Modifier.width(80.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
+                    }
+
+                    HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
+
+                    if (feed.isEmpty()) {
+                        Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
+                            Text("No hay registros hoy", color = Muted, style = MaterialTheme.typography.bodySmall)
+                        }
+                    } else {
+                        LazyColumn(Modifier.heightIn(max = 180.dp)) {
+                            items(feed.reversed()) { e ->
+                                Row(
+                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("${feed.indexOf(e) + 1}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
+                                    Text(e.employeeName ?: "—", Modifier.weight(1f), color = OnSurface, fontSize = 13.sp, maxLines = 1)
+                                    Text(
+                                        e.time?.substringAfter('T')?.take(5) ?: "--:--",
+                                        Modifier.width(60.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.Center
+                                    )
+                                    Text(e.mealName ?: "Comida", Modifier.width(80.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End)
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Footer de Resumen
                     Row(
-                        Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            e.employeeName ?: "—",
-                            style = MaterialTheme.typography.bodySmall,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Text(
-                            buildString {
-                                e.mealName?.let { append(it) }
-                                e.time?.let {
-                                    val t = it.substringAfter('T').take(5)
-                                    if (t.isNotEmpty()) append(" · $t")
-                                }
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("Total: ${feed.size}", color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        if (queued > 0) {
+                            Text("Pendientes: $queued", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Text(if (online) "● En línea" else "○ Offline", color = if (online) Success else Warning, fontSize = 12.sp)
                     }
                 }
             }

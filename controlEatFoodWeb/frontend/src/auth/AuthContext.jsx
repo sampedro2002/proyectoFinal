@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api, { setAuthFailureHandler } from '../api/client.js';
 
@@ -8,24 +8,16 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }) {
   const navigate = useNavigate();
   const [user, setUser] = useState(() => {
-    const raw = localStorage.getItem('user');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem('user');
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      localStorage.removeItem('user');
+      return null;
+    }
   });
 
-  useEffect(() => {
-    setAuthFailureHandler(() => logout());
-  }, []);
-
-  async function login(username, password) {
-    const { data } = await api.post('/auth/login', { username, password });
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(data));
-    setUser(data);
-    return data;
-  }
-
-  function logout() {
+  const logout = useCallback(() => {
     const refreshToken = localStorage.getItem('refreshToken');
     if (refreshToken) api.post('/auth/logout', { refreshToken }).catch(() => {});
     localStorage.removeItem('accessToken');
@@ -33,9 +25,24 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user');
     setUser(null);
     navigate('/login');
+  }, [navigate]);
+
+  useEffect(() => {
+    setAuthFailureHandler(() => logout());
+  }, [logout]);
+
+  async function login(username, password) {
+    const { data } = await api.post('/auth/login', { username, password });
+    localStorage.setItem('accessToken', data.accessToken);
+    localStorage.setItem('refreshToken', data.refreshToken);
+    // Persistir sólo lo necesario para no exponer más datos de la cuenta.
+    const { id, fullName, roles, cateringId } = data;
+    localStorage.setItem('user', JSON.stringify({ id, fullName, roles, cateringId }));
+    setUser(data);
+    return data;
   }
 
-  const hasRole = (...roles) => user?.roles?.some((r) => roles.includes(r));
+  const hasRole = (...roles) => !!user?.roles?.some((r) => roles.includes(r));
 
   return (
     <AuthContext.Provider value={{ user, login, logout, hasRole }}>

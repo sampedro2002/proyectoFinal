@@ -1,6 +1,7 @@
 package com.eatfood.control.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -61,13 +62,20 @@ public final class ScanDtos {
 
     /** Registro manual de consumo (sin huella) — solo ADMIN. */
     public record ManualScanRequest(
-            @NotBlank String employeeName,
+            @NotNull Long employeeId,
             @NotBlank String mealTypeCode,
-            Long cateringId) {}
+            @NotNull Long cateringId) {}
 
     public record ManualScanResponse(
             String status,
             String message,
             String employeeName,
             String mealName) {}
+
+    /** Registro de consumo para una persona externa (no empleada). */
+    public record ExternalScanRequest(
+            @NotBlank String identityCard,
+            @NotBlank String fullName,
+            @NotBlank String mealTypeCode,
+            @NotNull Long cateringId) {}
 }

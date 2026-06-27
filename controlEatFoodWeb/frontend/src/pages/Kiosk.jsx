@@ -4,7 +4,7 @@ import { ZkFingerClient, getWsUrl, setWsUrl } from '../biometric/zkfinger.js';
 import { enqueue, pending, remove, newUuid } from '../offline/queue.js';
 import { playSuccess, playError } from '../offline/sound.js';
 
-const SUCCESS_SECONDS = 10;
+const SUCCESS_SECONDS = 1;
 const scanApi = axios.create({ baseURL: '/api' });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -19,17 +19,22 @@ const READER_STATUS = {
 };
 
 const readerStatusLabel = {
-  [READER_STATUS.CONNECTING]:   { text: 'Detectando lector...',       color: '#f59e0b' },
-  [READER_STATUS.READY]:        { text: 'ZKTeco Conectado ✓',          color: '#16a34a' },
-  [READER_STATUS.NO_DEVICE]:    { text: 'Conecte el ZKTeco',          color: '#dc2626' },
-  [READER_STATUS.ERROR]:        { text: 'Error de conexión al agente', color: '#dc2626' },
-  [READER_STATUS.DISCONNECTED]: { text: 'Conecte el ZKTeco',          color: '#dc2626' },
+  [READER_STATUS.CONNECTING]: { text: 'Detectando lector...', color: '#f59e0b' },
+  [READER_STATUS.READY]: { text: 'ZKTeco Conectado ✓', color: '#16a34a' },
+  [READER_STATUS.NO_DEVICE]: { text: 'Conecte el ZKTeco', color: '#dc2626' },
+  [READER_STATUS.ERROR]: { text: 'Error de conexión al agente', color: '#dc2626' },
+  [READER_STATUS.DISCONNECTED]: { text: 'Conecte el ZKTeco', color: '#dc2626' },
 };
 
 export default function Kiosk() {
   const [session, setSession] = useState(() => {
-    const raw = localStorage.getItem('kioskSession');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem('kioskSession');
+      return raw ? JSON.parse(raw) : null;
+    } catch (_) {
+      localStorage.removeItem('kioskSession');
+      return null;
+    }
   });
   const [online, setOnline] = useState(navigator.onLine);
   const [queued, setQueued] = useState(0);
@@ -39,6 +44,7 @@ export default function Kiosk() {
   const [readerStatus, setReaderStatus] = useState(READER_STATUS.DISCONNECTED);
   const [connectError, setConnectError] = useState('');
   const [feed, setFeed] = useState([]);
+  const [showTable, setShowTable] = useState(true);
 
   const clientRef = useRef(null);
 
@@ -102,7 +108,8 @@ export default function Kiosk() {
         sessionToken: session.sessionToken,
         records,
       });
-      for (const r of data.results) {
+      const results = Array.isArray(data?.results) ? data.results : [];
+      for (const r of results) {
         if (r.status !== 'ERROR') await remove(r.clientUuid);
       }
       refreshQueued();
@@ -153,11 +160,18 @@ export default function Kiosk() {
         client.onCapture = async (templateB64) => {
           if (!ctx.active) return;
           setScanning(false);
-          await processCapture(templateB64);
-          if (ctx.active) {
-            await sleep(SUCCESS_SECONDS * 1000);
-            setResult(null);
-            setScanning(true);
+          try {
+            await processCapture(templateB64);
+            if (ctx.active) {
+              await sleep(SUCCESS_SECONDS * 1000);
+              setResult(null);
+            }
+          } catch (err) {
+            console.error('[Kiosk] Error procesando captura:', err);
+          } finally {
+            // Volver a habilitar el escaneo aunque processCapture haya fallado,
+            // para no dejar el kiosk "congelado" con scanning=false.
+            if (ctx.active) setScanning(true);
           }
         };
         try {
@@ -253,7 +267,7 @@ export default function Kiosk() {
     if (session) {
       scanApi
         .post('/scan/disconnect', null, { params: { sessionToken: session.sessionToken } })
-        .catch(() => {});
+        .catch(() => { });
     }
     localStorage.removeItem('kioskSession');
     setSession(null);
@@ -340,38 +354,21 @@ export default function Kiosk() {
     );
   }
 
-  // ── RENDER: panel lateral de consumos del día ───────────────────────────────
-  const feedPanel = session && (
-    <div className="kiosk-feed">
-      <div className="kiosk-feed-header">
-        <span>Hoy — {feed.length} {feed.length === 1 ? 'comensal' : 'comensales'}</span>
-      </div>
-      {feed.length === 0 ? (
-        <span className="kiosk-feed-empty">Sin registros aún</span>
-      ) : (
-        feed.map((e, i) => (
-          <div key={i} className="kiosk-feed-item">
-            <span className="kiosk-feed-name">{e.employeeName}</span>
-            <span className="kiosk-feed-detail">{e.mealName} · {e.time}</span>
-          </div>
-        ))
-      )}
-    </div>
-  );
-
   // ── RENDER: pantalla de kiosk activa ────────────────────────────────────────
   const cls =
     result?.status === 'SUCCESS' || result?.status === 'QUEUED'
       ? 'success'
       : result
-      ? 'error'
-      : '';
+        ? 'error'
+        : '';
 
   const rInfo = readerStatusLabel[readerStatus] || readerStatusLabel[READER_STATUS.DISCONNECTED];
 
+  const totalAlmuerzos = feed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
+  const totalMeriendas = feed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
+
   return (
     <div className={`kiosk ${cls}`}>
-      {feedPanel}
       {/* Pill de red */}
       <div className={`offline-pill ${online ? 'online' : ''}`}>
         {online ? 'En línea' : 'Sin conexión'}
@@ -379,69 +376,116 @@ export default function Kiosk() {
       </div>
 
       {/* Indicador de estado del lector */}
-      {!result && (
-        <div style={{
-          position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
-          background: 'rgba(0,0,0,.6)', border: `1px solid ${rInfo.color}`,
-          borderRadius: 999, padding: '4px 14px', fontSize: 13,
-          color: rInfo.color, display: 'flex', alignItems: 'center', gap: 6,
-          backdropFilter: 'blur(6px)', zIndex: 10,
-        }}>
-          <span style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: rInfo.color,
-            animation: readerStatus === READER_STATUS.CONNECTING ? 'pulse 1s infinite' : 'none'
-          }} />
-          {rInfo.text}
-        </div>
+      <div style={{
+        position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
+        background: 'rgba(0,0,0,.6)', border: `1px solid ${rInfo.color}`,
+        borderRadius: 999, padding: '4px 14px', fontSize: 13,
+        color: rInfo.color, display: 'flex', alignItems: 'center', gap: 6,
+        backdropFilter: 'blur(6px)', zIndex: 10,
+      }}>
+        <span style={{
+          width: 8, height: 8, borderRadius: '50%',
+          background: rInfo.color,
+          animation: readerStatus === READER_STATUS.CONNECTING ? 'pulse 1s infinite' : 'none'
+        }} />
+        {rInfo.text}
+      </div>
+
+      {/* Elementos Estáticos Principales */}
+      <div className="title" style={{ marginTop: '20px' }}>{session.cateringName?.toUpperCase()}</div>
+      
+      <div className="fingerprint-icon" style={{
+        opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25,
+        margin: '20px 0'
+      }}>🖐️</div>
+      
+      <div className="waiting" style={{ fontSize: '32px', margin: '0 0 8px 0', color: '#38bdf8' }}>
+        Coloque su mano en el lector...
+      </div>
+      <div style={{ color: '#94a3b8', fontSize: '18px', marginBottom: '24px' }}>
+        Asegúrese de colocar la palma completa
+      </div>
+
+      {(readerStatus === READER_STATUS.ERROR || readerStatus === READER_STATUS.DISCONNECTED || readerStatus === READER_STATUS.NO_DEVICE) && (
+        <p style={{ color: '#94a3b8', fontSize: '14px', maxWidth: '380px', textAlign: 'center', marginBottom: '20px' }}>
+          Conecte el lector <strong>ZKTeco9500</strong> al puerto USB del servidor donde corre el
+          backend en <code style={{ color: '#38bdf8' }}>{getWsUrl()}</code>.
+          Se intentará reconectar automáticamente.
+        </p>
       )}
 
-      {!result && (
-        <>
-          <div className="title">{session.cateringName?.toUpperCase()}</div>
-          <div className="fingerprint-icon" style={{
-            opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25
-          }}>🖐️</div>
-          <div className="waiting">
-            {readerStatus === READER_STATUS.CONNECTING && 'Detectando si está conectado el ZKTeco...'}
-            {readerStatus === READER_STATUS.ERROR && 'No se puede conectar al agente ZKFinger'}
-            {readerStatus === READER_STATUS.NO_DEVICE && 'Conecte el ZKTeco al puerto USB'}
-            {readerStatus === READER_STATUS.DISCONNECTED && 'Conecte el ZKTeco — esperando conexión…'}
-            {readerStatus === READER_STATUS.READY &&
-              (scanning ? 'ZKTeco conectado. Coloque el dedo...' : 'ZKTeco conectado. Esperando huella...')}
-          </div>
-          {(readerStatus === READER_STATUS.ERROR || readerStatus === READER_STATUS.DISCONNECTED || readerStatus === READER_STATUS.NO_DEVICE) && (
-            <p style={{ color: '#94a3b8', fontSize: 14, maxWidth: 380, textAlign: 'center' }}>
-              Conecte el lector <strong>ZKTeco9500</strong> al puerto USB del servidor donde corre el
-              backend en <code style={{ color: '#38bdf8' }}>{getWsUrl()}</code>.
-              Se intentará reconectar automáticamente.
-            </p>
-          )}
-          <button
-            className="ghost"
-            style={{ position: 'fixed', bottom: 16, right: 16 }}
-            onClick={disconnect}
-          >
-            Desconectar
-          </button>
-        </>
-      )}
-
+      {/* Notificación Flotante de Resultado */}
       {result && (
-        <div>
-          <div className="big-status">
+        <div style={{
+          position: 'fixed', top: '70px', left: '50%', transform: 'translateX(-50%)',
+          background: result.status === 'SUCCESS' || result.status === 'QUEUED' ? 'rgba(22, 163, 74, 0.9)' : 'rgba(220, 38, 38, 0.9)',
+          color: 'white', padding: '16px 24px', borderRadius: '12px', zIndex: 50,
+          boxShadow: '0 10px 25px rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', minWidth: '300px'
+        }}>
+          <div style={{ fontSize: '24px', fontWeight: 'bold' }}>
             {result.status === 'SUCCESS' && '✓ REGISTRO EXITOSO'}
             {result.status === 'QUEUED' && '✓ REGISTRO EN COLA'}
             {!['SUCCESS', 'QUEUED'].includes(result.status) && '✕ ' + result.message}
           </div>
-          {result.employeeName && <div className="name">{result.employeeName}</div>}
-          {result.mealName && <div className="detail">{result.mealName}</div>}
-          {result.time && <div className="detail">{new Date(result.time).toLocaleTimeString()}</div>}
-          {result.status === 'QUEUED' && (
-            <div className="detail">Se sincronizará al recuperar la conexión.</div>
-          )}
+          {result.employeeName && <div style={{ fontSize: '20px', marginTop: '8px' }}>{result.employeeName}</div>}
+          {result.mealName && <div style={{ fontSize: '16px', opacity: 0.9 }}>{result.mealName}</div>}
         </div>
       )}
+
+      {/* Tabla Central de Consumos */}
+      <div className="kiosk-feed-container">
+        <div 
+          className="kiosk-feed-divider" 
+          onClick={() => setShowTable(!showTable)}
+        >
+          REGISTROS DE HOY {showTable ? '▲' : '▼'}
+        </div>
+        
+        {showTable && (
+          <div className="kiosk-feed-table-wrapper">
+            <table className="kiosk-feed-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>NOMBRE</th>
+                  <th>HORA</th>
+                  <th>TIPO</th>
+                </tr>
+              </thead>
+              <tbody>
+                {feed.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="kiosk-feed-empty">Sin registros aún</td>
+                  </tr>
+                ) : (
+                  feed.map((e, i) => (
+                    <tr key={i}>
+                      <td>{feed.length - i}</td>
+                      <td>{e.employeeName}</td>
+                      <td>{e.time}</td>
+                      <td>{e.mealName}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+            <div className="kiosk-feed-summary">
+              <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
+              <div>Meriendas: <strong>{totalMeriendas}</strong></div>
+              <div>Total: <strong>{feed.length}</strong></div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <button
+        className="ghost"
+        style={{ position: 'fixed', bottom: 16, right: 16, zIndex: 10 }}
+        onClick={disconnect}
+      >
+        Desconectar
+      </button>
     </div>
   );
 }

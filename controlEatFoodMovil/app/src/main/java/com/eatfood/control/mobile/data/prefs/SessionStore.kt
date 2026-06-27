@@ -13,7 +13,7 @@ import java.util.UUID
 /**
  * Almacenamiento local de sesión y configuración.
  * Equivale a `localStorage` del frontend web: tokens, usuario, sesión de kiosco,
- * URL del servidor.
+ * URL del servidor y proveedor biométrico (zk|sim).
  *
  * Los tokens se guardan cifrados (EncryptedSharedPreferences); si el dispositivo no
  * lo soporta, cae a SharedPreferences normales para no romper la app.
@@ -89,6 +89,11 @@ class SessionStore private constructor(context: Context) {
         get() = prefs.getString(K_SERVER, BuildConfig.DEFAULT_SERVER_URL) ?: BuildConfig.DEFAULT_SERVER_URL
         set(v) = prefs.edit().putString(K_SERVER, normalizeUrl(v)).apply()
 
+    /** Proveedor biométrico: "zk" (lector ZK9500 por USB-OTG) o "sim" (sin hardware). */
+    var biometricProvider: String
+        get() = prefs.getString(K_BIO, "zk") ?: "zk"
+        set(v) = prefs.edit().putString(K_BIO, v).apply()
+
     companion object {
         private const val K_ACCESS = "accessToken"
         private const val K_REFRESH = "refreshToken"
@@ -96,6 +101,7 @@ class SessionStore private constructor(context: Context) {
         private const val K_KIOSK = "kioskSession"
         private const val K_DEVICE_UID = "deviceUid"
         private const val K_SERVER = "serverUrl"
+        private const val K_BIO = "biometricProvider"
 
         @Volatile private var instance: SessionStore? = null
         fun get(context: Context): SessionStore =

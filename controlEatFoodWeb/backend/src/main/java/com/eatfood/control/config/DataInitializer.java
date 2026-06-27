@@ -43,12 +43,13 @@ public class DataInitializer implements CommandLineRunner {
             }
         });
 
-        // Crear usuarios de catering si no existen
+        // Crear usuarios de catering si no existen. El nombre de usuario se deriva
+        // del nombre del catering (p. ej. "Catering Norte" -> "cateringNorte").
         Role cateringRole = roleRepository.findByName("CATERING").orElse(null);
         if (cateringRole == null) return;
 
         for (Catering catering : cateringRepository.findAll()) {
-            String username = "catering" + catering.getId();
+            String username = cateringUsername(catering.getName());
             if (!userRepository.existsByUsername(username)) {
                 AppUser user = AppUser.builder()
                         .username(username)
@@ -62,5 +63,17 @@ public class DataInitializer implements CommandLineRunner {
                 log.info("Usuario de catering creado: {} (clave: catering123) -> {}", username, catering.getName());
             }
         }
+    }
+
+    /**
+     * Genera el nombre de usuario de catering a partir del nombre del catering.
+     * Regla: quitar espacios y poner la primera letra en minúscula.
+     * Ej: "Catering Norte" -> "cateringNorte", "Catering Centro" -> "cateringCentro".
+     */
+    private static String cateringUsername(String cateringName) {
+        if (cateringName == null || cateringName.isBlank()) return "catering";
+        String noSpaces = cateringName.replaceAll("\\s+", "");
+        if (noSpaces.isEmpty()) return "catering";
+        return Character.toLowerCase(noSpaces.charAt(0)) + noSpaces.substring(1);
     }
 }

@@ -34,24 +34,43 @@ export default function Employees() {
   const zkRef = useRef(null);
 
   async function load() {
-    const { data } = await api.get('/employees', { params: { term, size: 100 } });
-    setItems(data.content || data);
+    try {
+      const { data } = await api.get('/employees', { params: { term, size: 100 } });
+      setItems(data.content || data);
+      setError('');
+    } catch (err) {
+      setItems([]);
+      setError(err.response?.data?.message || 'No se pudieron cargar los empleados');
+    }
   }
 
   async function loadFp(empId) {
-    const { data } = await api.get(`/fingerprints/employee/${empId}`);
-    setFingerprints(data);
+    try {
+      const { data } = await api.get(`/fingerprints/employee/${empId}`);
+      setFingerprints(data);
+    } catch (err) {
+      setFingerprints([]);
+    }
   }
 
   useEffect(() => {
     load();
-    api.get('/positions').then(r => setPositions(r.data));
+    api.get('/positions').then(r => setPositions(r.data)).catch(() => {});
   }, []);
 
   useEffect(() => {
     if (form?.id) loadFp(form.id);
     else setFingerprints([]);
   }, [form?.id]);
+
+  // Cerrar el WebSocket del lector si el componente se desmonta en medio de una
+  // captura (p. ej. el usuario navega a otra página mientras enrola).
+  useEffect(() => {
+    return () => {
+      try { zkRef.current && zkRef.current.close(); } catch (_) {}
+      zkRef.current = null;
+    };
+  }, []);
 
   function openNew() {
     setError(''); setSavedMsg(''); setBioMsg(''); setBioStatus('idle');
@@ -133,6 +152,7 @@ export default function Employees() {
       setBioMsg('Coloque el dedo en el lector... (1/3)');
       const templateB64 = await client.capture(60000, 'register');
       client.close();
+      zkRef.current = null;
       setBioStatus('saving');
       setBioMsg('');
       await api.post('/fingerprints/enroll', {
@@ -144,6 +164,9 @@ export default function Employees() {
       setBioMsg('Huella registrada correctamente.');
       loadFp(form.id);
     } catch (err) {
+      // Asegurar cierre del WebSocket incluso si capture() lanza (timeout, etc.).
+      try { zkRef.current && zkRef.current.close(); } catch (_) {}
+      zkRef.current = null;
       setBioStatus('idle');
       setBioMsg(err.response?.data?.message || err.message || 'Error al registrar la huella');
     }

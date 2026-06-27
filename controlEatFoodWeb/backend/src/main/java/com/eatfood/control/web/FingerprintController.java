@@ -39,6 +39,7 @@ public class FingerprintController {
 
     // ENDPOINT TEMPORAL PARA LIMPIAR LA BD
     @DeleteMapping("/clean-all")
+    @PreAuthorize("hasRole('ADMIN')")
     public String cleanAll() {
         return fingerprintService.deleteAll();
     }

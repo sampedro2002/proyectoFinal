@@ -14,10 +14,14 @@ gestionar empleados, cargos y consultar reportes desde un dispositivo móvil.
 ┌───────────────────────────┐        HTTPS/REST + JWT        ┌──────────────────────────┐
 │  App Android (Kotlin)     │  ──────────────────────────►   │  Backend Spring Boot 3    │
 │  - Jetpack Compose UI     │                               │  (proyecto controlEat-    │
-│  - MVVM + ViewModels      │ ◄──────────────────────────   │   FoodWeb)                │
+│  - Stateful Composables   │ ◄──────────────────────────   │   FoodWeb)                │
 │  - Retrofit + OkHttp      │                               │                          │
+│  - EncryptedSharedPrefs   │                               │                          │
+│  - Room (cola offline)    │                               │                          │
 └───────────────────────────┘                               └──────────────────────────┘
 ```
+
+**Patrón:** stateful Composables + `ApiClient` singleton (Retrofit). Estado en `remember + mutableStateOf` + `LaunchedEffect`; corrutinas con `rememberCoroutineScope`. Navegación por estado `Screen` enum dentro de `MainScaffold` (drawer). No usa ViewModels separados ni Navigation-Compose con nav-graph.
 
 ---
 
@@ -66,8 +70,8 @@ controlEatFoodMovil/
 | Componente | Versión | Notas |
 |-----------|---------|-------|
 | Android Studio | Ladybug+ | IDE recomendado |
-| JDK | 17+ | incluido con Android Studio |
-| Android SDK | API 35 (compileSdk) | minSdk 28 (Android 9) |
+| JDK | 17+ (probado con 21) | para Gradle |
+| Android SDK | API 34 (compileSdk) | minSdk 29 (Android 10) |
 | Backend corriendo | - | Proyecto `controlEatFoodWeb` levantado |
 
 ---
@@ -106,6 +110,9 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 | Rol | Usuario | Contraseña |
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
+| Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `catering123` |
+
+> Las contraseñas se cifran con BCrypt al primer arranque del backend.
 
 ---
 
@@ -113,12 +120,16 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 
 | Pantalla | Descripción |
 |----------|-------------|
-| **Login** | Autenticación con JWT |
-| **Dashboard** | Resumen de consumos del día + registros recientes |
-| **Empleados** | CRUD de empleados (crear, editar, eliminar) |
+| **Login** | Autenticación con JWT (mismas credenciales que el panel web) |
+| **Dashboard** | Resumen de consumos del día + tendencia de 7 días |
+| **Empleados** | CRUD de empleados (crear, editar, inactivar, gestionar huellas) |
 | **Cargos** | CRUD de cargos/posiciones |
-| **Reportes** | Consulta por empleado y por cargo con filtros de fecha |
-| **Kiosco** | Modo kiosco con lector biométrico USB OTG |
+| **Caterings** | CRUD de caterings |
+| **Horarios** | Editar horarios de Almuerzo/Merienda |
+| **Almuerzos Extra** | Registro manual de consumos para empleados existentes (búsqueda por nombre) o **personas externas** (cédula + nombre), con selector de catering y tipo de comida (Almuerzo/Merienda). No valida horario, permiso ni duplicado. |
+| **Reportes** | Consulta por fecha/catering/comida, exportación a CSV/Excel/PDF |
+| **Auditoría** | Log de acciones críticas con filtros |
+| **Kiosco** | Modo kiosco con lector biométrico USB OTG + cola offline (Room) |
 
 ---
 
@@ -128,36 +139,46 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 |---------|--------|----------|
 | Login | POST | `/auth/login` |
 | Refresh token | POST | `/auth/refresh` |
-| Dashboard | GET | `/reports/summary` |
-| Reporte diario | GET | `/reports/daily` |
+| Logout | POST | `/auth/logout` |
+| Dashboard | GET | `/reports/dashboard` |
+| Tendencia | GET | `/reports/trend` |
+| Consumos | GET | `/reports/consumptions` |
+| Exportación | GET | `/reports/export` |
+| Auditoría | GET | `/audit` |
 | Listar empleados | GET | `/employees` |
 | Crear empleado | POST | `/employees` |
 | Actualizar empleado | PUT | `/employees/{id}` |
-| Eliminar empleado | DELETE | `/employees/{id}` |
+| Inactivar empleado | DELETE | `/employees/{id}` |
+| Huellas por empleado | GET | `/fingerprints/employee/{id}` |
+| Enrolar huella | POST | `/fingerprints/enroll` |
+| Eliminar huella | DELETE | `/fingerprints/{id}` |
 | Listar cargos | GET | `/positions` |
-| Crear cargo | POST | `/positions` |
-| Actualizar cargo | PUT | `/positions/{id}` |
-| Eliminar cargo | DELETE | `/positions/{id}` |
-| Reporte por empleado | GET | `/reports/by-employee` |
-| Reporte por cargo | GET | `/reports/by-position` |
+| CRUD cargo | POST/PUT | `/positions` |
+| Listar caterings | GET | `/caterings` |
+| CRUD catering | POST/PUT | `/caterings` |
+| Tipos de comida | GET | `/meal-types` |
+| Horarios | GET/POST | `/schedules` |
+| Registro manual (empleado) | POST | `/manual-consumptions` |
+| Registro persona externa | POST | `/manual-consumptions/external` |
 | Conectar dispositivo | POST | `/scan/connect` |
 | Escanear huella | POST | `/scan` |
 | Sincronizar offline | POST | `/scan/sync` |
+| Feed del día | GET | `/scan/today` |
 | Desconectar | POST | `/scan/disconnect` |
 
 ---
 
 ## 🛠 Tecnologías
 
-- **Kotlin** 2.0
+- **Kotlin** 2.2
 - **Jetpack Compose** (Material3)
-- **Retrofit 2** + **OkHttp 4** (networking)
+- **Retrofit 2.11** + **OkHttp 4.12** (networking) + interceptor JWT + `TokenAuthenticator` (refresh automático)
 - **Gson** (serialización)
-- **DataStore Preferences** (almacenamiento de tokens)
-- **Compose Navigation** (navegación)
-- **MVVM** (patrón arquitectónico)
-- **Room** (base de datos local para escaneos offline)
-- **SDK ZKFinger** (lectura biométrica USB OTG)
+- **EncryptedSharedPreferences** (almacenamiento seguro de tokens/sesión)
+- **Coroutines** (asincronía)
+- **Room** (base de datos local para cola offline del kiosco)
+- **SDK ZKFinger** (lectura biométrica USB OTG, JARs en `app/libs/`)
+- **Stateful Composables** (estado en `remember` + `LaunchedEffect`, sin ViewModels separados)
 
 ---
 

@@ -10,8 +10,11 @@ export default function Positions() {
   const [items, setItems] = useState([]);
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
+  const [loadError, setLoadError] = useState('');
 
-  const load = () => api.get('/positions').then((r) => setItems(r.data));
+  const load = () => api.get('/positions')
+    .then((r) => { setItems(r.data); setLoadError(''); })
+    .catch((err) => { setItems([]); setLoadError(err.response?.data?.message || 'No se pudieron cargar los cargos'); });
   useEffect(() => { load(); }, []);
 
   async function save(e) {
@@ -32,6 +35,7 @@ export default function Positions() {
         <h2 style={{ margin: 0 }}>Cargos</h2>
         {isAdmin && <button onClick={() => setForm({ ...empty })}>+ Nuevo</button>}
       </div>
+      {loadError && <p className="error-text">{loadError}</p>}
       <div className="card">
         <table>
           <thead><tr><th>Nombre</th><th>Merienda</th><th>Activo</th><th></th></tr></thead>

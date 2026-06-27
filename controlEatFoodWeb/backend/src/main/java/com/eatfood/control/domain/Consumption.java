@@ -32,10 +32,6 @@ public class Consumption {
     @JoinColumn(name = "device_id")
     private Device device;
 
-    @Column(nullable = false)
-    @Builder.Default
-    private int plates = 1;
-
     @Column(name = "consumed_at", nullable = false)
     @Builder.Default
     private OffsetDateTime consumedAt = OffsetDateTime.now();

@@ -14,7 +14,8 @@ export default function Layout() {
         {hasRole('ADMIN') && <NavLink to="/schedules">Horarios</NavLink>}
         {hasRole('ADMIN', 'SUPERVISOR') && <NavLink to="/reports">Reportes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/audit">Auditoría</NavLink>}
-        <a href="/kiosk" target="_blank" rel="noreferrer">Pantalla Catering ↗</a>
+        {hasRole('ADMIN') && <NavLink to="/manual-scan">Registro manual</NavLink>}
+        <a href="/kiosk" target="_blank" rel="noopener noreferrer">Pantalla Catering ↗</a>
         <div className="spacer" />
         <button className="ghost" onClick={logout}>Cerrar sesión</button>
       </aside>

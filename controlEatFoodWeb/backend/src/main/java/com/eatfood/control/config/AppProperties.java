@@ -44,6 +44,8 @@ public class AppProperties {
     public static class Biometric {
         private int matchThreshold = 70;
         private String nativeLibPath = "./native";
+        /** Clave AES para cifrar plantillas biométricas en BD. Definir vía env var en producción. */
+        private String encryptionKey;
     }
 
     @Getter @Setter
