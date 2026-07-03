@@ -23,7 +23,7 @@ set DB_USER=admin
 set DB_PASS=BN2002sg
 
 :: --- 1. VERIFICAR JAVA 21 ---
-echo [%YELLOW%1/3%RESET%] Verificando Java 21...
+echo [%YELLOW%1/5%RESET%] Verificando Java 21...
 java -version 2>&1 | findstr "21." > nul
 if %errorlevel% equ 0 (
     echo    %GREEN%[OK] Java 21 ya está instalado.%RESET%
@@ -43,7 +43,7 @@ if %errorlevel% equ 0 (
 echo.
 
 :: --- 2. VERIFICAR NPM (NODE.JS) ---
-echo [%YELLOW%2/3%RESET%] Verificando Node.js y NPM...
+echo [%YELLOW%2/5%RESET%] Verificando Node.js y NPM...
 where npm > nul 2>&1
 if %errorlevel% equ 0 (
     echo    %GREEN%[OK] Node.js y NPM ya están instalados.%RESET%
@@ -63,57 +63,103 @@ if %errorlevel% equ 0 (
 echo.
 
 :: --- 3. VERIFICAR / CREAR BASE DE DATOS ---
-echo [%YELLOW%3/3%RESET%] Verificando Base de Datos '%DB_NAME%'...
+echo [%YELLOW%3/5%RESET%] Verificando Base de Datos '%DB_NAME%'...
 
-:: 3.1. Verificar si Docker está en ejecución
-docker info > nul 2>&1
+:: 3.1. Detectar si el puerto 3306 ya está en uso (MySQL local o contenedor ya corriendo)
+netstat -ano | find "LISTENING" | findstr ":3306" > nul
+if %errorlevel% neq 0 goto check_docker
+
+echo    %GREEN%[INFO] Se detectó un servicio en el puerto 3306 (MySQL o similar ya está corriendo).%RESET%
+:: Verificar si es Docker
+docker ps --format "{{.Names}}" | findstr /i "control-mysql" > nul 2>&1
 if %errorlevel% equ 0 (
-    echo    %GREEN%[INFO] Docker está en ejecución. Configurando base de datos en Docker...%RESET%
-    
-    :: Verificar si ya existe el contenedor
-    docker ps -a --format "{{.Names}}" | findstr /i "control-mysql" > nul
-    if %errorlevel% equ 0 (
-        echo    El contenedor 'control-mysql' ya existe. Iniciándolo...
-        docker start control-mysql > nul
-        echo    %GREEN%[OK] Contenedor 'control-mysql' iniciado y corriendo.%RESET%
-    ) else (
-        echo    Creando contenedor Docker MySQL 8.0 ('control-mysql')...
-        docker run --name control-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=%DB_PASS% -e MYSQL_DATABASE=%DB_NAME% -e MYSQL_USER=%DB_USER% -e MYSQL_PASSWORD=%DB_PASS% -d mysql:8.0
-        if %errorlevel% equ 0 (
-            echo    %GREEN%[OK] Contenedor Docker creado e iniciado con éxito.%RESET%
-            echo    Base de datos: %DB_NAME%
-            echo    Usuario: %DB_USER% / Clave: %DB_PASS%
-        ) else (
-            echo    %RED%[FALLÓ] No se pudo crear el contenedor Docker MySQL.%RESET%
-        )
-    )
+    echo    %GREEN%[OK] El contenedor Docker 'control-mysql' está en ejecución.%RESET%
 ) else (
-    echo    %YELLOW%[INFO] Docker no está corriendo o no está instalado. Intentando MySQL local...%RESET%
-    
-    :: 3.2. Verificar si MySQL local existe en el PATH
-    where mysql > nul 2>&1
-    if %errorlevel% equ 0 (
-        echo    Se detectó MySQL local en el PATH.
-        echo    Se intentará crear la base de datos '%DB_NAME%' y el usuario '%DB_USER%'...
-        echo    (Por favor, ingresa la contraseña de tu usuario 'root' de MySQL local)
-        set /p ROOT_PASS="Contraseña de 'root' en MySQL local: "
-        
-        :: Comando SQL para crear base de datos, usuario y otorgar permisos
-        mysql -u root -p"%ROOT_PASS%" -e "CREATE DATABASE IF NOT EXISTS %DB_NAME% CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '%DB_USER%'@'localhost' IDENTIFIED BY '%DB_PASS%'; GRANT ALL PRIVILEGES ON %DB_NAME%.* TO '%DB_USER%'@'localhost'; FLUSH PRIVILEGES;" > nul 2>&1
-        
-        if %errorlevel% equ 0 (
-            echo    %GREEN%[OK] Base de datos y usuario creados localmente con éxito.%RESET%
-        ) else (
-            echo    %RED%[FALLÓ] No se pudo conectar a MySQL local (contraseña incorrecta o permisos insuficientes).%RESET%
-            echo    Crea manualmente la base de datos '%DB_NAME%' y el usuario '%DB_USER%' con clave '%DB_PASS%'.
-        )
+    echo    %YELLOW%[INFO] Asumiendo que MySQL está corriendo de forma local.%RESET%
+    echo    Asegúrate de que la base de datos '%DB_NAME%' y el usuario existan.
+)
+goto db_setup_done
+
+:check_docker
+echo    %YELLOW%[INFO] No se detectó servicio en el puerto 3306. Buscando en Docker...%RESET%
+
+docker info > nul 2>&1
+if %errorlevel% neq 0 goto check_local_mysql
+
+echo    %GREEN%[INFO] Docker está en ejecución.%RESET%
+docker ps -a --format "{{.Names}}" | findstr /i "control-mysql" > nul
+if %errorlevel% neq 0 goto create_container
+
+echo    El contenedor 'control-mysql' ya existe. Iniciándolo...
+docker start control-mysql > nul
+echo    %GREEN%[OK] Contenedor 'control-mysql' iniciado y corriendo.%RESET%
+goto db_setup_done
+
+:create_container
+echo    Creando contenedor Docker MySQL 8.0 ('control-mysql')...
+docker run --name control-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=%DB_PASS% -e MYSQL_DATABASE=%DB_NAME% -e MYSQL_USER=%DB_USER% -e MYSQL_PASSWORD=%DB_PASS% -d mysql:8.0
+if %errorlevel% equ 0 (
+    echo    %GREEN%[OK] Contenedor Docker creado e iniciado con éxito.%RESET%
+) else (
+    echo    %RED%[FALLÓ] No se pudo crear el contenedor Docker MySQL.%RESET%
+)
+goto db_setup_done
+
+:check_local_mysql
+echo    %RED%[AVISO] Docker no está en ejecución o no está instalado.%RESET%
+echo    %YELLOW%[INFO] Intentando configurar MySQL local...%RESET%
+
+where mysql > nul 2>&1
+if %errorlevel% neq 0 goto manual_setup
+
+echo    Se detectó 'mysql' en el PATH.
+set "ROOT_PASS="
+set /p ROOT_PASS="Contraseña de 'root' en MySQL local (o presiona ENTER para omitir): "
+if "%ROOT_PASS%"=="" goto db_setup_done
+
+mysql -u root -p"%ROOT_PASS%" -e "CREATE DATABASE IF NOT EXISTS %DB_NAME% CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '%DB_USER%'@'localhost' IDENTIFIED BY '%DB_PASS%'; GRANT ALL PRIVILEGES ON %DB_NAME%.* TO '%DB_USER%'@'localhost'; FLUSH PRIVILEGES;" > nul 2>&1
+if %errorlevel% equ 0 (
+    echo    %GREEN%[OK] Base de datos y usuario configurados localmente.%RESET%
+) else (
+    echo    %RED%[FALLÓ] No se pudo configurar MySQL local (verifica credenciales/permisos).%RESET%
+)
+goto db_setup_done
+
+:manual_setup
+echo    %RED%[ADVERTENCIA] No se detectó Docker ni 'mysql' local. Crea la BD manualmente.%RESET%
+echo    - Base de datos: %DB_NAME%
+echo    - Usuario: %DB_USER%
+echo    - Contraseña: %DB_PASS%
+
+:db_setup_done
+
+echo.
+:: --- 4. INSTALAR DEPENDENCIAS DEL FRONTEND ---
+echo [%YELLOW%4/5%RESET%] Instalando dependencias del Frontend...
+if exist "%~dp0..\controlEatFoodWeb\frontend\package.json" (
+    pushd "%~dp0..\controlEatFoodWeb\frontend"
+    if exist "node_modules" (
+        echo    %GREEN%[OK] Las dependencias ya estan instaladas (node_modules existe).%RESET%
     ) else (
-        echo    %RED%[ADVERTENCIA] No se detectó Docker ni 'mysql' local en el PATH.%RESET%
-        echo    Asegúrate de que tu servidor MySQL esté encendido en el puerto 3306 y crea:
-        echo    - Base de datos: %DB_NAME%
-        echo    - Usuario: %DB_USER%
-        echo    - Contraseña: %DB_PASS%
+        echo    %YELLOW%[INFO] Instalando dependencias de Node.js, esto puede tardar un momento...%RESET%
+        call npm install
+        echo    %GREEN%[OK] Dependencias instaladas con exito.%RESET%
     )
+    popd
+) else (
+    echo    %RED%[AVISO] No se encontro el proyecto frontend en la ruta esperada.%RESET%
+)
+
+echo.
+:: --- 5. EJECUTAR SETUP.EXE ---
+echo [%YELLOW%5/5%RESET%] Verificando ejecucion de Setup.exe...
+if exist "%~dp0.setup_completado.lock" (
+    echo    %GREEN%[OK] El archivo setup.exe ya fue ejecutado previamente.%RESET%
+) else (
+    echo    %YELLOW%[INFO] Ejecutando setup.exe, por favor completa la instalacion en la ventana que aparecera...%RESET%
+    start /wait "" "%~dp0setup.exe"
+    echo OK > "%~dp0.setup_completado.lock"
+    echo    %GREEN%[OK] Proceso de setup.exe finalizado.%RESET%
 )
 
 echo.
