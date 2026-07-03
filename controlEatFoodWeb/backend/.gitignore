@@ -8,6 +8,3 @@ target/
 .idea/
 *.iml
 .vscode/
-native/*.dll
-native/*.so
-!native/README.md

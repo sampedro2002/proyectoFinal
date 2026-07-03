@@ -24,10 +24,9 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-    baseline-on-migrate: true
-    # La BD de este entorno ya tiene V1/V2 aplicados manualmente; baseline en 2 evita
-    # re-ejecutarlos. En una BD vacía, Flyway corre todas las migraciones normalmente.
-    baseline-version: 2
+    # Para una base de datos nueva/limpia, cambie baseline-on-migrate a false (o coméntelo).
+    # Si es una base de datos existente con tablas creadas manualmente, cambie a true y use baseline-version: 2.
+    baseline-on-migrate: false
     locations: classpath:db/migration
   jackson:
     time-zone: America/Guayaquil
