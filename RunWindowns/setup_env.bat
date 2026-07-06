@@ -16,11 +16,26 @@ echo =====================================================================
 echo.
 
 :: --- CONFIGURACIÓN DE BASE DE DATOS ---
-:: NOTA: Se usa 'control_eat_food' para coincidir con la configuración del backend.
-:: Si deseas usar 'control_food_eat', recuerda actualizar también el archivo 'application.yml' del backend.
+:: Esquema actual (V7): Sin tabla 'position', cargo como texto en employee.position_title.
+:: Campos nuevos en employee: public_code (EMP-XXXXXX), observation, position_title.
+:: Roles disponibles: ADMIN, CATERING (SUPERVISOR eliminado en V7).
+:: Usuarios catering: cateringNorte, cateringCentro, cateringSur (renombrados en V6).
 set DB_NAME=control_eat_food
 set DB_USER=admin
 set DB_PASS=BN2002sg
+
+:: --- VARIABLES DE ENTORNO DEL BACKEND ---
+:: Configuración adicional para el backend Spring Boot (application.yml).
+:: Descomenta y ajusta según tu entorno de despliegue.
+set DB_URL=jdbc:mysql://localhost:3306/%DB_NAME%?createDatabaseIfNotExist=true^&serverTimezone=America/Guayaquil
+set JWT_SECRET=Y29udHJvbC1lYXQtZm9vZC1zZWNyZXQta2V5LWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==
+set PUBLIC_URL=
+set CORS_ORIGINS=http://localhost:5173,http://localhost:5174,http://localhost:4173
+set RATE_LIMIT_ENABLED=true
+set RATE_LIMIT_AUTH=10
+set RATE_LIMIT_SCAN=60
+set BIOMETRIC_ENCRYPTION_KEY=
+set ZK_NATIVE_PATH=./native
 
 :: --- 1. VERIFICAR JAVA 21 ---
 echo [%YELLOW%1/5%RESET%] Verificando Java 21...
@@ -145,6 +160,13 @@ if exist "%~dp0..\controlEatFoodWeb\frontend\package.json" (
         call npm install
         echo    %GREEN%[OK] Dependencias instaladas con exito.%RESET%
     )
+    if not exist "node_modules\qrcode" (
+        echo    %YELLOW%[INFO] Instalando dependencia adicional: qrcode...%RESET%
+        call npm install qrcode
+        echo    %GREEN%[OK] qrcode instalado con exito.%RESET%
+    ) else (
+        echo    %GREEN%[OK] qrcode ya esta instalado.%RESET%
+    )
     popd
 ) else (
     echo    %RED%[AVISO] No se encontro el proyecto frontend en la ruta esperada.%RESET%
@@ -167,5 +189,17 @@ echo =====================================================================
 echo    %GREEN%¡PROCESO DE SETUP FINALIZADO!%RESET%
 echo    Si el script instaló Java o Node.js, debes CERRAR esta consola
 echo    y abrir una nueva para que los cambios del PATH surtan efecto.
+echo.
+echo    %YELLOW%Para iniciar el backend:%RESET%
+echo      cd controlEatFoodWeb\backend
+echo      mvn spring-boot:run
+echo.
+echo    %YELLOW%Para iniciar el frontend:%RESET%
+echo      cd controlEatFoodWeb\frontend
+echo      npm run dev
+echo.
+echo    %CYAN%URL de conexión a BD (IntelliJ/phpMyAdmin):%RESET%
+echo    jdbc:mysql://localhost:3306/%DB_NAME%?serverTimezone=America/Guayaquil
+echo    Usuario: %DB_USER% | Password: %DB_PASS%
 echo =====================================================================
 pause

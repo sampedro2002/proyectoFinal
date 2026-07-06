@@ -81,7 +81,7 @@ public class SecurityConfig {
             // Rate-limiting antes de autenticar: protege /api/auth y /api/scan del abuso.
             // Se instancia manualmente (no es @Component) para que Spring Boot no lo
             // auto-registre como filtro global del contenedor y se ejecute dos veces.
-            .addFilterBefore(new RateLimitFilter(props), JwtAuthFilter.class)
+            .addFilterBefore(new RateLimitFilter(props), UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
             .exceptionHandling(exc -> exc
                 .authenticationEntryPoint((req, res, ex) ->

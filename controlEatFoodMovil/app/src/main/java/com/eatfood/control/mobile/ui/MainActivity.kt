@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -63,9 +64,19 @@ enum class Screen(val title: String, val roles: List<String>) {
 @Composable
 fun AppRoot() {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
     val store = remember { SessionStore.get(context) }
     var user by remember { mutableStateOf(store.user) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // Retroceder desde el login admin vuelve a la pantalla de Catering (pantalla de arranque)
+    // en lugar de cerrar la app.
+    BackHandler(enabled = !showSettings && user == null) {
+        activity?.let {
+            it.startActivity(Intent(it, com.eatfood.control.mobile.ui.kiosk.KioskActivity::class.java))
+            it.finish()
+        }
+    }
 
     // Solicitar permiso de notificaciones en Android 13+
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

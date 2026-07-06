@@ -158,6 +158,9 @@ private fun ConnectPanel(onConnected: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 12.dp)
                 )
+                TextButton(onClick = {
+                    context.startActivity(Intent(context, com.eatfood.control.mobile.ui.MainActivity::class.java))
+                }) { Text("Acceso Admin") }
             }
         }
     }
