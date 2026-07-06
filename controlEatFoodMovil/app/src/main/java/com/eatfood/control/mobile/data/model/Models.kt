@@ -142,7 +142,6 @@ data class ConsumptionRow(
     val positionName: String?,
     val cateringName: String?,
     val mealName: String?,
-    val plates: Int,
     val offline: Boolean
 )
 
@@ -151,7 +150,6 @@ data class DashboardStats(
     val totalConsumptions: Long,
     val lunchCount: Long,
     val snackCount: Long,
-    val platesDelivered: Long,
     val expectedEmployees: Long,
     val employeesConsumed: Long,
     val employeesPending: Long,
@@ -160,7 +158,7 @@ data class DashboardStats(
     val failedOutOfSchedule: Long
 )
 
-data class TrendPoint(val date: String?, val plates: Long, val records: Long)
+data class TrendPoint(val date: String?, val records: Long)
 
 // ── Auditoría ────────────────────────────────────────────────────────────────
 data class AuditRow(

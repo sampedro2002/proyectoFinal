@@ -21,13 +21,16 @@ import org.springframework.stereotype.Service;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class ExportService {
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String[] HEADERS =
             {"Fecha", "Hora", "Cédula", "Empleado", "Cargo", "Catering", "Comida", "Offline"};
     private static final String[] EMP_HEADERS =
@@ -114,6 +117,182 @@ public class ExportService {
                 table.addCell(new Phrase(r.offline() ? "Sí" : "No", cf));
             }
             doc.add(table);
+            doc.close();
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new BusinessException("EXPORT_FAILED", "No se pudo generar el PDF.");
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Reporte diario del Kiosk (con conteo de platos al final)
+    // ------------------------------------------------------------------------
+    private static final String[] KIOSK_HEADERS =
+            {"#", "Hora", "Cédula", "Empleado", "Cargo", "Comida"};
+
+    public byte[] kioskDailyCsv(String cateringName, LocalDate date,
+                                List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Reporte Diario - ").append(cateringName)
+          .append(" - Fecha: ").append(date.format(DATE_FMT)).append("\n\n");
+        sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
+        int num = 1;
+        for (ConsumptionRow r : rows) {
+            sb.append(num++).append(';')
+              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+              .append(csv(r.identityCard())).append(';')
+              .append(csv(r.employeeName())).append(';')
+              .append(csv(r.positionName())).append(';')
+              .append(csv(r.mealName())).append('\n');
+        }
+        sb.append("\n");
+        sb.append("RESUMEN DE PLATOS").append("\n");
+        long total = 0;
+        for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+            sb.append(csv(entry.getKey())).append(':').append(';')
+              .append(entry.getValue()).append('\n');
+            total += entry.getValue();
+        }
+        sb.append("TOTAL").append(':').append(';').append(total).append('\n');
+        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public byte[] kioskDailyExcel(String cateringName, LocalDate date,
+                                  List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Reporte Diario");
+            CellStyle headerStyle = wb.createCellStyle();
+            org.apache.poi.ss.usermodel.Font bold = wb.createFont();
+            bold.setBold(true);
+            headerStyle.setFont(bold);
+
+            CellStyle titleStyle = wb.createCellStyle();
+            org.apache.poi.ss.usermodel.Font titleFont = wb.createFont();
+            titleFont.setBold(true);
+            titleFont.setFontHeightInPoints((short) 14);
+            titleStyle.setFont(titleFont);
+
+            Row titleRow = sheet.createRow(0);
+            Cell titleCell = titleRow.createCell(0);
+            titleCell.setCellValue("Reporte Diario - " + cateringName + " - " + date.format(DATE_FMT));
+            titleCell.setCellStyle(titleStyle);
+
+            Row header = sheet.createRow(2);
+            for (int i = 0; i < KIOSK_HEADERS.length; i++) {
+                Cell c = header.createCell(i);
+                c.setCellValue(KIOSK_HEADERS[i]);
+                c.setCellStyle(headerStyle);
+            }
+            int rn = 3;
+            int num = 1;
+            for (ConsumptionRow r : rows) {
+                Row row = sheet.createRow(rn++);
+                row.createCell(0).setCellValue(num++);
+                row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
+                row.createCell(2).setCellValue(safe(r.identityCard()));
+                row.createCell(3).setCellValue(safe(r.employeeName()));
+                row.createCell(4).setCellValue(safe(r.positionName()));
+                row.createCell(5).setCellValue(safe(r.mealName()));
+            }
+
+            rn += 1;
+            Row summaryTitle = sheet.createRow(rn++);
+            Cell stCell = summaryTitle.createCell(0);
+            stCell.setCellValue("RESUMEN DE PLATOS");
+            stCell.setCellStyle(headerStyle);
+
+            long total = 0;
+            for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+                Row sr = sheet.createRow(rn++);
+                sr.createCell(0).setCellValue(entry.getKey());
+                sr.createCell(1).setCellValue(entry.getValue());
+                total += entry.getValue();
+            }
+            Row totalRow = sheet.createRow(rn);
+            Cell tc0 = totalRow.createCell(0);
+            tc0.setCellValue("TOTAL");
+            tc0.setCellStyle(headerStyle);
+            Cell tc1 = totalRow.createCell(1);
+            tc1.setCellValue(total);
+            tc1.setCellStyle(headerStyle);
+
+            for (int i = 0; i < KIOSK_HEADERS.length; i++) sheet.autoSizeColumn(i);
+            sheet.autoSizeColumn(0);
+            sheet.autoSizeColumn(1);
+            wb.write(out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new BusinessException("EXPORT_FAILED", "No se pudo generar el Excel.");
+        }
+    }
+
+    public byte[] kioskDailyPdf(String cateringName, LocalDate date,
+                                List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Document doc = new Document(PageSize.A4.rotate(), 24, 24, 30, 24);
+            PdfWriter.getInstance(doc, out);
+            doc.open();
+
+            Font titleFont = new Font(Font.HELVETICA, 14, Font.BOLD);
+            doc.add(new Paragraph("Reporte Diario - " + cateringName, titleFont));
+            Font subFont = new Font(Font.HELVETICA, 10, Font.NORMAL);
+            doc.add(new Paragraph("Fecha: " + date.format(DATE_FMT), subFont));
+            doc.add(new Paragraph(" "));
+
+            PdfPTable table = new PdfPTable(KIOSK_HEADERS.length);
+            table.setWidthPercentage(100);
+            Font hf = new Font(Font.HELVETICA, 9, Font.BOLD, Color.WHITE);
+            for (String h : KIOSK_HEADERS) {
+                PdfPCell cell = new PdfPCell(new Phrase(h, hf));
+                cell.setBackgroundColor(new Color(33, 102, 172));
+                cell.setPadding(4);
+                table.addCell(cell);
+            }
+            Font cf = new Font(Font.HELVETICA, 8);
+            int num = 1;
+            for (ConsumptionRow r : rows) {
+                table.addCell(new Phrase(String.valueOf(num++), cf));
+                table.addCell(new Phrase(r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf));
+                table.addCell(new Phrase(safe(r.identityCard()), cf));
+                table.addCell(new Phrase(safe(r.employeeName()), cf));
+                table.addCell(new Phrase(safe(r.positionName()), cf));
+                table.addCell(new Phrase(safe(r.mealName()), cf));
+            }
+            doc.add(table);
+            doc.add(new Paragraph(" "));
+
+            Font sumTitleFont = new Font(Font.HELVETICA, 11, Font.BOLD);
+            doc.add(new Paragraph("RESUMEN DE PLATOS", sumTitleFont));
+
+            PdfPTable sumTable = new PdfPTable(2);
+            sumTable.setWidthPercentage(40);
+            sumTable.setHorizontalAlignment(PdfPTable.ALIGN_LEFT);
+            Font shf = new Font(Font.HELVETICA, 9, Font.BOLD, Color.WHITE);
+            PdfPCell sh1 = new PdfPCell(new Phrase("Tipo de Comida", shf));
+            sh1.setBackgroundColor(new Color(33, 102, 172));
+            sh1.setPadding(4);
+            sumTable.addCell(sh1);
+            PdfPCell sh2 = new PdfPCell(new Phrase("Cantidad", shf));
+            sh2.setBackgroundColor(new Color(33, 102, 172));
+            sh2.setPadding(4);
+            sumTable.addCell(sh2);
+
+            Font scf = new Font(Font.HELVETICA, 9);
+            long total = 0;
+            for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+                sumTable.addCell(new Phrase(entry.getKey(), scf));
+                sumTable.addCell(new Phrase(String.valueOf(entry.getValue()), scf));
+                total += entry.getValue();
+            }
+            Font tf = new Font(Font.HELVETICA, 10, Font.BOLD);
+            PdfPCell totalLabel = new PdfPCell(new Phrase("TOTAL", tf));
+            totalLabel.setPadding(4);
+            sumTable.addCell(totalLabel);
+            PdfPCell totalVal = new PdfPCell(new Phrase(String.valueOf(total), tf));
+            totalVal.setPadding(4);
+            sumTable.addCell(totalVal);
+
+            doc.add(sumTable);
             doc.close();
             return out.toByteArray();
         } catch (Exception e) {

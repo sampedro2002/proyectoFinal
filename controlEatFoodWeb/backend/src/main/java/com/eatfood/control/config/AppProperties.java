@@ -15,6 +15,14 @@ public class AppProperties {
     private Catering catering = new Catering();
     private Biometric biometric = new Biometric();
     private Cors cors = new Cors();
+    private RateLimit rateLimit = new RateLimit();
+
+    /**
+     * URL pública canónica del servidor (p. ej. https://catering.midominio.com), sin '/api'.
+     * Si se define (env var PUBLIC_URL), es la dirección autoritativa que ofrece el generador
+     * de QR. Útil en despliegues detrás de proxy inverso / dominio, donde la IP de red no sirve.
+     */
+    private String publicUrl = "";
 
     @Getter @Setter
     public static class Security {
@@ -51,5 +59,19 @@ public class AppProperties {
     @Getter @Setter
     public static class Cors {
         private String allowedOrigins = "http://localhost:5173";
+    }
+
+    /**
+     * Límite de peticiones (ventana fija, por IP) para endpoints sensibles al abuso:
+     * autenticación y escaneo/conexión de dispositivos. Defensa best-effort por
+     * instancia; en despliegues con réplicas conviene además limitar en el proxy.
+     */
+    @Getter @Setter
+    public static class RateLimit {
+        private boolean enabled = true;
+        /** Máx. peticiones por minuto y por IP a /api/auth/login y /api/auth/refresh. */
+        private int authPerMinute = 10;
+        /** Máx. peticiones por minuto y por IP a POST /api/scan y /api/scan/connect. */
+        private int scanPerMinute = 60;
     }
 }

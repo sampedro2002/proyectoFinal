@@ -2,6 +2,7 @@ package com.eatfood.control.service;
 
 import com.eatfood.control.biometric.BiometricMatcher;
 import com.eatfood.control.domain.*;
+import com.eatfood.control.dto.ReportDtos.ConsumptionRow;
 import com.eatfood.control.dto.ScanDtos.*;
 import com.eatfood.control.exception.BusinessException;
 import com.eatfood.control.repository.*;
@@ -34,7 +35,6 @@ public class ScanService {
     private final ScheduleRepository scheduleRepository;
     private final MealTypeRepository mealTypeRepository;
     private final FailedScanRepository failedScanRepository;
-    private final DeviceRepository deviceRepository;
     private final CateringRepository cateringRepository;
 
     /**
@@ -201,12 +201,14 @@ public class ScanService {
                 .build());
     }
 
-    /** Feed de consumos del día para el Kiosk — no actualiza lastSeen del dispositivo. */
-    @Transactional(readOnly = true)
+    /**
+     * Feed de consumos del día para el Kiosk. Valida la sesión y actúa como
+     * heartbeat: al refrescarse periódicamente mantiene viva (lastSeen) la sesión
+     * del dispositivo en uso, evitando que el TTL por inactividad la expire.
+     */
+    @Transactional
     public List<TodayEntry> todayFeed(String sessionToken) {
-        Device device = deviceRepository.findBySessionToken(sessionToken)
-                .filter(Device::isConnected)
-                .orElseThrow(() -> new BusinessException("INVALID_SESSION", "Sesión inválida."));
+        Device device = deviceService.validateSession(sessionToken);
         return consumptionRepository
                 .findByBusinessDateAndCateringId(LocalDate.now(BUSINESS_ZONE), device.getCatering().getId())
                 .stream()
@@ -217,6 +219,43 @@ public class ScanService {
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))))
                 .collect(Collectors.toList());
     }
+
+    @Transactional
+    public KioskReport todayReport(String sessionToken) {
+        Device device = deviceService.validateSession(sessionToken);
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        List<Consumption> consumptions = consumptionRepository
+                .findByBusinessDateAndCateringIdWithDetails(today, device.getCatering().getId());
+
+        List<ConsumptionRow> rows = consumptions.stream()
+                .map(c -> {
+                    Employee e = c.getEmployee();
+                    return new ConsumptionRow(
+                            c.getId(), c.getBusinessDate(), c.getConsumedAt(),
+                            e.getFullName(), e.getIdentityCard(),
+                            e.getPositionTitle(),
+                            c.getCatering().getName(), c.getMealType().getName(),
+                            c.isOffline());
+                })
+                .toList();
+
+        Map<String, Long> plateCounts = consumptions.stream()
+                .collect(Collectors.groupingBy(
+                        c -> c.getMealType().getName(),
+                        Collectors.counting()));
+
+        return new KioskReport(
+                device.getCatering().getName(),
+                today,
+                rows,
+                plateCounts);
+    }
+
+    public record KioskReport(
+            String cateringName,
+            LocalDate date,
+            List<ConsumptionRow> rows,
+            Map<String, Long> plateCounts) {}
 
     @Transactional
     public ManualScanResponse manualScan(ManualScanRequest req) {

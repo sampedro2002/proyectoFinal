@@ -115,6 +115,7 @@ mvn spring-boot:run
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
+| `PUBLIC_URL` | — | URL pública canónica del backend (opcional, para proxies y códigos QR). |
 | `DB_URL` | `jdbc:mysql://localhost:3306/control_eat_food?...` | URL JDBC de MySQL |
 | `DB_USER` | `admin` | Usuario de BD |
 | `DB_PASSWORD` | — | Contraseña de BD (definir siempre en producción) |
@@ -178,7 +179,8 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  - **Registro Manual de Consumos**: El administrador puede registrar consumos sin huella desde el panel web o la app móvil, eligiendo empleado, catering y tipo de comida (Almuerzo/Merienda). No se validan horario, permiso ni duplicados: pensado para correcciones.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema crea un empleado temporal `INACTIVE` reutilizable por cédula, de modo que el consumo aparece en el feed del kiosk y en reportes, pero no contamina la gestión de empleados activos.
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
- - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV.
+ - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos.
+ - **Configuración por Código QR**: El panel web (vía el ServerInfoController) provee un código QR interactivo con la IP de la red local o la `PUBLIC_URL` del servidor para auto-configurar rápidamente la URL base en la app móvil.
  
  ---
  
@@ -217,7 +219,7 @@ Existe una aplicación móvil complementaria en **[`../controlEatFoodMovil`](../
 - CRUD de empleados, cargos, caterings, horarios y huellas (con lector ZK9500 vía USB OTG).
 - **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas** (visitantes/contratistas), con selector de catering y tipo de comida.
 - Reportes y auditoría.
-- Modo kiosco con lector biométrico USB OTG y cola offline (Room).
+- Modo kiosco con lector biométrico USB OTG, cola offline (Room) y exportación de reportes diarios (PDF/Excel/CSV).
 
 Ver su README en [`../controlEatFoodMovil/README.md`](../controlEatFoodMovil/README.md) para puesta en marcha.
 

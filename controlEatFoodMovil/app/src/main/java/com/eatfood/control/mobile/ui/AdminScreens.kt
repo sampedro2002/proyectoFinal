@@ -53,7 +53,6 @@ fun DashboardScreen() {
             "Consumos de hoy" to s.totalConsumptions.toString(),
             "Almuerzos" to s.lunchCount.toString(),
             "Meriendas" to s.snackCount.toString(),
-            "Platos entregados" to s.platesDelivered.toString(),
             "Empleados esperados" to s.expectedEmployees.toString(),
             "Consumieron" to s.employeesConsumed.toString(),
             "Pendientes" to s.employeesPending.toString(),
@@ -76,12 +75,17 @@ fun DashboardScreen() {
                 trend.forEach { p ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Text(p.date ?: "", Modifier.width(96.dp), style = MaterialTheme.typography.bodySmall)
-                        Text("${p.plates} platos · ${p.records} reg.", style = MaterialTheme.typography.bodySmall)
+                        Text("${p.records} registros", style = MaterialTheme.typography.bodySmall)
                     }
                 }
             }
         }
     }
+}
+
+private fun isValidTime(time: String): Boolean {
+    val regex = Regex("^([01]\\d|2[0-3]):([0-5]\\d)$")
+    return regex.matches(time.trim())
 }
 
 @Composable
@@ -111,6 +115,7 @@ fun EmployeesScreen(canModify: Boolean) {
     var items by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
     var positions by remember { mutableStateOf<List<PositionResponse>>(emptyList()) }
     var term by remember { mutableStateOf("") }
+    var statusFilter by remember { mutableStateOf("ALL") }
     var editing by remember { mutableStateOf<EmployeeResponse?>(null) }
     var creating by remember { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<EmployeeResponse?>(null) }
@@ -120,6 +125,11 @@ fun EmployeesScreen(canModify: Boolean) {
         catch (e: Exception) { snackbar.showSnackbar(e.apiMessage()) }
     }
     LaunchedEffect(Unit) { positions = runCatching { api.positions() }.getOrDefault(emptyList()); reload() }
+
+    val filtered = remember(items, statusFilter) {
+        if (statusFilter == "ALL") items
+        else items.filter { it.status == statusFilter }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -136,8 +146,30 @@ fun EmployeesScreen(canModify: Boolean) {
                 trailingIcon = { TextButton(onClick = { scope.launch { reload() } }) { Text("Buscar") } },
                 modifier = Modifier.fillMaxWidth().padding(12.dp)
             )
+            
+            var statusMenu by remember { mutableStateOf(false) }
+            Box(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
+                OutlinedButton(
+                    onClick = { statusMenu = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        when (statusFilter) {
+                            "ACTIVE" -> "Activos"
+                            "INACTIVE" -> "Inactivos"
+                            else -> "Todos"
+                        }
+                    )
+                }
+                DropdownMenu(statusMenu, { statusMenu = false }) {
+                    DropdownMenuItem(text = { Text("Todos") }, onClick = { statusFilter = "ALL"; statusMenu = false })
+                    DropdownMenuItem(text = { Text("Activos") }, onClick = { statusFilter = "ACTIVE"; statusMenu = false })
+                    DropdownMenuItem(text = { Text("Inactivos") }, onClick = { statusFilter = "INACTIVE"; statusMenu = false })
+                }
+            }
+            
             LazyColumn(Modifier.fillMaxSize()) {
-                items(items) { e ->
+                items(filtered) { e ->
                     RowItem(
                         title = e.fullName,
                         subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"} · ${e.fingerprintCount}/3 huellas",
@@ -425,6 +457,7 @@ fun CateringsScreen(isAdmin: Boolean) {
     var items by remember { mutableStateOf<List<CateringResponse>>(emptyList()) }
     var editing by remember { mutableStateOf<CateringResponse?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var actionsFor by remember { mutableStateOf<CateringResponse?>(null) }
 
     suspend fun reload() { items = runCatching { api.caterings() }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
@@ -439,10 +472,29 @@ fun CateringsScreen(isAdmin: Boolean) {
                     title = c.name,
                     subtitle = "${c.location ?: "Sin ubicación"} · Conectados ${c.connectedDevices}/${c.maxDevices}",
                     trailing = if (c.active) "Activo" else "Inactivo",
-                    onClick = { if (isAdmin) editing = c }
+                    onClick = { actionsFor = c }
                 )
             }
         }
+    }
+
+    actionsFor?.let { c ->
+        AlertDialog(
+            onDismissRequest = { actionsFor = null },
+            title = { Text(c.name) },
+            text = {
+                Column {
+                    Text("Ubicación: ${c.location ?: "Sin ubicación"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Dispositivos: ${c.connectedDevices}/${c.maxDevices}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Estado: ${if (c.active) "Activo" else "Inactivo"}", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    if (isAdmin) {
+                        TextButton(onClick = { editing = c; actionsFor = null }) { Text("Editar") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { actionsFor = null }) { Text("Cerrar") } }
+        )
     }
 
     if (creating || editing != null) {
@@ -524,6 +576,10 @@ fun SchedulesScreen() {
             },
             confirmButton = {
                 TextButton(onClick = {
+                    if (!isValidTime(start) || !isValidTime(end)) {
+                        scope.launch { snackbar.showSnackbar("Formato de hora inválido. Use HH:mm (ej: 12:00)") }
+                        return@TextButton
+                    }
                     scope.launch {
                         runCatching { api.saveSchedule(ScheduleRequest(m.id, start.trim(), end.trim(), true)) }
                             .onSuccess { editing = null; reload() }

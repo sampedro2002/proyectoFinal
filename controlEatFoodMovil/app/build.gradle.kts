@@ -99,6 +99,10 @@ dependencies {
     // Persistencia segura de tokens
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
+    // Escáner de códigos QR de Google Play Services (sin permiso de cámara ni UI propia).
+    // Se usa para aprovisionar la URL del servidor desde un QR (el usuario no la teclea).
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
     // Cola offline (Room) — reemplaza IndexedDB del frontend web
     val room_version = "2.7.0-alpha12"
     implementation("androidx.room:room-runtime:$room_version")

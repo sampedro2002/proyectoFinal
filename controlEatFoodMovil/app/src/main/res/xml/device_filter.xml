@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- VIDs específicos del lector ZK9500 y compatibles -->
     <usb-device vendor-id="6997" />
+    <usb-device vendor-id="1947" />
+    <usb-device vendor-id="7003" />
     <usb-device vendor-id="1947" />
     <usb-device vendor-id="10473" />
     <usb-device vendor-id="1923" />
-    <usb-device vendor-id="11753" />
-    <usb-device vendor-id="1955" />
 </resources>

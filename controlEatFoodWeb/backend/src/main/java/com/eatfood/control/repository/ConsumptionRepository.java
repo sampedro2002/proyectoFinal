@@ -21,6 +21,15 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     List<Consumption> findByBusinessDateAndCateringId(LocalDate businessDate, Long cateringId);
 
+    @EntityGraph(attributePaths = {"catering", "mealType", "employee"})
+    @Query("""
+            SELECT c FROM Consumption c
+            WHERE c.businessDate = :date AND c.catering.id = :cateringId
+            ORDER BY c.consumedAt DESC
+            """)
+    List<Consumption> findByBusinessDateAndCateringIdWithDetails(
+            @Param("date") LocalDate date, @Param("cateringId") Long cateringId);
+
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
      * las relaciones LAZY ({@code catering}, {@code mealType}) que
@@ -51,4 +60,16 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date")
     List<Long> findConsumedEmployeeIds(@Param("date") LocalDate date);
+
+    /**
+     * Conteo de consumos agrupado por día en un rango, en una sola consulta.
+     * Evita el N+1 de recorrer día por día. Devuelve filas {@code [LocalDate, Long]};
+     * los días sin consumos no aparecen y el servicio los rellena con cero.
+     */
+    @Query("""
+            SELECT c.businessDate, COUNT(c) FROM Consumption c
+            WHERE c.businessDate BETWEEN :from AND :to
+            GROUP BY c.businessDate
+            """)
+    List<Object[]> countGroupedByBusinessDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

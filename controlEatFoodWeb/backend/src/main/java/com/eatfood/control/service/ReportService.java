@@ -4,6 +4,7 @@ import com.eatfood.control.domain.Consumption;
 import com.eatfood.control.domain.Employee;
 import com.eatfood.control.domain.EmployeeStatus;
 import com.eatfood.control.dto.ReportDtos.*;
+import com.eatfood.control.exception.BusinessException;
 import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.FailedScanRepository;
@@ -16,9 +17,9 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
@@ -27,14 +28,32 @@ public class ReportService {
     /** Huso horario de negocio (Ecuador). Coincide con spring.jpa.properties.hibernate.jdbc.time_zone. */
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Guayaquil");
 
+    /** Máximo de días permitido en un rango de reporte, para evitar consultas desmedidas. */
+    private static final long MAX_RANGE_DAYS = 366;
+
     private final ConsumptionRepository consumptionRepository;
     private final EmployeeRepository employeeRepository;
     private final MealTypeRepository mealTypeRepository;
     private final FailedScanRepository failedScanRepository;
 
+    /** Valida que el rango de fechas sea coherente y no excesivamente amplio. */
+    private void validateRange(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new BusinessException("INVALID_RANGE", "Debe indicar las fechas 'desde' y 'hasta'.");
+        }
+        if (from.isAfter(to)) {
+            throw new BusinessException("INVALID_RANGE", "La fecha 'desde' no puede ser posterior a 'hasta'.");
+        }
+        if (java.time.temporal.ChronoUnit.DAYS.between(from, to) > MAX_RANGE_DAYS) {
+            throw new BusinessException("RANGE_TOO_LARGE",
+                    "El rango de fechas no puede exceder " + MAX_RANGE_DAYS + " días.");
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<ConsumptionRow> consumptions(LocalDate from, LocalDate to, Long cateringId,
                                              Long mealTypeId, Long employeeId) {
+        validateRange(from, to);
         return consumptionRepository.report(from, to, cateringId, mealTypeId, employeeId).stream()
                 .map(this::toRow).toList();
     }
@@ -78,23 +97,23 @@ public class ReportService {
     @Transactional(readOnly = true)
     public List<EmployeeNotConsumed> notConsumed(LocalDate date) {
         if (date == null) date = LocalDate.now(BUSINESS_ZONE);
-        Set<Long> consumed = new HashSet<>(consumptionRepository.findConsumedEmployeeIds(date));
-        List<EmployeeNotConsumed> result = new ArrayList<>();
-        for (Employee e : employeeRepository.findByDeletedFalseAndStatus(EmployeeStatus.ACTIVE)) {
-            if (!consumed.contains(e.getId())) {
-                result.add(new EmployeeNotConsumed(e.getId(), e.getIdentityCard(), e.getFullName(),
-                        e.getPositionTitle()));
-            }
-        }
-        return result;
+        return employeeRepository.findActiveNotConsumed(EmployeeStatus.ACTIVE, date).stream()
+                .map(e -> new EmployeeNotConsumed(e.getId(), e.getIdentityCard(), e.getFullName(),
+                        e.getPositionTitle()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public List<TrendPoint> trend(LocalDate from, LocalDate to) {
+        validateRange(from, to);
+        // Una sola consulta agrupada por día; los días sin consumos se rellenan con cero.
+        Map<LocalDate, Long> counts = new HashMap<>();
+        for (Object[] row : consumptionRepository.countGroupedByBusinessDate(from, to)) {
+            counts.put((LocalDate) row[0], (Long) row[1]);
+        }
         List<TrendPoint> points = new ArrayList<>();
         for (LocalDate d = from; !d.isAfter(to); d = d.plusDays(1)) {
-            long records = consumptionRepository.countByBusinessDate(d);
-            points.add(new TrendPoint(d, records));
+            points.add(new TrendPoint(d, counts.getOrDefault(d, 0L)));
         }
         return points;
     }

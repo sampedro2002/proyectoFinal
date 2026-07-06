@@ -32,9 +32,20 @@ object UsbPermission {
     private const val TAG = "UsbPermission"
     private const val ACTION_USB_PERMISSION = "com.eatfood.control.mobile.USB_PERMISSION"
 
-    private val ZK_VENDOR_IDS = setOf(6997, 1947, 0x1B55, 0x079B, 0x28E9, 0x0783)
+    // VID/PID específicos del lector ZK9500
+    // VID 6997 (0x1B55) es el más común para ZK9500
+    private data class DeviceId(val vendorId: Int, val productId: Int? = null)
+    
+    private val ZK_DEVICES = listOf(
+        DeviceId(6997),      // ZK9500 principal (VID=0x1B55)
+        DeviceId(1947),      // ZK alternativo (VID=0x079B)
+        DeviceId(0x1B55),    // ZK9500 en hex
+        DeviceId(0x079B),    // ZK alternativo en hex
+        DeviceId(0x28E9),    // Otro ZK
+        DeviceId(0x0783)     // Otro ZK
+    )
 
-    private val ZK_PRODUCT_KEYWORDS = listOf("zk", "fingerprint", "biometric", "slk", "9500")
+    private val ZK_PRODUCT_KEYWORDS = listOf("zk9500", "zkteco", "fingerprint", "biometric")
 
     sealed class Result {
         data class Granted(val device: UsbDevice) : Result()
@@ -49,11 +60,24 @@ object UsbPermission {
         allDevices.forEach { dev ->
             Log.i(TAG, "  → VID=${dev.vendorId} (0x${dev.vendorId.toString(16)})  PID=${dev.productId} (0x${dev.productId.toString(16)})  producto='${dev.productName ?: "?"}'  fabricante='${dev.manufacturerName ?: "?"}'")
         }
-        val byVid = allDevices.firstOrNull { it.vendorId in ZK_VENDOR_IDS }
-        if (byVid != null) {
-            Log.i(TAG, "Lector encontrado por VID: ${byVid.vendorId}")
-            return byVid
+        
+        if (allDevices.isEmpty()) {
+            Log.w(TAG, "No hay dispositivos USB conectados")
+            return null
         }
+        
+        // Buscar por VID/PID específico
+        val byVidPid = allDevices.firstOrNull { dev ->
+            ZK_DEVICES.any { zk ->
+                dev.vendorId == zk.vendorId && (zk.productId == null || dev.productId == zk.productId)
+            }
+        }
+        if (byVidPid != null) {
+            Log.i(TAG, "Lector encontrado por VID/PID: VID=${byVidPid.vendorId}, PID=${byVidPid.productId}")
+            return byVidPid
+        }
+        
+        // Buscar por nombre (solo si contiene palabras clave muy específicas)
         val byName = allDevices.firstOrNull { dev ->
             val name = (dev.productName ?: "").lowercase()
             val mfg = (dev.manufacturerName ?: "").lowercase()
@@ -63,6 +87,7 @@ object UsbPermission {
             Log.i(TAG, "Lector encontrado por nombre: '${byName.productName}' (fabricante: '${byName.manufacturerName}')")
             return byName
         }
+        
         Log.w(TAG, "No se encontró ningún lector ZK entre los dispositivos USB conectados")
         return null
     }

@@ -14,6 +14,7 @@ export default function Layout() {
         {hasRole('ADMIN') && <NavLink to="/reports">Reportes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/audit">Auditoría</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/manual-scan">Registro manual</NavLink>}
+        {hasRole('ADMIN') && <NavLink to="/conexion">Conexión (QR)</NavLink>}
         <div className="spacer" />
         <button className="ghost" onClick={logout}>Cerrar sesión</button>
       </aside>

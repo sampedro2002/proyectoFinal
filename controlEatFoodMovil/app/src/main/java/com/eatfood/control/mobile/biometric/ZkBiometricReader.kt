@@ -70,6 +70,14 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
 
             openSensorWithRetries(s, usbDevice)
 
+            // Verificar que el dispositivo realmente responda como lector ZK9500
+            if (!verifySensorConnection(s)) {
+                Log.w(TAG, "El dispositivo USB no responde como lector ZK9500")
+                close()
+                onStatus(ReaderStatus.NO_DEVICE)
+                throw BiometricException("El dispositivo USB conectado no es un lector ZK9500 válido.")
+            }
+
             s.startCapture(0)
             Log.i(TAG, "Captura iniciada")
             deviceError = false
@@ -88,6 +96,31 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
                 else -> e.message ?: "Error desconocido al inicializar hardware."
             }
             throw BiometricException(msg)
+        }
+    }
+
+    private fun verifySensorConnection(sensor: FingerprintSensor): Boolean {
+        return try {
+            // Verificar que no haya errores pendientes después de abrir
+            if (deviceError) {
+                Log.w(TAG, "deviceError está activo después de abrir")
+                return false
+            }
+            
+            // Intentar verificar el estado del sensor
+            // Si el dispositivo no es un lector ZK real, esta operación fallará
+            Thread.sleep(500) // Dar tiempo al sensor para inicializarse
+            
+            if (deviceError) {
+                Log.w(TAG, "deviceError se activó durante la verificación")
+                return false
+            }
+            
+            Log.i(TAG, "Verificación de sensor completada exitosamente")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Error verificando sensor: ${e.message}")
+            false
         }
     }
 

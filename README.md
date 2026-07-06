@@ -33,20 +33,6 @@ Dependiendo de tu sistema operativo, sigue las instrucciones para preparar Java,
    - Sigue los pasos en pantalla del asistente de instalación.
 4. **Importante**: Si el script instaló Java o Node.js, cierra la terminal actual y abre una nueva para que las variables de entorno surtan efecto.
 
-#### 🐧 En Linux
-1. Abre tu terminal en la raíz del proyecto.
-2. Dirígete a la carpeta `RunLinux`, dale permisos de ejecución al script y ejecútalo:
-   ```bash
-   cd RunLinux
-   chmod +x setup_env.sh
-   ./setup_env.sh
-   ```
-   *El script verificará tu gestor de paquetes (APT, DNF, Pacman, etc.) e instalará OpenJDK 21, Node.js y configurará la base de datos MySQL.*
-3. **Bibliotecas Nativas del SDK**:
-   - En Linux, el backend de Spring Boot interactúa con el SDK de biometría a través de las librerías nativas `.so` contenidas en `RunLinux/lib-x64/` (o `lib-x86/` para 32 bits).
-   - Estas librerías son requeridas si decides usar biometría real (`BIOMETRIC_PROVIDER=zk`).
-4. **Importante**: Si el script instaló Java o Node.js, ejecuta `source ~/.bashrc` o reinicia la terminal.
-
 ---
 
 ### 🛠️ Paso 2: Ejecución de los Componentes
@@ -74,3 +60,78 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
 - **Cifrado Biométrico**: Las plantillas de huellas digitales de los empleados se cifran usando AES-128/CBC antes de almacenarse en la base de datos.
 - **Autenticación**: Todos los accesos se validan y aseguran con tokens JWT (JSON Web Tokens).
 - **Roles y Auditoría**: El acceso está particionado en roles (Administrador, Supervisor, Catering) y todas las acciones críticas (cambios, altas, bajas) quedan registradas en un log de auditoría inmutable.
+
+## 🌍 Puesta en Producción
+
+Para desplegar el sistema en un entorno de producción, sigue estas directrices y mejores prácticas:
+
+### 1. Base de Datos
+- Utiliza una instancia dedicada de MySQL (v8.0+).
+- Asegúrate de cambiar las contraseñas predeterminadas y restringir el acceso remoto.
+- Configura copias de seguridad (backups) automáticas y periódicas de la base de datos `control_eat_food`.
+
+### 2. Backend (Spring Boot)
+1. Compila el proyecto para generar el archivo JAR ejecutable:
+   ```bash
+   cd controlEatFoodWeb/backend
+   mvn clean package -DskipTests
+   ```
+2. Ejecuta el JAR (`target/control-eat-food-0.0.1-SNAPSHOT.jar` o similar) definiendo obligatoriamente las variables de entorno de seguridad:
+   ```bash
+   export DB_URL=jdbc:mysql://tu-servidor-bd:3306/control_eat_food
+   export DB_USER=tu_usuario
+   export DB_PASSWORD=tu_password_seguro
+   export JWT_SECRET=tu_clave_jwt_base64_muy_larga_256bits
+   export BIOMETRIC_ENCRYPTION_KEY=tu_clave_aes_128_minimo_16_bytes
+   export PUBLIC_URL=https://tu-dominio.com
+   
+   java -jar target/backend-0.0.1-SNAPSHOT.jar
+   ```
+   *(Nota: Se recomienda administrar el proceso mediante `systemd` o contenedorizarlo con Docker para garantizar su reinicio automático).*
+
+### 3. Frontend Web (React + Vite)
+1. Genera los archivos estáticos optimizados para producción:
+   ```bash
+   cd controlEatFoodWeb/frontend
+   npm run build
+   ```
+2. Esto creará una carpeta `dist/`. Este contenido es estático y debe ser servido utilizando un servidor web moderno (ver Paso 4).
+
+### 4. Servidor Web y Proxy Inverso (Nginx)
+Se recomienda utilizar Nginx como servidor web para entregar la SPA de React (Frontend) y redirigir el tráfico hacia la API (Backend), asegurando todas las comunicaciones con HTTPS:
+
+```nginx
+server {
+    listen 80;
+    server_name tu-dominio.com;
+    
+    # Redirigir HTTP a HTTPS (Configuración SSL omitida por brevedad)
+
+    # Servir Frontend Web
+    location / {
+        root /ruta/a/tu/proyecto/controlEatFoodWeb/frontend/dist;
+        index index.html;
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy Inverso hacia el Backend de Spring Boot
+    location /api/ {
+        proxy_pass http://localhost:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+### 5. App Móvil Android
+1. Ajusta la URL de conexión en `controlEatFoodMovil/local.properties` para que apunte a tu entorno de producción:
+   ```properties
+   API_BASE_URL=https://tu-dominio.com/api
+   ```
+2. Genera el APK o App Bundle (AAB) firmado listo para su distribución:
+   ```bash
+   cd controlEatFoodMovil
+   ./gradlew :app:assembleRelease
+   ```

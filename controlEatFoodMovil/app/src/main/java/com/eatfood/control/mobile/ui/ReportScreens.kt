@@ -119,7 +119,7 @@ fun ReportsScreen() {
                 }
             }
             Text(
-                "${rows.size} registros · ${rows.sumOf { it.plates }} platos",
+                "${rows.size} registros",
                 Modifier.padding(10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             LazyColumn(Modifier.fillMaxSize()) {
@@ -127,7 +127,7 @@ fun ReportsScreen() {
                     RowItem(
                         title = "${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
                         subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.cateringName ?: ""}",
-                        trailing = "${r.plates}🍽 ${if (r.offline) "offline" else ""}"
+                        trailing = if (r.offline) "offline" else ""
                     )
                 }
             }

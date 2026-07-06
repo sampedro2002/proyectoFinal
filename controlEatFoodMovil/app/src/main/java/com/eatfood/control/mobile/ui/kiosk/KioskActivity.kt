@@ -1,15 +1,21 @@
 package com.eatfood.control.mobile.ui.kiosk
 
+import android.app.DownloadManager
 import android.content.BroadcastReceiver
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbManager
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -54,7 +60,11 @@ import com.eatfood.control.mobile.util.ToneFeedback
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
+import java.time.LocalDate
 import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -170,6 +180,8 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     val usbDisconnected = remember { AtomicBoolean(false) }
     var currentReader by remember { mutableStateOf<BiometricReader?>(null) }
     var showTable by remember { mutableStateOf(true) }
+    var reportFormat by remember { mutableStateOf("pdf") }
+    var downloading by remember { mutableStateOf(false) }
 
     suspend fun refreshQueued() { queued = runCatching { dao.count() }.getOrDefault(0) }
 
@@ -191,6 +203,48 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
         }
         refreshQueued()
         refreshFeed()
+    }
+
+    suspend fun downloadReport() {
+        if (downloading) return
+        downloading = true
+        try {
+            val response = scanApi.exportToday(session.sessionToken, reportFormat)
+            if (response.isSuccessful && response.body() != null) {
+                val body = response.body()!!
+                val disposition = response.headers()["Content-Disposition"] ?: ""
+                val filename = if (disposition.contains("filename=")) {
+                    disposition.substringAfter("filename=\"").substringBefore("\"")
+                } else {
+                    val ext = when (reportFormat) {
+                        "excel" -> "xlsx"
+                        "csv" -> "csv"
+                        else -> "pdf"
+                    }
+                    "reporte-diario-${LocalDate.now()}.$ext"
+                }
+                val bytes = body.bytes()
+                saveFileToDownloads(context, filename, bytes)
+                Toast.makeText(context, "Reporte guardado: $filename", Toast.LENGTH_LONG).show()
+            } else {
+                val errorMsg = when (response.code()) {
+                    401 -> "Sesión inválida. Reconecte el dispositivo."
+                    403 -> "No tiene permisos para generar reportes."
+                    404 -> "No se encontraron registros para hoy."
+                    in 500..599 -> "Error del servidor (${response.code()}). Intente más tarde."
+                    else -> "Error al generar reporte (${response.code()})"
+                }
+                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+            }
+        } catch (e: java.net.UnknownHostException) {
+            Toast.makeText(context, "Sin conexión al servidor", Toast.LENGTH_SHORT).show()
+        } catch (e: java.net.SocketTimeoutException) {
+            Toast.makeText(context, "Tiempo de espera agotado", Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(context, "Error: ${e.message ?: "desconocido"}", Toast.LENGTH_SHORT).show()
+        } finally {
+            downloading = false
+        }
     }
 
     suspend fun processCapture(template: String) {
@@ -297,10 +351,15 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 
     // Bucle de captura
     LaunchedEffect(Unit) {
+        var consecutiveCaptureFailures = 0
+        val maxFailuresBeforeNoDevice = 3
+        
         while (isActive) {
             usbDisconnected.set(false)
             readerStatus = ReaderStatus.CONNECTING
             lastError = ""
+            consecutiveCaptureFailures = 0
+            
             val reader = BiometricReader.create(context)
             currentReader = reader
             try {
@@ -310,18 +369,34 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             } catch (e: Exception) {
                 currentReader = null
                 lastError = e.message ?: "Error desconocido"
-                if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
+                if (readerStatus == ReaderStatus.CONNECTING) {
+                    readerStatus = ReaderStatus.NO_DEVICE
+                }
                 delay(5_000); continue
             }
+            
             while (isActive && !usbDisconnected.get()) {
                 try {
                     result = null
                     val template = reader.capture(20_000)
-                    if (!usbDisconnected.get()) processCapture(template)
-                    delay(1_000) // Se redujo de 10s a 1s para agilizar el flujo
+                    if (!usbDisconnected.get()) {
+                        processCapture(template)
+                        consecutiveCaptureFailures = 0
+                    }
+                    delay(1_000)
                     result = null
                 } catch (e: Exception) {
                     if (usbDisconnected.get()) break
+                    
+                    consecutiveCaptureFailures++
+                    lastError = e.message ?: "Error de captura"
+                    
+                    if (consecutiveCaptureFailures >= maxFailuresBeforeNoDevice) {
+                        readerStatus = ReaderStatus.NO_DEVICE
+                        lastError = "El dispositivo no responde como lector ZK9500"
+                        break
+                    }
+                    
                     delay(800)
                     if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
                 }
@@ -416,7 +491,11 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             TodayFeedPanel(
                 feed = feed, online = online, queued = queued,
                 showTable = showTable, onToggle = { showTable = !showTable },
-                modifier = Modifier.heightIn(max = 280.dp)
+                reportFormat = reportFormat,
+                onFormatChange = { reportFormat = it },
+                onDownload = { scope.launch { downloadReport() } },
+                downloading = downloading,
+                modifier = Modifier.heightIn(max = 320.dp)
             )
             
             Spacer(Modifier.height(16.dp))
@@ -470,6 +549,10 @@ private fun TodayFeedPanel(
     queued: Int,
     showTable: Boolean,
     onToggle: () -> Unit,
+    reportFormat: String,
+    onFormatChange: (String) -> Unit,
+    onDownload: () -> Unit,
+    downloading: Boolean,
     modifier: Modifier = Modifier
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -543,6 +626,65 @@ private fun TodayFeedPanel(
                         }
                         Text(if (online) "● En línea" else "○ Offline", color = if (online) Success else Warning, fontSize = 12.sp)
                     }
+
+                    HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
+
+                    // Sección de descarga de reporte
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        // Selector de formato
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Formato:", color = OnSurface, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
+                            var expanded by remember { mutableStateOf(false) }
+                            Box {
+                                Surface(
+                                    modifier = Modifier.clickable { expanded = true },
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = SurfaceVariant
+                                ) {
+                                    Row(
+                                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(reportFormat.uppercase(), color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("▼", color = OnSurface, fontSize = 10.sp)
+                                    }
+                                }
+                                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                                    DropdownMenuItem(text = { Text("PDF") }, onClick = { onFormatChange("pdf"); expanded = false })
+                                    DropdownMenuItem(text = { Text("Excel") }, onClick = { onFormatChange("excel"); expanded = false })
+                                    DropdownMenuItem(text = { Text("CSV") }, onClick = { onFormatChange("csv"); expanded = false })
+                                }
+                            }
+                        }
+
+                        // Botón de descarga
+                        Button(
+                            onClick = onDownload,
+                            enabled = !downloading,
+                            colors = ButtonDefaults.buttonColors(containerColor = Success),
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
+                        ) {
+                            if (downloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.White,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(
+                                if (downloading) "Generando..." else "📥 Descargar",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -554,4 +696,40 @@ private fun isOnline(context: Context): Boolean {
     val net = cm.activeNetwork ?: return false
     val caps = cm.getNetworkCapabilities(net) ?: return false
     return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+}
+
+private fun saveFileToDownloads(context: Context, filename: String, bytes: ByteArray) {
+    try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val contentValues = ContentValues().apply {
+                put(MediaStore.Downloads.DISPLAY_NAME, filename)
+                put(MediaStore.Downloads.MIME_TYPE, getMimeType(filename))
+                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            }
+            val resolver = context.contentResolver
+            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            uri?.let {
+                resolver.openOutputStream(it)?.use { outputStream ->
+                    outputStream.write(bytes)
+                }
+            }
+        } else {
+            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+            val file = File(downloadsDir, filename)
+            FileOutputStream(file).use { outputStream ->
+                outputStream.write(bytes)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+private fun getMimeType(filename: String): String {
+    return when {
+        filename.endsWith(".pdf") -> "application/pdf"
+        filename.endsWith(".xlsx") -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename.endsWith(".csv") -> "text/csv"
+        else -> "application/octet-stream"
+    }
 }

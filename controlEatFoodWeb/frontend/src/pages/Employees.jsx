@@ -32,6 +32,7 @@ export default function Employees() {
   const [term, setTerm]           = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [error, setError]         = useState('');
+  const [loading, setLoading]     = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
 
   // modal (crear/editar)
@@ -46,15 +47,9 @@ export default function Employees() {
   const [bioMsg, setBioMsg]             = useState('');
   const zkRef = useRef(null);
 
-  // historial (drawer)
-  const [historyEmp, setHistoryEmp]   = useState(null);
-  const [historyRows, setHistoryRows] = useState([]);
-  const [historyFrom, setHistoryFrom] = useState(isoDaysAgo(30));
-  const [historyTo, setHistoryTo]     = useState(isoToday());
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyError, setHistoryError]     = useState('');
 
   async function load() {
+    setLoading(true);
     try {
       const { data } = await api.get('/employees', { params: { term, size: 200 } });
       setItems(data.content || data);
@@ -62,6 +57,8 @@ export default function Employees() {
     } catch (err) {
       setItems([]);
       setError(err.response?.data?.message || 'No se pudieron cargar los empleados');
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -74,7 +71,12 @@ export default function Employees() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  // Búsqueda con debounce: se dispara 350 ms después de dejar de escribir
+  // (y también en el montaje inicial). El botón "Buscar" y Enter siguen funcionando.
+  useEffect(() => {
+    const t = setTimeout(() => { load(); }, 350);
+    return () => clearTimeout(t);
+  }, [term]);
 
   useEffect(() => {
     if (form?.id) loadFp(form.id);
@@ -239,31 +241,6 @@ export default function Employees() {
     }
   }
 
-  // ----- Historial -----
-  async function fetchHistory(empId, from, to) {
-    setHistoryLoading(true);
-    setHistoryError('');
-    try {
-      const { data } = await api.get('/reports/consumptions', {
-        params: { employeeId: empId, from, to },
-      });
-      setHistoryRows(data);
-    } catch (err) {
-      setHistoryRows([]);
-      setHistoryError(err.response?.data?.message || 'No se pudo cargar el historial.');
-    } finally {
-      setHistoryLoading(false);
-    }
-  }
-
-  function openHistory(emp) {
-    const from = isoDaysAgo(30);
-    const to = isoToday();
-    setHistoryFrom(from);
-    setHistoryTo(to);
-    setHistoryEmp(emp);
-    fetchHistory(emp.id, from, to);
-  }
 
   return (
     <div>
@@ -314,11 +291,13 @@ export default function Employees() {
                   {isAdmin && (
                     <button className="ghost" onClick={() => openEdit(e)}>Editar</button>
                   )}
-                  <button className="ghost" onClick={() => openHistory(e)}>Historial</button>
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {loading && (
+              <tr><td colSpan="9" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
+            )}
+            {!loading && filtered.length === 0 && (
               <tr><td colSpan="9" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
             )}
           </tbody>
@@ -498,52 +477,6 @@ export default function Employees() {
         </div>
       )}
 
-      {/* ── Drawer historial de consumos ── */}
-      <Drawer
-        isOpen={!!historyEmp}
-        title={historyEmp ? `Historial · ${historyEmp.fullName}` : 'Historial'}
-        onClose={() => setHistoryEmp(null)}
-      >
-        <div className="row" style={{ marginBottom: 12 }}>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Desde</label>
-            <input type="date" value={historyFrom}
-                   onChange={e => setHistoryFrom(e.target.value)} />
-          </div>
-          <div className="field" style={{ marginBottom: 0 }}>
-            <label>Hasta</label>
-            <input type="date" value={historyTo}
-                   onChange={e => setHistoryTo(e.target.value)} />
-          </div>
-          <button style={{ alignSelf: 'flex-end' }}
-                  onClick={() => historyEmp && fetchHistory(historyEmp.id, historyFrom, historyTo)}>
-            Aplicar
-          </button>
-        </div>
-
-        {historyError && <p className="error-text">{historyError}</p>}
-        {historyLoading ? (
-          <p style={{ color: 'var(--muted)' }}>Cargando…</p>
-        ) : (
-          <table>
-            <thead>
-              <tr><th>Fecha</th><th>Comida</th><th>Catering</th></tr>
-            </thead>
-            <tbody>
-              {historyRows.map(r => (
-                <tr key={r.id}>
-                  <td>{r.consumedAt ? new Date(r.consumedAt).toLocaleString() : r.businessDate}</td>
-                  <td>{r.mealName}</td>
-                  <td>{r.cateringName}</td>
-                </tr>
-              ))}
-              {historyRows.length === 0 && (
-                <tr><td colSpan="3" style={{ color: 'var(--muted)' }}>Sin consumos en el rango.</td></tr>
-              )}
-            </tbody>
-          </table>
-        )}
-      </Drawer>
 
       <ConfirmModal
         isOpen={!!confirmDialog}

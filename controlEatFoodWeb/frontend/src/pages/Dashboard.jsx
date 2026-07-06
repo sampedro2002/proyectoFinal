@@ -15,22 +15,40 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [trend, setTrend] = useState([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    api.get('/reports/dashboard')
-      .then((r) => setStats(r.data))
-      .catch(() => setError('No se pudieron cargar las estadísticas'));
-    const to = new Date();
-    const from = new Date();
-    from.setDate(to.getDate() - 6);
-    const fmt = (d) => d.toISOString().slice(0, 10);
-    api.get('/reports/trend', { params: { from: fmt(from), to: fmt(to) } })
-      .then((r) => setTrend(r.data))
-      .catch(() => {});
-  }, []);
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const statsRes = await api.get('/reports/dashboard');
+      setStats(statsRes.data);
+      const to = new Date();
+      const from = new Date();
+      from.setDate(to.getDate() - 6);
+      const fmt = (d) => d.toISOString().slice(0, 10);
+      try {
+        const trendRes = await api.get('/reports/trend', { params: { from: fmt(from), to: fmt(to) } });
+        setTrend(trendRes.data);
+      } catch (_) {
+        setTrend([]); // la tendencia es secundaria: si falla, no bloquea el panel
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'No se pudieron cargar las estadísticas');
+    } finally {
+      setLoading(false);
+    }
+  }
 
-  if (error) return <p className="error-text">{error}</p>;
-  if (!stats) return <p>Cargando…</p>;
+  useEffect(() => { load(); }, []);
+
+  if (error) return (
+    <div className="card" style={{ textAlign: 'center' }}>
+      <p className="error-text">{error}</p>
+      <button onClick={load}>Reintentar</button>
+    </div>
+  );
+  if (loading || !stats) return <p>Cargando…</p>;
 
   return (
     <div className="grid" style={{ gap: 24 }}>

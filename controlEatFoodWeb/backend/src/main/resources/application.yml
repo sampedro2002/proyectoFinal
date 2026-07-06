@@ -2,6 +2,10 @@ server:
   port: 8080
   servlet:
     context-path: /
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain,text/css,application/javascript
+    min-response-size: 1024
 
 spring:
   application:
@@ -34,6 +38,9 @@ spring:
       write-dates-as-timestamps: false
 
 app:
+  # URL pública canónica del backend (sin /api). Defínala en despliegues con dominio/proxy
+  # inverso, p. ej. PUBLIC_URL=https://catering.midominio.com. Vacío = se detecta por red/petición.
+  public-url: ${PUBLIC_URL:}
   security:
     jwt:
       # Clave en Base64 de al menos 256 bits. Sustituir en producción vía variable de entorno.
@@ -55,6 +62,11 @@ app:
     native-lib-path: ${ZK_NATIVE_PATH:./native}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:4173}
+  rate-limit:
+    # Límite por IP y por minuto para endpoints sensibles. Deshabilitable con RATE_LIMIT_ENABLED=false.
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    auth-per-minute: ${RATE_LIMIT_AUTH:10}
+    scan-per-minute: ${RATE_LIMIT_SCAN:60}
 
 springdoc:
   swagger-ui:

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -33,8 +34,10 @@ import com.eatfood.control.mobile.data.model.LogoutRequest
 import com.eatfood.control.mobile.data.prefs.SessionStore
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
-import com.eatfood.control.mobile.ui.kiosk.KioskActivity
 import com.eatfood.control.mobile.ui.theme.EatFoodTheme
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -127,11 +130,6 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                     )
                 }
                 HorizontalDivider()
-                NavigationDrawerItem(
-                    label = { Text("Pantalla Catering ↗") }, selected = false,
-                    onClick = { context.startActivity(Intent(context, KioskActivity::class.java)) },
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
                 NavigationDrawerItem(
                     label = { Text("Configuración") }, selected = false,
                     onClick = { scope.launch { drawerState.close() }; onSettings() },
@@ -234,9 +232,6 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
                     enabled = !loading, modifier = Modifier.fillMaxWidth()
                 ) { Text(if (loading) "Ingresando…" else "Ingresar") }
 
-                TextButton(onClick = { context.startActivity(Intent(context, KioskActivity::class.java)) }) {
-                    Text("Abrir pantalla de Catering")
-                }
                 TextButton(onClick = onSettings) { Text("⚙ Configurar servidor / lector") }
             }
         }
@@ -251,6 +246,30 @@ fun SettingsScreen(onClose: () -> Unit) {
     var serverUrl by remember { mutableStateOf(store.serverUrl) }
     val sdkAvailable = remember { com.eatfood.control.mobile.biometric.ZkBiometricReader.sdkAvailable() }
 
+    // Aprovisiona la URL del servidor escaneando un QR. La dirección NO se puede teclear
+    // ni borrar manualmente: solo se establece escaneando un código válido.
+    fun scanServerQr() {
+        val options = GmsBarcodeScannerOptions.Builder()
+            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+            .build()
+        GmsBarcodeScanning.getClient(context, options).startScan()
+            .addOnSuccessListener { barcode ->
+                val raw = barcode.rawValue?.trim().orEmpty()
+                if (raw.isBlank()) {
+                    Toast.makeText(context, "El QR está vacío o es ilegible.", Toast.LENGTH_SHORT).show()
+                    return@addOnSuccessListener
+                }
+                store.serverUrl = raw          // el setter normaliza (añade http:// y quita '/')
+                serverUrl = store.serverUrl
+                ApiClient.reset()
+                Toast.makeText(context, "Servidor configurado: ${store.serverUrl}", Toast.LENGTH_LONG).show()
+            }
+            .addOnCanceledListener { /* el usuario canceló el escaneo */ }
+            .addOnFailureListener { e ->
+                Toast.makeText(context, "No se pudo escanear el QR: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+    }
+
     Scaffold(topBar = {
         TopAppBar(
             title = { Text("Configuración") },
@@ -260,16 +279,22 @@ fun SettingsScreen(onClose: () -> Unit) {
         Column(
             Modifier.padding(padding).padding(20.dp).verticalScroll(rememberScrollState())
         ) {
+            // Campo de solo lectura: la dirección se aprovisiona por QR y el usuario no la edita.
             OutlinedTextField(
-                value = serverUrl, onValueChange = { serverUrl = it },
+                value = serverUrl, onValueChange = {}, readOnly = true,
                 label = { Text("URL del servidor (backend)") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri),
                 modifier = Modifier.fillMaxWidth()
             )
             Text(
-                "Emulador: http://10.0.2.2:8080  ·  Teléfono real: http://IP-DEL-PC:8080 (misma red Wi-Fi)",
+                "La dirección solo se configura escaneando el QR que genera el administrador.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = { scanServerQr() }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.QrCodeScanner, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text("Escanear QR del servidor")
+            }
             Spacer(Modifier.height(24.dp))
             Text("Lector biométrico", style = MaterialTheme.typography.titleMedium)
             Text("ZK9500 por USB-OTG", style = MaterialTheme.typography.bodyMedium)
@@ -280,14 +305,7 @@ fun SettingsScreen(onClose: () -> Unit) {
                 color = if (sdkAvailable) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
             )
             Spacer(Modifier.height(28.dp))
-            Button(
-                onClick = {
-                    store.serverUrl = serverUrl
-                    ApiClient.reset()
-                    onClose()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text("Guardar") }
+            Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cerrar") }
         }
     }
 }

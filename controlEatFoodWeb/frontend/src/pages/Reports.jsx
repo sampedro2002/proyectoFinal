@@ -1,19 +1,22 @@
 import { useEffect, useState } from 'react';
 import api from '../api/client.js';
+import EmployeeSelect from '../components/EmployeeSelect.jsx';
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
 export default function Reports() {
-  const [filters, setFilters] = useState({ from: today(), to: today(), cateringId: '', mealTypeId: '' });
+  const [filters, setFilters] = useState({ from: today(), to: today(), cateringId: '', mealTypeId: '', employeeId: '' });
   const [rows, setRows] = useState([]);
   const [caterings, setCaterings] = useState([]);
   const [meals, setMeals] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     Promise.all([
       api.get('/caterings').then((r) => setCaterings(r.data)).catch(() => {}),
       api.get('/meal-types').then((r) => setMeals(r.data)).catch(() => {}),
+      api.get('/employees', { params: { size: 2000, status: 'ACTIVE' } }).then((r) => setEmployees(r.data.content || r.data)).catch(() => {}),
     ]);
   }, []);
 
@@ -21,6 +24,7 @@ export default function Reports() {
     const p = { from: filters.from, to: filters.to };
     if (filters.cateringId) p.cateringId = filters.cateringId;
     if (filters.mealTypeId) p.mealTypeId = filters.mealTypeId;
+    if (filters.employeeId) p.employeeId = filters.employeeId;
     return p;
   }
 
@@ -74,6 +78,13 @@ export default function Reports() {
               <option value="">Todas</option>
               {meals.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
             </select></div>
+          <div className="field" style={{ flex: 1, minWidth: '220px' }}><label>Empleado</label>
+            <EmployeeSelect 
+              employees={employees} 
+              value={filters.employeeId} 
+              onChange={(id) => setFilters({ ...filters, employeeId: id })} 
+            />
+          </div>
           <button onClick={search}>Consultar</button>
         </div>
         <div className="row" style={{ marginTop: 8 }}>

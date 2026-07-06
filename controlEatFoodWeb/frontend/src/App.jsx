@@ -9,6 +9,7 @@ import Schedules from './pages/Schedules.jsx';
 import Reports from './pages/Reports.jsx';
 import Audit from './pages/Audit.jsx';
 import ManualScan from './pages/ManualScan.jsx';
+import ServerQr from './pages/ServerQr.jsx';
 import Kiosk from './pages/Kiosk.jsx';
 
 function Protected({ children, roles }) {
@@ -32,6 +33,7 @@ export default function App() {
         <Route path="reports" element={<Protected roles={['ADMIN']}><Reports /></Protected>} />
         <Route path="audit" element={<Protected roles={['ADMIN']}><Audit /></Protected>} />
         <Route path="manual-scan" element={<Protected roles={['ADMIN']}><ManualScan /></Protected>} />
+        <Route path="conexion" element={<Protected roles={['ADMIN']}><ServerQr /></Protected>} />
       </Route>
 
       <Route path="*" element={<Navigate to="/" replace />} />

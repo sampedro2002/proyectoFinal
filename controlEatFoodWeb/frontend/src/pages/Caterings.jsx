@@ -53,24 +53,32 @@ export default function Caterings() {
         </table>
       </div>
       {form && (
-        <form className="card" style={{ marginTop: 16, maxWidth: 420 }} onSubmit={save}>
-          <h3 style={{ marginTop: 0 }}>{form.id ? 'Editar' : 'Nuevo'} catering</h3>
-          <div className="field"><label>Nombre</label>
-            <input value={form.name} required onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
-          <div className="field"><label>Ubicación</label>
-            <input value={form.location || ''} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
-          <div className="field"><label>Máximo de dispositivos</label>
-            <input type="number" min="1" value={form.maxDevices}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                setForm({ ...form, maxDevices: Number.isFinite(n) && n >= 1 ? n : 1 });
-              }} /></div>
-          {error && <p className="error-text">{error}</p>}
-          <div className="row">
-            <button type="submit">Guardar</button>
-            <button type="button" className="ghost" onClick={() => setForm(null)}>Cancelar</button>
-          </div>
-        </form>
+        <div
+          className="modal-overlay"
+          onClick={(e) => { if (e.target === e.currentTarget) setForm(null); }}
+        >
+          <form className="card modal-card" style={{ maxWidth: 420 }} onSubmit={save}>
+            <div className="topbar" style={{ marginBottom: 16 }}>
+              <h3 style={{ margin: 0 }}>{form.id ? 'Editar' : 'Nuevo'} catering</h3>
+              <button type="button" className="ghost" onClick={() => setForm(null)}>✕</button>
+            </div>
+            <div className="field"><label>Nombre</label>
+              <input value={form.name} required onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
+            <div className="field"><label>Ubicación</label>
+              <input value={form.location || ''} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
+            <div className="field"><label>Máximo de dispositivos</label>
+              <input type="number" min="1" value={form.maxDevices}
+                onChange={(e) => {
+                  const n = Number(e.target.value);
+                  setForm({ ...form, maxDevices: Number.isFinite(n) && n >= 1 ? n : 1 });
+                }} /></div>
+            {error && <p className="error-text">{error}</p>}
+            <div className="row" style={{ marginTop: 16 }}>
+              <button type="submit">Guardar</button>
+              <button type="button" className="ghost" onClick={() => setForm(null)}>Cancelar</button>
+            </div>
+          </form>
+        </div>
       )}
     </div>
   );

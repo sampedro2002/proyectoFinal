@@ -1,14 +1,15 @@
 package com.eatfood.control.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public final class EmployeeDtos {
 
     public record EmployeeRequest(
-            @NotBlank String identityCard,
-            @NotBlank String fullName,
-            String positionTitle,
-            String observation,
+            @NotBlank @Size(max = 20) String identityCard,
+            @NotBlank @Size(max = 160) String fullName,
+            @Size(max = 120) String positionTitle,
+            @Size(max = 500) String observation,
             String status,
             Boolean allowsLunch,
             Boolean allowsSnack) {}

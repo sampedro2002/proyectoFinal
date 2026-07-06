@@ -129,7 +129,7 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 | **Almuerzos Extra** | Registro manual de consumos para empleados existentes (búsqueda por nombre) o **personas externas** (cédula + nombre), con selector de catering y tipo de comida (Almuerzo/Merienda). No valida horario, permiso ni duplicado. |
 | **Reportes** | Consulta por fecha/catering/comida, exportación a CSV/Excel/PDF |
 | **Auditoría** | Log de acciones críticas con filtros |
-| **Kiosco** | Modo kiosco con lector biométrico USB OTG + cola offline (Room) |
+| **Kiosco** | Modo kiosco con lector biométrico USB OTG + cola offline (Room) y descarga de reportes diarios (PDF/Excel/CSV) |
 
 ---
 
@@ -164,6 +164,7 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 | Escanear huella | POST | `/scan` |
 | Sincronizar offline | POST | `/scan/sync` |
 | Feed del día | GET | `/scan/today` |
+| Descargar reporte | GET | `/scan/export-today` |
 | Desconectar | POST | `/scan/disconnect` |
 
 ---

@@ -37,10 +37,20 @@ public class FingerprintController {
         fingerprintService.delete(id);
     }
 
-    // ENDPOINT TEMPORAL PARA LIMPIAR LA BD
+    /**
+     * Herramienta de mantenimiento: elimina TODAS las huellas (p. ej. tras una migración
+     * de esquema de cifrado). Operación destructiva e irreversible, por lo que exige una
+     * confirmación explícita: {@code DELETE /api/fingerprints/clean-all?confirm=BORRAR-TODAS-LAS-HUELLAS}.
+     * Sin el token exacto, la petición se rechaza para evitar borrados accidentales.
+     */
     @DeleteMapping("/clean-all")
     @PreAuthorize("hasRole('ADMIN')")
-    public String cleanAll() {
+    public String cleanAll(@RequestParam(name = "confirm", required = false) String confirm) {
+        if (!"BORRAR-TODAS-LAS-HUELLAS".equals(confirm)) {
+            throw new com.eatfood.control.exception.BusinessException(
+                    "CONFIRMATION_REQUIRED",
+                    "Operación destructiva: repita la petición con ?confirm=BORRAR-TODAS-LAS-HUELLAS para confirmar.");
+        }
         return fingerprintService.deleteAll();
     }
 

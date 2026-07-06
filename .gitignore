@@ -24,3 +24,13 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Librerías nativas del SDK biométrico ZKFinger (binarios; no versionar)
+*.so
+*.so.*
+RunLinux/lib-x64/
+RunLinux/lib-x86/
+
+# Artefactos temporales / de trabajo
+*.patch
+controlEatFoodWeb/TestNet*.java

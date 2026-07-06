@@ -106,6 +106,25 @@ public class DeviceService {
         if (!device.isConnected()) {
             throw new BusinessException("INVALID_SESSION", "El dispositivo no está conectado.");
         }
+        // ── TTL de sesión ────────────────────────────────────────────────────
+        // Una sesión sin actividad por más de STALE_MINUTES se considera expirada:
+        // se auto-desconecta y se invalida el token, forzando una reconexión (que
+        // emite un token nuevo → rotación). El kiosko refresca el feed cada 10 s,
+        // por lo que un dispositivo realmente en uso nunca expira; sólo caducan las
+        // sesiones abandonadas (pestaña cerrada, equipo suspendido, red caída).
+        // Se lanza INVALID_SESSION para que el cliente ya lo maneje (vuelve a login).
+        OffsetDateTime cutoff = OffsetDateTime.now().minusMinutes(STALE_MINUTES);
+        if (device.getLastSeen() != null && device.getLastSeen().isBefore(cutoff)) {
+            log.info("[DEVICE] Sesión expirada por inactividad (>{}min): id={}, lastSeen={}",
+                    STALE_MINUTES, device.getId(), device.getLastSeen());
+            device.setConnected(false);
+            device.setSessionToken(null);
+            deviceRepository.save(device);
+            auditService.record("Device", String.valueOf(device.getId()), "SESSION_EXPIRED", null,
+                    "inactividad >" + STALE_MINUTES + "min");
+            throw new BusinessException("INVALID_SESSION",
+                    "La sesión del dispositivo expiró por inactividad. Reconéctese.");
+        }
         device.setLastSeen(OffsetDateTime.now());
         return deviceRepository.save(device);
     }

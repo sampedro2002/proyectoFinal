@@ -45,6 +45,8 @@ export default function Kiosk() {
   const [connectError, setConnectError] = useState('');
   const [feed, setFeed] = useState([]);
   const [showTable, setShowTable] = useState(true);
+  const [reportFormat, setReportFormat] = useState('pdf');
+  const [downloading, setDownloading] = useState(false);
 
   const clientRef = useRef(null);
 
@@ -275,6 +277,32 @@ export default function Kiosk() {
     setResult(null);
   }
 
+  async function downloadReport() {
+    if (!session || downloading) return;
+    setDownloading(true);
+    try {
+      const response = await scanApi.get('/scan/export-today', {
+        params: { sessionToken: session.sessionToken, format: reportFormat },
+        responseType: 'blob',
+      });
+      const disposition = response.headers['content-disposition'] || '';
+      const match = disposition.match(/filename="?(.+?)"?$/);
+      const filename = match ? match[1] : `reporte-diario.${reportFormat}`;
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[Kiosk] Error descargando reporte:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
   // ── RENDER: formulario de conexión ──────────────────────────────────────────
   if (!session) {
     return (
@@ -474,6 +502,36 @@ export default function Kiosk() {
               <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
               <div>Meriendas: <strong>{totalMeriendas}</strong></div>
               <div>Total: <strong>{feed.length}</strong></div>
+            </div>
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              gap: 8, padding: '10px 0 0', borderTop: '1px solid var(--border)'
+            }}>
+              <select
+                value={reportFormat}
+                onChange={(e) => setReportFormat(e.target.value)}
+                style={{
+                  background: 'var(--panel-2)', color: 'var(--text)',
+                  border: '1px solid var(--border)', borderRadius: 6,
+                  padding: '6px 10px', fontSize: 13, cursor: 'pointer'
+                }}
+              >
+                <option value="pdf">PDF</option>
+                <option value="excel">Excel</option>
+                <option value="csv">CSV</option>
+              </select>
+              <button
+                onClick={downloadReport}
+                disabled={downloading}
+                style={{
+                  background: downloading ? 'var(--muted)' : 'var(--ok)',
+                  color: 'white', border: 'none', borderRadius: 6,
+                  padding: '6px 16px', fontSize: 13, cursor: downloading ? 'not-allowed' : 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600
+                }}
+              >
+                {downloading ? '⏳ Generando...' : '📥 Descargar Reporte'}
+              </button>
             </div>
           </div>
         )}

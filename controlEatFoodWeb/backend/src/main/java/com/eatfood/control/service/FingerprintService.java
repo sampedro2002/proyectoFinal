@@ -131,9 +131,16 @@ public class FingerprintService {
 
     @Transactional
     public String deleteAll() {
+        long count = fingerprintRepository.count();
+        // Auditar ANTES de borrar: deja constancia de quién ejecutó la operación
+        // destructiva y de cuántas huellas se eliminaron (inmutable en el log).
+        auditService.record("Fingerprint", "ALL", "CLEAN_ALL", count + " huellas", "0");
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        log.warn("[FP] CLEAN_ALL solicitado por '{}': se eliminarán {} huellas.",
+                auth != null ? auth.getName() : "system", count);
         fingerprintRepository.deleteAll();
         matcher.rebuildIndex();
-        return "Todas las huellas han sido eliminadas correctamente de la base de datos.";
+        return "Se eliminaron " + count + " huellas de la base de datos.";
     }
 
     /** Fuerza la reconstrucción del índice biométrico en memoria desde la BD. */
