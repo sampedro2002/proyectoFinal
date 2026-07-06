@@ -44,7 +44,7 @@ public class ReportService {
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                 e.getFullName(), e.getIdentityCard(),
-                e.getPosition() != null ? e.getPosition().getName() : null,
+                e.getPositionTitle(),
                 c.getCatering().getName(), c.getMealType().getName(),
                 c.isOffline());
     }
@@ -83,7 +83,7 @@ public class ReportService {
         for (Employee e : employeeRepository.findByDeletedFalseAndStatus(EmployeeStatus.ACTIVE)) {
             if (!consumed.contains(e.getId())) {
                 result.add(new EmployeeNotConsumed(e.getId(), e.getIdentityCard(), e.getFullName(),
-                        e.getPosition() != null ? e.getPosition().getName() : null));
+                        e.getPositionTitle()));
             }
         }
         return result;

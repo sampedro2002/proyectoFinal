@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "Catálogos (cargos, caterings, comidas, horarios)")
+@Tag(name = "Catálogos (caterings, comidas, horarios)")
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -18,28 +18,9 @@ public class CatalogController {
 
     private final CatalogService catalogService;
 
-    // ---- Cargos ----
-    @GetMapping("/positions")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
-    public List<PositionResponse> listPositions() {
-        return catalogService.listPositions();
-    }
-
-    @PostMapping("/positions")
-    @PreAuthorize("hasRole('ADMIN')")
-    public PositionResponse createPosition(@Valid @RequestBody PositionRequest req) {
-        return catalogService.createPosition(req);
-    }
-
-    @PutMapping("/positions/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public PositionResponse updatePosition(@PathVariable Long id, @Valid @RequestBody PositionRequest req) {
-        return catalogService.updatePosition(id, req);
-    }
-
     // ---- Caterings ----
     @GetMapping("/caterings")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<CateringResponse> listCaterings() {
         return catalogService.listCaterings();
     }

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { ZkFingerClient } from '../biometric/zkfinger.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
+import Drawer from '../components/Drawer.jsx';
 
 const FINGERS = [
   'Pulgar derecho', 'Índice derecho', 'Medio derecho', 'Anular derecho', 'Meñique derecho',
@@ -10,21 +11,33 @@ const FINGERS = [
 ];
 
 const empty = {
-  identityCard: '', fullName: '', positionId: '', status: 'ACTIVE',
-  allowsLunch: true, allowsSnack: false,
+  identityCard: '', fullName: '', positionTitle: '', observation: '',
+  status: 'ACTIVE', allowsLunch: true, allowsSnack: false,
 };
+
+function isoDaysAgo(days) {
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 export default function Employees() {
   const { hasRole } = useAuth();
   const isAdmin = hasRole('ADMIN');
 
   const [items, setItems]         = useState([]);
-  const [positions, setPositions] = useState([]);
   const [term, setTerm]           = useState('');
-  const [form, setForm]           = useState(null);
+  const [statusFilter, setStatusFilter] = useState('ALL');
   const [error, setError]         = useState('');
-  const [savedMsg, setSavedMsg]   = useState('');
   const [confirmDialog, setConfirmDialog] = useState(null);
+
+  // modal (crear/editar)
+  const [form, setForm]     = useState(null);
+  const [tab, setTab]       = useState('data');
+  const [savedMsg, setSavedMsg] = useState('');
 
   // fingerprint state
   const [fingerprints, setFingerprints] = useState([]);
@@ -33,9 +46,17 @@ export default function Employees() {
   const [bioMsg, setBioMsg]             = useState('');
   const zkRef = useRef(null);
 
+  // historial (drawer)
+  const [historyEmp, setHistoryEmp]   = useState(null);
+  const [historyRows, setHistoryRows] = useState([]);
+  const [historyFrom, setHistoryFrom] = useState(isoDaysAgo(30));
+  const [historyTo, setHistoryTo]     = useState(isoToday());
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError]     = useState('');
+
   async function load() {
     try {
-      const { data } = await api.get('/employees', { params: { term, size: 100 } });
+      const { data } = await api.get('/employees', { params: { term, size: 200 } });
       setItems(data.content || data);
       setError('');
     } catch (err) {
@@ -53,18 +74,14 @@ export default function Employees() {
     }
   }
 
-  useEffect(() => {
-    load();
-    api.get('/positions').then(r => setPositions(r.data)).catch(() => {});
-  }, []);
+  useEffect(() => { load(); }, []);
 
   useEffect(() => {
     if (form?.id) loadFp(form.id);
     else setFingerprints([]);
   }, [form?.id]);
 
-  // Cerrar el WebSocket del lector si el componente se desmonta en medio de una
-  // captura (p. ej. el usuario navega a otra página mientras enrola).
+  // Cerrar el WebSocket del lector si el componente se desmonta.
   useEffect(() => {
     return () => {
       try { zkRef.current && zkRef.current.close(); } catch (_) {}
@@ -72,20 +89,26 @@ export default function Employees() {
     };
   }, []);
 
+  const filtered = useMemo(() => {
+    if (statusFilter === 'ALL') return items;
+    return items.filter(e => e.status === statusFilter);
+  }, [items, statusFilter]);
+
   function openNew() {
     setError(''); setSavedMsg(''); setBioMsg(''); setBioStatus('idle');
-    setFingerIndex(0);
+    setFingerIndex(0); setTab('data');
     setForm({ ...empty });
   }
 
   function openEdit(emp) {
     setError(''); setSavedMsg(''); setBioMsg(''); setBioStatus('idle');
-    setFingerIndex(0);
+    setFingerIndex(0); setTab('data');
     setForm({
       ...emp,
-      positionId:   emp.positionId   ?? '',
-      allowsLunch:  emp.allowsLunch  ?? true,
-      allowsSnack:  emp.effectiveSnack  ?? false,
+      positionTitle: emp.positionTitle ?? emp.positionName ?? '',
+      observation:   emp.observation ?? '',
+      allowsLunch:   emp.allowsLunch ?? true,
+      allowsSnack:   emp.allowsSnack ?? emp.effectiveSnack ?? false,
     });
   }
 
@@ -100,8 +123,13 @@ export default function Employees() {
     setError('');
     setSavedMsg('');
     const payload = {
-      ...form,
-      positionId: form.positionId || null,
+      identityCard: form.identityCard,
+      fullName: form.fullName,
+      positionTitle: form.positionTitle || null,
+      observation: form.observation || null,
+      status: form.status,
+      allowsLunch: form.allowsLunch,
+      allowsSnack: form.allowsSnack,
     };
     try {
       if (form.id) {
@@ -113,10 +141,12 @@ export default function Employees() {
         setSavedMsg('Empleado creado correctamente. Ahora puede registrar hasta 3 huellas.');
         setForm({
           ...data,
-          positionId:   data.positionId   ?? '',
-          allowsLunch:  data.allowsLunch  ?? true,
-          allowsSnack:  data.effectiveSnack  ?? false,
+          positionTitle: data.positionTitle ?? '',
+          observation:   data.observation ?? '',
+          allowsLunch:   data.allowsLunch ?? true,
+          allowsSnack:   data.allowsSnack ?? data.effectiveSnack ?? false,
         });
+        setTab('fingerprints');
         load();
       }
     } catch (err) {
@@ -164,7 +194,6 @@ export default function Employees() {
       setBioMsg('Huella registrada correctamente.');
       loadFp(form.id);
     } catch (err) {
-      // Asegurar cierre del WebSocket incluso si capture() lanza (timeout, etc.).
       try { zkRef.current && zkRef.current.close(); } catch (_) {}
       zkRef.current = null;
       setBioStatus('idle');
@@ -189,6 +218,53 @@ export default function Employees() {
     });
   }
 
+  // ----- Exportación -----
+  async function exportDb(format) {
+    try {
+      const { data, headers } = await api.get('/employees/export', {
+        params: { format },
+        responseType: 'blob',
+      });
+      const blob = new Blob([data], { type: headers['content-type'] });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = format === 'csv' ? 'empleados.csv' : 'empleados.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError('No se pudo exportar la base de empleados.');
+    }
+  }
+
+  // ----- Historial -----
+  async function fetchHistory(empId, from, to) {
+    setHistoryLoading(true);
+    setHistoryError('');
+    try {
+      const { data } = await api.get('/reports/consumptions', {
+        params: { employeeId: empId, from, to },
+      });
+      setHistoryRows(data);
+    } catch (err) {
+      setHistoryRows([]);
+      setHistoryError(err.response?.data?.message || 'No se pudo cargar el historial.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function openHistory(emp) {
+    const from = isoDaysAgo(30);
+    const to = isoToday();
+    setHistoryFrom(from);
+    setHistoryTo(to);
+    setHistoryEmp(emp);
+    fetchHistory(emp.id, from, to);
+  }
+
   return (
     <div>
       <div className="topbar">
@@ -198,7 +274,14 @@ export default function Employees() {
                  onChange={e => setTerm(e.target.value)}
                  onKeyDown={e => e.key === 'Enter' && load()} />
           <button onClick={load}>Buscar</button>
-          {isAdmin && <button onClick={openNew}>+ Nuevo</button>}
+          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+            <option value="ALL">Todos</option>
+            <option value="ACTIVE">Activo</option>
+            <option value="INACTIVE">Inactivo</option>
+          </select>
+          {isAdmin && <button onClick={openNew}>+ Nuevo empleado</button>}
+          {isAdmin && <button className="ghost" onClick={() => exportDb('excel')}>Exportar Excel</button>}
+          {isAdmin && <button className="ghost" onClick={() => exportDb('csv')}>Exportar CSV</button>}
         </div>
       </div>
 
@@ -208,18 +291,19 @@ export default function Employees() {
         <table>
           <thead>
             <tr>
-              <th>Cédula</th><th>Nombre</th><th>Cargo</th>
+              <th>Código</th><th>Cédula</th><th>Nombre</th><th>Cargo</th>
               <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
             </tr>
           </thead>
           <tbody>
-            {items.map(e => (
+            {filtered.map(e => (
               <tr key={e.id}>
+                <td>{e.publicCode || '—'}</td>
                 <td>{e.identityCard}</td>
                 <td>{e.fullName}</td>
-                <td>{e.positionName || '—'}</td>
-                <td>{e.allowsLunch ? '1' : '0'}</td>
-                <td>{e.effectiveSnack ? '1' : '0'}</td>
+                <td>{e.positionTitle || e.positionName || '—'}</td>
+                <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
+                <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
                 <td>{e.fingerprintCount}/3</td>
                 <td>
                   <span className={`badge ${e.status === 'ACTIVE' ? 'ok' : 'off'}`}>
@@ -230,152 +314,236 @@ export default function Employees() {
                   {isAdmin && (
                     <button className="ghost" onClick={() => openEdit(e)}>Editar</button>
                   )}
+                  <button className="ghost" onClick={() => openHistory(e)}>Historial</button>
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan="9" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
 
+      {/* ── Modal central crear/editar ── */}
       {form && (
-        <div className="card" style={{ marginTop: 16, maxWidth: 560 }}>
-          <h3 style={{ marginTop: 0 }}>
-            {form.id ? 'Editar empleado' : 'Nuevo empleado'}
-          </h3>
-
-          {savedMsg && (
-            <p style={{ color: 'var(--ok, #16a34a)', marginTop: 0 }}>{savedMsg}</p>
-          )}
-
-          <form onSubmit={save}>
-            <div className="field">
-              <label>Cédula</label>
-              <input value={form.identityCard} required
-                     onChange={e => setForm({ ...form, identityCard: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Nombre completo</label>
-              <input value={form.fullName} required
-                     onChange={e => setForm({ ...form, fullName: e.target.value })} />
-            </div>
-            <div className="field">
-              <label>Cargo</label>
-              <select value={form.positionId}
-                      onChange={e => setForm({ ...form, positionId: e.target.value })}>
-                <option value="">— Sin cargo —</option>
-                {positions.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+        <div
+          className="modal-overlay"
+          onClick={(e) => { if (e.target === e.currentTarget) closeForm(); }}
+        >
+          <div className="card modal-card">
+            <div className="topbar" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>{form.id ? 'Editar empleado' : 'Nuevo empleado'}</h3>
+              <button type="button" className="ghost" onClick={closeForm}>✕</button>
             </div>
 
-            <div className="row">
-              <label>
-                <input type="checkbox" checked={form.allowsLunch}
-                  onChange={e => setForm({ ...form, allowsLunch: e.target.checked })} />
-                {' '}Almuerzo
-              </label>
-              <label>
-                <input type="checkbox" checked={form.allowsSnack}
-                  onChange={e => setForm({ ...form, allowsSnack: e.target.checked })} />
-                {' '}Merienda
-              </label>
+            <div className="tabs">
+              <button
+                type="button"
+                className={`tab ${tab === 'data' ? 'active' : ''}`}
+                onClick={() => setTab('data')}
+              >Datos</button>
+              <button
+                type="button"
+                className={`tab ${tab === 'fingerprints' ? 'active' : ''}`}
+                onClick={() => form.id && setTab('fingerprints')}
+                disabled={!form.id}
+                title={!form.id ? 'Guarde el empleado para registrar huellas' : ''}
+              >Huellas</button>
             </div>
-            <div className="field" style={{ marginTop: 12 }}>
-              <label>Estado</label>
-              <select value={form.status}
-                      onChange={e => setForm({ ...form, status: e.target.value })}>
-                <option value="ACTIVE">Activo</option>
-                <option value="INACTIVE">Inactivo</option>
-              </select>
-            </div>
-            {error && <p className="error-text">{error}</p>}
-            <div className="row" style={{ marginTop: 12 }}>
-              <button type="submit">
-                {form.id ? 'Guardar cambios' : 'Crear empleado'}
-              </button>
-              <button type="button" className="ghost" onClick={closeForm}>
-                {form.id ? 'Cerrar' : 'Cancelar'}
-              </button>
-            </div>
-          </form>
 
-          {/* ── Sección de huellas: sólo disponible cuando el empleado ya existe ── */}
-          {form.id && isAdmin && (
-            <div style={{
-              marginTop: 24,
-              paddingTop: 20,
-              borderTop: '1px solid var(--border, #334155)',
-            }}>
-              <h4 style={{ margin: '0 0 12px' }}>
-                Huellas digitales ({fingerprints.length}/3)
-              </h4>
+            {savedMsg && <p style={{ color: 'var(--ok)', marginTop: 12 }}>{savedMsg}</p>}
 
-              <table>
-                <thead>
-                  <tr><th>Dedo</th><th>Registrada</th><th></th></tr>
-                </thead>
-                <tbody>
-                  {fingerprints.map(fp => (
-                    <tr key={fp.id}>
-                      <td>{FINGERS[fp.fingerIndex] ?? `Dedo ${fp.fingerIndex}`}</td>
-                      <td>{new Date(fp.enrolledAt).toLocaleString()}</td>
-                      <td>
-                        <button className="danger" onClick={() => removeFp(fp.id)}>
-                          Eliminar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {fingerprints.length === 0 && (
-                    <tr>
-                      <td colSpan="3" style={{ color: '#94a3b8' }}>
-                        Sin huellas registradas.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-
-              {fingerprints.length < 3 ? (
-                <>
-                  <div className="row" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
-                    <select
-                      value={fingerIndex}
-                      onChange={e => setFingerIndex(e.target.value)}
-                      style={{ flex: '1 1 180px' }}
-                    >
-                      {FINGERS.map((f, i) => (
-                        <option key={i} value={i}>{f}</option>
-                      ))}
-                    </select>
-                    <button onClick={enroll} disabled={bioStatus !== 'idle'}>
-                      {bioStatus === 'idle'       && 'Capturar huella'}
-                      {bioStatus === 'connecting' && 'Conectando lector…'}
-                      {bioStatus === 'capturing'  && 'Leyendo huellas (3×)…'}
-                      {bioStatus === 'saving'     && 'Guardando…'}
-                    </button>
+            {tab === 'data' && (
+              <form onSubmit={save} style={{ marginTop: 12 }}>
+                {form.publicCode && (
+                  <div className="field">
+                    <label>Código</label>
+                    <input value={form.publicCode} readOnly disabled />
                   </div>
-                  {bioMsg && (
-                    <p style={{
-                      marginTop: 10,
-                      color: bioMsg.includes('correctamente')
-                        ? 'var(--ok, #16a34a)'
-                        : bioMsg.startsWith('Captura') || bioMsg.startsWith('Coloque')
-                          ? 'var(--muted, #94a3b8)'
-                          : 'var(--error, #ef4444)',
-                    }}>
-                      {bioMsg}
-                    </p>
-                  )}
-                </>
-              ) : (
-                <p style={{ marginTop: 10, color: '#94a3b8' }}>
-                  Límite de 3 huellas alcanzado. Elimine una para agregar otra.
-                </p>
-              )}
-            </div>
-          )}
+                )}
+                <div className="field">
+                  <label>Cédula</label>
+                  <input value={form.identityCard} required
+                         onChange={e => setForm({ ...form, identityCard: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Nombres</label>
+                  <input value={form.fullName} required
+                         onChange={e => setForm({ ...form, fullName: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Cargo</label>
+                  <input value={form.positionTitle} placeholder="Ej: Operario"
+                         onChange={e => setForm({ ...form, positionTitle: e.target.value })} />
+                </div>
+
+                <div className="row">
+                  <label>
+                    <input type="checkbox" checked={form.allowsLunch}
+                      onChange={e => setForm({ ...form, allowsLunch: e.target.checked })} />
+                    {' '}Almuerzo
+                  </label>
+                  <label>
+                    <input type="checkbox" checked={form.allowsSnack}
+                      onChange={e => setForm({ ...form, allowsSnack: e.target.checked })} />
+                    {' '}Merienda
+                  </label>
+                </div>
+
+                <div className="field" style={{ marginTop: 12 }}>
+                  <label>Estado</label>
+                  <select value={form.status}
+                          onChange={e => setForm({ ...form, status: e.target.value })}>
+                    <option value="ACTIVE">Activo</option>
+                    <option value="INACTIVE">Inactivo</option>
+                  </select>
+                </div>
+
+                <div className="field">
+                  <label>Observación (opcional)</label>
+                  <textarea value={form.observation} rows={3}
+                            onChange={e => setForm({ ...form, observation: e.target.value })} />
+                </div>
+
+                {error && <p className="error-text">{error}</p>}
+                <div className="row" style={{ marginTop: 12 }}>
+                  <button type="submit">{form.id ? 'Guardar cambios' : 'Crear empleado'}</button>
+                  <button type="button" className="ghost" onClick={closeForm}>
+                    {form.id ? 'Cerrar' : 'Cancelar'}
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {tab === 'fingerprints' && (
+              <div style={{ marginTop: 12 }}>
+                {!form.id ? (
+                  <p style={{ color: 'var(--muted)' }}>
+                    Guarde el empleado para poder registrar huellas.
+                  </p>
+                ) : (
+                  <>
+                    <h4 style={{ margin: '0 0 12px' }}>
+                      Huellas digitales ({fingerprints.length}/3)
+                    </h4>
+                    <table>
+                      <thead>
+                        <tr><th>Dedo</th><th>Registrada</th><th></th></tr>
+                      </thead>
+                      <tbody>
+                        {fingerprints.map(fp => (
+                          <tr key={fp.id}>
+                            <td>{FINGERS[fp.fingerIndex] ?? `Dedo ${fp.fingerIndex}`}</td>
+                            <td>{new Date(fp.enrolledAt).toLocaleString()}</td>
+                            <td>
+                              <button className="danger" onClick={() => removeFp(fp.id)}>
+                                Eliminar
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                        {fingerprints.length === 0 && (
+                          <tr>
+                            <td colSpan="3" style={{ color: 'var(--muted)' }}>
+                              Sin huellas registradas.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+
+                    {fingerprints.length < 3 ? (
+                      <>
+                        <div className="row" style={{ marginTop: 12, flexWrap: 'wrap', gap: 8 }}>
+                          <select
+                            value={fingerIndex}
+                            onChange={e => setFingerIndex(e.target.value)}
+                            style={{ flex: '1 1 180px' }}
+                          >
+                            {FINGERS.map((f, i) => (
+                              <option key={i} value={i}>{f}</option>
+                            ))}
+                          </select>
+                          <button onClick={enroll} disabled={bioStatus !== 'idle'}>
+                            {bioStatus === 'idle'       && 'Capturar huella'}
+                            {bioStatus === 'connecting' && 'Conectando lector…'}
+                            {bioStatus === 'capturing'  && 'Leyendo huellas (3×)…'}
+                            {bioStatus === 'saving'     && 'Guardando…'}
+                          </button>
+                        </div>
+                        {bioMsg && (
+                          <p style={{
+                            marginTop: 10,
+                            color: bioMsg.includes('correctamente')
+                              ? 'var(--ok)'
+                              : bioMsg.startsWith('Captura') || bioMsg.startsWith('Coloque')
+                                ? 'var(--muted)'
+                                : 'var(--err)',
+                          }}>
+                            {bioMsg}
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p style={{ marginTop: 10, color: 'var(--muted)' }}>
+                        Límite de 3 huellas alcanzado. Elimine una para agregar otra.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
+
+      {/* ── Drawer historial de consumos ── */}
+      <Drawer
+        isOpen={!!historyEmp}
+        title={historyEmp ? `Historial · ${historyEmp.fullName}` : 'Historial'}
+        onClose={() => setHistoryEmp(null)}
+      >
+        <div className="row" style={{ marginBottom: 12 }}>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Desde</label>
+            <input type="date" value={historyFrom}
+                   onChange={e => setHistoryFrom(e.target.value)} />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Hasta</label>
+            <input type="date" value={historyTo}
+                   onChange={e => setHistoryTo(e.target.value)} />
+          </div>
+          <button style={{ alignSelf: 'flex-end' }}
+                  onClick={() => historyEmp && fetchHistory(historyEmp.id, historyFrom, historyTo)}>
+            Aplicar
+          </button>
+        </div>
+
+        {historyError && <p className="error-text">{historyError}</p>}
+        {historyLoading ? (
+          <p style={{ color: 'var(--muted)' }}>Cargando…</p>
+        ) : (
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Comida</th><th>Catering</th></tr>
+            </thead>
+            <tbody>
+              {historyRows.map(r => (
+                <tr key={r.id}>
+                  <td>{r.consumedAt ? new Date(r.consumedAt).toLocaleString() : r.businessDate}</td>
+                  <td>{r.mealName}</td>
+                  <td>{r.cateringName}</td>
+                </tr>
+              ))}
+              {historyRows.length === 0 && (
+                <tr><td colSpan="3" style={{ color: 'var(--muted)' }}>Sin consumos en el rango.</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </Drawer>
 
       <ConfirmModal
         isOpen={!!confirmDialog}

@@ -20,7 +20,7 @@ public class FingerprintController {
     private final FingerprintService fingerprintService;
 
     @GetMapping("/employee/{employeeId}")
-    @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+    @PreAuthorize("hasRole('ADMIN')")
     public List<FingerprintResponse> byEmployee(@PathVariable Long employeeId) {
         return fingerprintService.listByEmployee(employeeId);
     }

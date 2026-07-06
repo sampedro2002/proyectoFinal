@@ -23,11 +23,11 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
-     * las relaciones LAZY ({@code employee.position}, {@code catering}, {@code mealType})
-     * que {@link com.eatfood.control.service.ReportService#toRow} accede después,
+     * las relaciones LAZY ({@code catering}, {@code mealType}) que
+     * {@link com.eatfood.control.service.ReportService#toRow} accede después,
      * evitando un problema de N+1 SELECT.
      */
-    @EntityGraph(attributePaths = {"employee.position", "catering", "mealType"})
+    @EntityGraph(attributePaths = {"catering", "mealType"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to

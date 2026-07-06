@@ -7,7 +7,8 @@ public final class EmployeeDtos {
     public record EmployeeRequest(
             @NotBlank String identityCard,
             @NotBlank String fullName,
-            Long positionId,
+            String positionTitle,
+            String observation,
             String status,
             Boolean allowsLunch,
             Boolean allowsSnack) {}
@@ -16,10 +17,15 @@ public final class EmployeeDtos {
             Long id,
             String identityCard,
             String fullName,
-            Long positionId,
+            String publicCode,
+            String positionTitle,
+            // Alias de positionTitle para compatibilidad con la APK móvil (consume positionName).
             String positionName,
+            String observation,
             String status,
             boolean allowsLunch,
+            boolean allowsSnack,
+            // Alias de allowsSnack para compatibilidad con la APK móvil (consume effectiveSnack).
             boolean effectiveSnack,
             int fingerprintCount) {}
 }

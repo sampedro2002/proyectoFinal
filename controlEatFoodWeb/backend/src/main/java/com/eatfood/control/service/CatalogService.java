@@ -15,50 +15,11 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CatalogService {
 
-    private final PositionRepository positionRepository;
     private final CateringRepository cateringRepository;
     private final MealTypeRepository mealTypeRepository;
     private final ScheduleRepository scheduleRepository;
     private final DeviceRepository deviceRepository;
     private final AuditService auditService;
-
-    // ----------------- Cargos -----------------
-    @Transactional(readOnly = true)
-    public List<PositionResponse> listPositions() {
-        return positionRepository.findAll().stream().map(this::toPosition).toList();
-    }
-
-    @Transactional
-    public PositionResponse createPosition(PositionRequest req) {
-        if (positionRepository.existsByNameIgnoreCase(req.name())) {
-            throw new BusinessException("DUPLICATE", "Ya existe un cargo con ese nombre.");
-        }
-        Position p = Position.builder()
-                .name(req.name())
-                .allowsSnack(req.allowsSnack())
-                .active(req.active() == null || req.active())
-                .build();
-        p = positionRepository.save(p);
-        auditService.record("Position", String.valueOf(p.getId()), "CREATE", null, p.getName());
-        return toPosition(p);
-    }
-
-    @Transactional
-    public PositionResponse updatePosition(Long id, PositionRequest req) {
-        Position p = positionRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Cargo no encontrado: " + id));
-        String before = p.getName() + "|snack=" + p.isAllowsSnack();
-        p.setName(req.name());
-        p.setAllowsSnack(req.allowsSnack());
-        if (req.active() != null) p.setActive(req.active());
-        p = positionRepository.save(p);
-        auditService.record("Position", String.valueOf(id), "UPDATE", before, p.getName() + "|snack=" + p.isAllowsSnack());
-        return toPosition(p);
-    }
-
-    private PositionResponse toPosition(Position p) {
-        return new PositionResponse(p.getId(), p.getName(), p.isAllowsSnack(), p.isActive());
-    }
 
     // ----------------- Caterings -----------------
     @Transactional(readOnly = true)

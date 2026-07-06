@@ -32,7 +32,6 @@ erDiagram
     ROLES ||--o{ USER_ROLES : tiene
     APP_USER ||--o{ USER_ROLES : posee
     APP_USER }o--|| CATERING : opera
-    POSITION ||--o{ EMPLOYEE : clasifica
     EMPLOYEE ||--o{ FINGERPRINT : registra
     EMPLOYEE ||--o{ CONSUMPTION : genera
     CATERING ||--o{ DEVICE : conecta
@@ -53,18 +52,12 @@ erDiagram
         bigint id PK
         varchar identity_card UK
         varchar full_name
-        bigint position_id FK
+        varchar position
         varchar status
         int allowed_plates
         boolean allows_lunch
         boolean allows_snack
         boolean deleted
-    }
-    POSITION {
-        bigint id PK
-        varchar name UK
-        int default_plates
-        boolean allows_snack
     }
     FINGERPRINT {
         bigint id PK

@@ -69,6 +69,49 @@ button.danger { background: var(--err); }
 .badge.ok { background: rgba(22,163,74,.2); color: #4ade80; }
 .badge.off { background: rgba(220,38,38,.2); color: #f87171; }
 
+textarea {
+  font: inherit; padding: 10px 12px; border-radius: 8px; resize: vertical;
+  border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+}
+textarea:focus { outline: 2px solid var(--accent); }
+
+/* Modal central (crear/editar) */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9998; padding: 16px;
+}
+.modal-card {
+  width: 560px; max-width: 96%; max-height: 92vh; overflow-y: auto;
+  background: var(--panel);
+}
+
+/* Pestañas dentro del modal */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); }
+.tabs .tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  border-radius: 0; padding: 10px 16px; color: var(--muted); font-weight: 600;
+}
+.tabs .tab:hover:not(:disabled) { filter: none; color: var(--text); }
+.tabs .tab.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
+.tabs .tab:disabled { opacity: .45; cursor: not-allowed; }
+
+/* Drawer lateral (historial) */
+.drawer-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+  display: flex; justify-content: flex-end; z-index: 9997;
+}
+.drawer-panel {
+  height: 100%; background: var(--panel); border-left: 1px solid var(--border);
+  padding: 20px; overflow-y: auto; box-shadow: -8px 0 24px rgba(0,0,0,0.35);
+  animation: drawer-in .18s ease-out;
+}
+@keyframes drawer-in { from { transform: translateX(24px); opacity: .6; } to { transform: translateX(0); opacity: 1; } }
+.drawer-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}
+
 /* Login */
 .login-wrap { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
 .login-card { width: 360px; }

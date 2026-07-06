@@ -1,5 +1,6 @@
 package com.eatfood.control.service;
 
+import com.eatfood.control.dto.EmployeeDtos.EmployeeResponse;
 import com.eatfood.control.dto.ReportDtos.ConsumptionRow;
 import com.eatfood.control.exception.BusinessException;
 import com.lowagie.text.Document;
@@ -29,6 +30,9 @@ public class ExportService {
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final String[] HEADERS =
             {"Fecha", "Hora", "Cédula", "Empleado", "Cargo", "Catering", "Comida", "Offline"};
+    private static final String[] EMP_HEADERS =
+            {"Código", "Cédula", "Nombre", "Cargo", "Almuerzo", "Merienda", "Estado",
+             "N.º Huellas", "Observación"};
 
     public byte[] toCsv(List<ConsumptionRow> rows) {
         StringBuilder sb = new StringBuilder();
@@ -114,6 +118,62 @@ public class ExportService {
             return out.toByteArray();
         } catch (Exception e) {
             throw new BusinessException("EXPORT_FAILED", "No se pudo generar el PDF.");
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // Exportación de la base de empleados. Nunca se exporta el template
+    // biométrico: sólo el conteo de huellas (fingerprintCount).
+    // ------------------------------------------------------------------------
+    public byte[] employeesToCsv(List<EmployeeResponse> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.join(";", EMP_HEADERS)).append("\n");
+        for (EmployeeResponse r : rows) {
+            sb.append(csv(r.publicCode())).append(';')
+              .append(csv(r.identityCard())).append(';')
+              .append(csv(r.fullName())).append(';')
+              .append(csv(r.positionTitle())).append(';')
+              .append(r.allowsLunch() ? "Sí" : "No").append(';')
+              .append(r.effectiveSnack() ? "Sí" : "No").append(';')
+              .append(csv(r.status())).append(';')
+              .append(r.fingerprintCount()).append(';')
+              .append(csv(r.observation())).append('\n');
+        }
+        return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    public byte[] employeesToExcel(List<EmployeeResponse> rows) {
+        try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Sheet sheet = wb.createSheet("Empleados");
+            CellStyle headerStyle = wb.createCellStyle();
+            org.apache.poi.ss.usermodel.Font bold = wb.createFont();
+            bold.setBold(true);
+            headerStyle.setFont(bold);
+
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < EMP_HEADERS.length; i++) {
+                Cell c = header.createCell(i);
+                c.setCellValue(EMP_HEADERS[i]);
+                c.setCellStyle(headerStyle);
+            }
+            int rn = 1;
+            for (EmployeeResponse r : rows) {
+                Row row = sheet.createRow(rn++);
+                row.createCell(0).setCellValue(safe(r.publicCode()));
+                row.createCell(1).setCellValue(safe(r.identityCard()));
+                row.createCell(2).setCellValue(safe(r.fullName()));
+                row.createCell(3).setCellValue(safe(r.positionTitle()));
+                row.createCell(4).setCellValue(r.allowsLunch() ? "Sí" : "No");
+                row.createCell(5).setCellValue(r.effectiveSnack() ? "Sí" : "No");
+                row.createCell(6).setCellValue(safe(r.status()));
+                row.createCell(7).setCellValue(r.fingerprintCount());
+                row.createCell(8).setCellValue(safe(r.observation()));
+            }
+            for (int i = 0; i < EMP_HEADERS.length; i++) sheet.autoSizeColumn(i);
+            wb.write(out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new BusinessException("EXPORT_FAILED", "No se pudo generar el Excel de empleados.");
         }
     }
 

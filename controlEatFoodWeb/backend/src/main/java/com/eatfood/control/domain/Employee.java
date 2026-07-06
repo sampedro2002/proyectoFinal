@@ -18,9 +18,14 @@ public class Employee extends Auditable {
     @Column(name = "full_name", nullable = false, length = 160)
     private String fullName;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "position_id")
-    private Position position;
+    @Column(name = "public_code", unique = true, length = 12)
+    private String publicCode;
+
+    @Column(name = "position_title", length = 120)
+    private String positionTitle;
+
+    @Column(name = "observation", length = 500)
+    private String observation;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
@@ -41,6 +46,6 @@ public class Employee extends Auditable {
 
     @Transient
     public boolean effectiveSnack() {
-        return allowsSnack || (position != null && position.isAllowsSnack());
+        return allowsSnack;
     }
 }

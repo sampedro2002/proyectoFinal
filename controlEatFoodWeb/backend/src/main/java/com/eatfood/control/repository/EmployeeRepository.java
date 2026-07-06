@@ -16,6 +16,10 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     boolean existsByIdentityCardAndDeletedFalse(String identityCard);
 
+    boolean existsByPublicCode(String publicCode);
+
+    List<Employee> findByDeletedFalseOrderByFullName();
+
     @Query("""
             SELECT e FROM Employee e
             WHERE e.deleted = false

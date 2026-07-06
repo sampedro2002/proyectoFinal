@@ -7,14 +7,6 @@ import java.time.LocalTime;
 
 public final class CatalogDtos {
 
-    public record PositionRequest(
-            @NotBlank String name,
-            boolean allowsSnack,
-            Boolean active) {}
-
-    public record PositionResponse(
-            Long id, String name, boolean allowsSnack, boolean active) {}
-
     public record CateringRequest(
             @NotBlank String name,
             String location,

@@ -2,25 +2,30 @@ package com.eatfood.control.service;
 
 import com.eatfood.control.domain.Employee;
 import com.eatfood.control.domain.EmployeeStatus;
-import com.eatfood.control.domain.Position;
 import com.eatfood.control.dto.EmployeeDtos.*;
 import com.eatfood.control.exception.BusinessException;
 import com.eatfood.control.exception.NotFoundException;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.FingerprintRepository;
-import com.eatfood.control.repository.PositionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
+import java.util.List;
+
 @Service
 @RequiredArgsConstructor
 public class EmployeeService {
 
+    /** Alfabeto Base32 sin caracteres ambiguos (sin O, 0, I, 1, L). */
+    private static final String CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final int CODE_LENGTH = 6;
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final EmployeeRepository employeeRepository;
-    private final PositionRepository positionRepository;
     private final FingerprintRepository fingerprintRepository;
     private final AuditService auditService;
 
@@ -34,6 +39,13 @@ public class EmployeeService {
         return toResponse(find(id));
     }
 
+    /** Todos los empleados no eliminados (sin paginar) para exportación. */
+    @Transactional(readOnly = true)
+    public List<EmployeeResponse> exportAll() {
+        return employeeRepository.findByDeletedFalseOrderByFullName().stream()
+                .map(this::toResponse).toList();
+    }
+
     @Transactional
     public EmployeeResponse create(EmployeeRequest req) {
         if (employeeRepository.existsByIdentityCardAndDeletedFalse(req.identityCard())) {
@@ -41,6 +53,7 @@ public class EmployeeService {
         }
         Employee e = new Employee();
         apply(e, req);
+        e.setPublicCode(generatePublicCode());
         e = employeeRepository.save(e);
         auditService.record("Employee", String.valueOf(e.getId()), "CREATE", null, e.getFullName());
         return toResponse(e);
@@ -68,13 +81,8 @@ public class EmployeeService {
     private void apply(Employee e, EmployeeRequest req) {
         e.setIdentityCard(req.identityCard());
         e.setFullName(req.fullName());
-        if (req.positionId() != null) {
-            Position p = positionRepository.findById(req.positionId())
-                    .orElseThrow(() -> new NotFoundException("Cargo no encontrado: " + req.positionId()));
-            e.setPosition(p);
-        } else {
-            e.setPosition(null);
-        }
+        e.setPositionTitle(blankToNull(req.positionTitle()));
+        e.setObservation(blankToNull(req.observation()));
         if (req.status() != null) {
             try {
                 e.setStatus(EmployeeStatus.valueOf(req.status()));
@@ -86,9 +94,28 @@ public class EmployeeService {
         if (req.allowsSnack() != null) e.setAllowsSnack(req.allowsSnack());
     }
 
+    /** Genera un código público único EMP-XXXXXX reintentando ante colisión. */
+    private String generatePublicCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            StringBuilder sb = new StringBuilder("EMP-");
+            for (int i = 0; i < CODE_LENGTH; i++) {
+                sb.append(CODE_ALPHABET.charAt(RANDOM.nextInt(CODE_ALPHABET.length())));
+            }
+            String code = sb.toString();
+            if (!employeeRepository.existsByPublicCode(code)) return code;
+        }
+        throw new BusinessException("CODE_GENERATION", "No se pudo generar un código único de empleado.");
+    }
+
+    private static String blankToNull(String v) {
+        if (v == null) return null;
+        String t = v.trim();
+        return t.isEmpty() ? null : t;
+    }
+
     private String snapshot(Employee e) {
-        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
-                e.getIdentityCard(), e.getFullName(),
+        return "%s|%s|cargo=%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
+                e.getIdentityCard(), e.getFullName(), e.getPositionTitle(),
                 e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus());
     }
 
@@ -98,10 +125,13 @@ public class EmployeeService {
                 e.getId(),
                 e.getIdentityCard(),
                 e.getFullName(),
-                e.getPosition() != null ? e.getPosition().getId() : null,
-                e.getPosition() != null ? e.getPosition().getName() : null,
+                e.getPublicCode(),
+                e.getPositionTitle(),
+                e.getPositionTitle(),
+                e.getObservation(),
                 e.getStatus().name(),
                 e.isAllowsLunch(),
+                e.isAllowsSnack(),
                 e.effectiveSnack(),
                 (int) fpCount);
     }

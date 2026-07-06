@@ -21,7 +21,7 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 | PUT | `/api/employees/{id}` | Actualizar |
 | DELETE | `/api/employees/{id}` | Inactivar (soft-delete; conserva historial) |
 
-`EmployeeRequest`: `{identityCard, fullName, positionId?, status?, allowedPlates?, allowsLunch?, allowsSnack?}`
+`EmployeeRequest`: `{identityCard, fullName, position?, status?, allowedPlates?, allowsLunch?, allowsSnack?}`
 
 ## Huellas — `ADMIN`
 
@@ -35,8 +35,7 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 
 | Método | Ruta | Rol |
 |-------|------|-----|
-| GET/POST/PUT | `/api/positions` `/api/positions/{id}` | lectura `ADMIN/SUPERVISOR`, escritura `ADMIN` |
-| GET/POST/PUT | `/api/caterings` `/api/caterings/{id}` | igual |
+| GET/POST/PUT | `/api/caterings` `/api/caterings/{id}` | lectura `ADMIN/SUPERVISOR`, escritura `ADMIN` |
 | GET | `/api/meal-types` | autenticado |
 | POST | `/api/meal-types` | `ADMIN` |
 | GET | `/api/schedules` | autenticado |

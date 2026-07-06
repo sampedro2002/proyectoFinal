@@ -4,8 +4,6 @@ import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
-import EmployeeFingerprints from './pages/EmployeeFingerprints.jsx';
-import Positions from './pages/Positions.jsx';
 import Caterings from './pages/Caterings.jsx';
 import Schedules from './pages/Schedules.jsx';
 import Reports from './pages/Reports.jsx';
@@ -28,12 +26,10 @@ export default function App() {
 
       <Route path="/" element={<Protected><Layout /></Protected>}>
         <Route index element={<Dashboard />} />
-        <Route path="employees" element={<Protected roles={['ADMIN','SUPERVISOR']}><Employees /></Protected>} />
-        <Route path="employees/:id/fingerprints" element={<Protected roles={['ADMIN']}><EmployeeFingerprints /></Protected>} />
-        <Route path="positions" element={<Protected roles={['ADMIN','SUPERVISOR']}><Positions /></Protected>} />
-        <Route path="caterings" element={<Protected roles={['ADMIN','SUPERVISOR']}><Caterings /></Protected>} />
+        <Route path="employees" element={<Protected roles={['ADMIN']}><Employees /></Protected>} />
+        <Route path="caterings" element={<Protected roles={['ADMIN']}><Caterings /></Protected>} />
         <Route path="schedules" element={<Protected roles={['ADMIN']}><Schedules /></Protected>} />
-        <Route path="reports" element={<Protected roles={['ADMIN','SUPERVISOR']}><Reports /></Protected>} />
+        <Route path="reports" element={<Protected roles={['ADMIN']}><Reports /></Protected>} />
         <Route path="audit" element={<Protected roles={['ADMIN']}><Audit /></Protected>} />
         <Route path="manual-scan" element={<Protected roles={['ADMIN']}><ManualScan /></Protected>} />
       </Route>
