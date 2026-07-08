@@ -9,20 +9,20 @@ import java.util.UUID;
 
 public final class ScanDtos {
 
-    /** Conexión de un dispositivo de catering (control de máx. 2 simultáneos). */
+    /** Conexión de un dispositivo de restaurant (control de máx. 2 simultáneos). */
     public record DeviceConnectRequest(
-            @NotBlank String cateringUsername,
-            @NotBlank String cateringPassword,
+            @NotBlank String restaurantUsername,
+            @NotBlank String restaurantPassword,
             @NotBlank String deviceUid,
             String deviceName) {}
 
     public record DeviceConnectResponse(
-            Long cateringId,
-            String cateringName,
+            Long restaurantId,
+            String restaurantName,
             Long deviceId,
             String sessionToken) {}
 
-    /** Petición de escaneo de huella desde el dispositivo de catering. */
+    /** Petición de escaneo de huella desde el dispositivo de restaurant. */
     public record ScanRequest(
             @NotBlank String sessionToken,
             @NotBlank String templateB64,
@@ -31,7 +31,7 @@ public final class ScanDtos {
             Boolean offline,
             OffsetDateTime consumedAt) {}   // hora real del consumo (para registros offline)
 
-    /** Resultado mostrado en la pantalla del catering. */
+    /** Resultado mostrado en la pantalla del restaurant. */
     public record ScanResponse(
             String status,        // SUCCESS, NOT_FOUND, OUT_OF_SCHEDULE, DUPLICATE, NOT_ALLOWED
             String message,       // mensaje a mostrar
@@ -64,7 +64,8 @@ public final class ScanDtos {
     public record ManualScanRequest(
             @NotNull Long employeeId,
             @NotBlank String mealTypeCode,
-            @NotNull Long cateringId) {}
+            @NotNull Long restaurantId,
+            String observation) {}
 
     public record ManualScanResponse(
             String status,
@@ -77,5 +78,6 @@ public final class ScanDtos {
             @NotBlank String identityCard,
             @NotBlank String fullName,
             @NotBlank String mealTypeCode,
-            @NotNull Long cateringId) {}
+            @NotNull Long restaurantId,
+            String observation) {}
 }

@@ -57,7 +57,7 @@ export default function Login() {
           {loading ? 'Ingresando…' : 'Ingresar'}
         </button>
         <p style={{ textAlign: 'center', marginTop: 16 }}>
-          <a href="/kiosk">Abrir pantalla de Catering</a>
+          <a href="/kiosk">Abrir pantalla de Restaurante</a>
         </p>
       </form>
     </div>

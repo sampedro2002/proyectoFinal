@@ -8,7 +8,6 @@ public final class EmployeeDtos {
     public record EmployeeRequest(
             @NotBlank @Size(max = 20) String identityCard,
             @NotBlank @Size(max = 160) String fullName,
-            @Size(max = 120) String positionTitle,
             @Size(max = 500) String observation,
             String status,
             Boolean allowsLunch,
@@ -19,9 +18,6 @@ public final class EmployeeDtos {
             String identityCard,
             String fullName,
             String publicCode,
-            String positionTitle,
-            // Alias de positionTitle para compatibilidad con la APK móvil (consume positionName).
-            String positionName,
             String observation,
             String status,
             boolean allowsLunch,

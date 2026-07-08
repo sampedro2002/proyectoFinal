@@ -121,8 +121,8 @@ public class AuthService {
 
     private AuthResponse issueTokens(AppUser user) {
         List<String> roles = user.getRoles().stream().map(r -> r.getName()).toList();
-        Long cateringId = user.getCatering() != null ? user.getCatering().getId() : null;
-        String access = jwtService.generateAccessToken(user.getUsername(), roles, cateringId);
+        Long restaurantId = user.getRestaurant() != null ? user.getRestaurant().getId() : null;
+        String access = jwtService.generateAccessToken(user.getUsername(), roles, restaurantId);
         String refresh = UUID.randomUUID().toString() + UUID.randomUUID();
 
         LoginSession session = LoginSession.builder()
@@ -132,6 +132,6 @@ public class AuthService {
                 .build();
         sessionRepository.save(session);
 
-        return new AuthResponse(access, refresh, user.getUsername(), user.getFullName(), roles, cateringId);
+        return new AuthResponse(access, refresh, user.getUsername(), user.getFullName(), roles, restaurantId);
     }
 }

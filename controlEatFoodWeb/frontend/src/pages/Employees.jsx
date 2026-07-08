@@ -11,7 +11,7 @@ const FINGERS = [
 ];
 
 const empty = {
-  identityCard: '', fullName: '', positionTitle: '', observation: '',
+  identityCard: '', fullName: '', observation: '',
   status: 'ACTIVE', allowsLunch: true, allowsSnack: false,
 };
 
@@ -107,7 +107,6 @@ export default function Employees() {
     setFingerIndex(0); setTab('data');
     setForm({
       ...emp,
-      positionTitle: emp.positionTitle ?? emp.positionName ?? '',
       observation:   emp.observation ?? '',
       allowsLunch:   emp.allowsLunch ?? true,
       allowsSnack:   emp.allowsSnack ?? emp.effectiveSnack ?? false,
@@ -127,7 +126,6 @@ export default function Employees() {
     const payload = {
       identityCard: form.identityCard,
       fullName: form.fullName,
-      positionTitle: form.positionTitle || null,
       observation: form.observation || null,
       status: form.status,
       allowsLunch: form.allowsLunch,
@@ -143,7 +141,6 @@ export default function Employees() {
         setSavedMsg('Empleado creado correctamente. Ahora puede registrar hasta 3 huellas.');
         setForm({
           ...data,
-          positionTitle: data.positionTitle ?? '',
           observation:   data.observation ?? '',
           allowsLunch:   data.allowsLunch ?? true,
           allowsSnack:   data.allowsSnack ?? data.effectiveSnack ?? false,
@@ -268,7 +265,7 @@ export default function Employees() {
         <table>
           <thead>
             <tr>
-              <th>Código</th><th>Cédula</th><th>Nombre</th><th>Cargo</th>
+              <th>Código</th><th>Cédula</th><th>Nombre</th>
               <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
             </tr>
           </thead>
@@ -278,7 +275,6 @@ export default function Employees() {
                 <td>{e.publicCode || '—'}</td>
                 <td>{e.identityCard}</td>
                 <td>{e.fullName}</td>
-                <td>{e.positionTitle || e.positionName || '—'}</td>
                 <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
                 <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
                 <td>{e.fingerprintCount}/3</td>
@@ -295,10 +291,10 @@ export default function Employees() {
               </tr>
             ))}
             {loading && (
-              <tr><td colSpan="9" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
+              <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
             )}
             {!loading && filtered.length === 0 && (
-              <tr><td colSpan="9" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
+              <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
             )}
           </tbody>
         </table>
@@ -351,12 +347,6 @@ export default function Employees() {
                   <input value={form.fullName} required
                          onChange={e => setForm({ ...form, fullName: e.target.value })} />
                 </div>
-                <div className="field">
-                  <label>Cargo</label>
-                  <input value={form.positionTitle} placeholder="Ej: Operario"
-                         onChange={e => setForm({ ...form, positionTitle: e.target.value })} />
-                </div>
-
                 <div className="row">
                   <label>
                     <input type="checkbox" checked={form.allowsLunch}

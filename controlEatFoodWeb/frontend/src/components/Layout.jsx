@@ -9,7 +9,8 @@ export default function Layout() {
         <h1>🍽 EatFood</h1>
         <NavLink to="/" end>Dashboard</NavLink>
         {hasRole('ADMIN') && <NavLink to="/employees">Empleados</NavLink>}
-        {hasRole('ADMIN') && <NavLink to="/caterings">Caterings</NavLink>}
+        {hasRole('ADMIN') && <NavLink to="/restaurants">Restaurantes</NavLink>}
+        {hasRole('ADMIN') && <NavLink to="/users">Usuarios</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/schedules">Horarios</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/reports">Reportes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/audit">Auditoría</NavLink>}

@@ -12,13 +12,13 @@ import org.springframework.stereotype.Component;
 public class AppProperties {
 
     private Security security = new Security();
-    private Catering catering = new Catering();
+    private Restaurant restaurant = new Restaurant();
     private Biometric biometric = new Biometric();
     private Cors cors = new Cors();
     private RateLimit rateLimit = new RateLimit();
 
     /**
-     * URL pública canónica del servidor (p. ej. https://catering.midominio.com), sin '/api'.
+     * URL pública canónica del servidor (p. ej. https://restaurant.midominio.com), sin '/api'.
      * Si se define (env var PUBLIC_URL), es la dirección autoritativa que ofrece el generador
      * de QR. Útil en despliegues detrás de proxy inverso / dominio, donde la IP de red no sirve.
      */
@@ -44,7 +44,7 @@ public class AppProperties {
     }
 
     @Getter @Setter
-    public static class Catering {
+    public static class Restaurant {
         private int maxDevices = 2;
     }
 

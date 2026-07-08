@@ -11,18 +11,19 @@ export default function ManualScan() {
   const [employee, setEmployee] = useState(null);
   const [extCard, setExtCard] = useState('');
   const [extName, setExtName] = useState('');
-  const [caterings, setCaterings] = useState([]);
+  const [restaurants, setRestaurants] = useState([]);
   const [meals, setMeals] = useState([]);
-  const [cateringId, setCateringId] = useState('');
+  const [restaurantId, setRestaurantId] = useState('');
   const [mealCode, setMealCode] = useState('');
+  const [observation, setObservation] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    api.get('/caterings').then((r) => {
-      setCaterings(r.data);
-      if (r.data.length > 0) setCateringId(r.data[0].id);
+    api.get('/restaurants').then((r) => {
+      setRestaurants(r.data);
+      if (r.data.length > 0) setRestaurantId(r.data[0].id);
     }).catch(() => {});
     api.get('/meal-types').then((r) => {
       setMeals(r.data);
@@ -74,14 +75,15 @@ export default function ManualScan() {
 
     if (mode === 'employee') {
       if (!employee) { setError('Seleccione un empleado de la lista.'); return; }
-      if (!cateringId) { setError('Seleccione un catering.'); return; }
+      if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (!mealCode) { setError('Seleccione un tipo de comida.'); return; }
       setLoading(true);
       try {
         const { data } = await api.post('/manual-consumptions', {
           employeeId: employee.id,
           mealTypeCode: mealCode,
-          cateringId: Number(cateringId),
+          restaurantId: Number(restaurantId),
+          observation: observation.trim() || null,
         });
         setResult(data);
       } catch (err) {
@@ -93,7 +95,7 @@ export default function ManualScan() {
       // Persona externa
       if (!extCard.trim()) { setError('Ingrese la cédula.'); return; }
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
-      if (!cateringId) { setError('Seleccione un catering.'); return; }
+      if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (!mealCode) { setError('Seleccione un tipo de comida.'); return; }
       setLoading(true);
       try {
@@ -101,7 +103,8 @@ export default function ManualScan() {
           identityCard: extCard.trim(),
           fullName: extName.trim(),
           mealTypeCode: mealCode,
-          cateringId: Number(cateringId),
+          restaurantId: Number(restaurantId),
+          observation: observation.trim() || null,
         });
         setResult(data);
       } catch (err) {
@@ -117,8 +120,8 @@ export default function ManualScan() {
 
   const canSubmit =
     mode === 'employee'
-      ? employee && cateringId && mealCode
-      : extCard.trim() && extName.trim() && cateringId && mealCode;
+      ? employee && restaurantId && mealCode
+      : extCard.trim() && extName.trim() && restaurantId && mealCode;
 
   return (
     <div>
@@ -149,7 +152,7 @@ export default function ManualScan() {
 
         <p style={{ color: '#94a3b8', marginTop: 0, fontSize: 13 }}>
           {mode === 'employee'
-            ? 'Como administrador puede registrar un consumo sin huella. No se validan horario, permiso ni duplicados: use esta opción para correcciones. El consumo aparecerá en el feed del kiosk del catering seleccionado.'
+            ? 'Como administrador puede registrar un consumo sin huella. No se validan horario, permiso ni duplicados: use esta opción para correcciones. El consumo aparecerá en el feed del kiosk del restaurante seleccionado.'
             : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de empleados. El consumo aparecerá en el feed del kiosk y en reportes.'}
         </p>
 
@@ -189,7 +192,7 @@ export default function ManualScan() {
                     >
                       <div>{emp.fullName}</div>
                       <div style={{ fontSize: 12, color: '#64748b' }}>
-                        {emp.identityCard} · {emp.positionName || 'Sin cargo'}
+                        {emp.identityCard}
                         {emp.status !== 'ACTIVE' && ` · ${emp.status}`}
                       </div>
                     </li>
@@ -231,9 +234,9 @@ export default function ManualScan() {
           )}
 
           <div className="field">
-            <label>Catering</label>
-            <select value={cateringId} onChange={(e) => setCateringId(e.target.value)}>
-              {caterings.map((c) => (
+            <label>Restaurante</label>
+            <select value={restaurantId} onChange={(e) => setRestaurantId(e.target.value)}>
+              {restaurants.map((c) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -247,6 +250,16 @@ export default function ManualScan() {
                 <option key={m.id} value={m.code}>{m.name}</option>
               ))}
             </select>
+          </div>
+
+          <div className="field">
+            <label>Observación (opcional)</label>
+            <textarea
+              value={observation}
+              rows={2}
+              placeholder="Nota sobre este registro (opcional)"
+              onChange={(e) => setObservation(e.target.value)}
+            />
           </div>
 
           {error && <p className="error-text">{error}</p>}
@@ -271,7 +284,7 @@ export default function ManualScan() {
               className="ghost"
               onClick={() => {
                 setTerm(''); setEmployee(null); setResult(null); setError('');
-                setExtCard(''); setExtName('');
+                setExtCard(''); setExtName(''); setObservation('');
               }}
             >
               Limpiar

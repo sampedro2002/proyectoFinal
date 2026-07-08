@@ -15,73 +15,52 @@ import java.util.List;
 @RequiredArgsConstructor
 public class CatalogService {
 
-    private final CateringRepository cateringRepository;
-    private final MealTypeRepository mealTypeRepository;
+    private final RestaurantRepository restaurantRepository;
     private final ScheduleRepository scheduleRepository;
     private final DeviceRepository deviceRepository;
     private final AuditService auditService;
 
-    // ----------------- Caterings -----------------
+    // ----------------- Restaurants -----------------
     @Transactional(readOnly = true)
-    public List<CateringResponse> listCaterings() {
-        return cateringRepository.findAll().stream().map(this::toCatering).toList();
+    public List<RestaurantResponse> listRestaurants() {
+        return restaurantRepository.findAll().stream().map(this::toRestaurant).toList();
     }
 
     @Transactional
-    public CateringResponse createCatering(CateringRequest req) {
-        Catering c = Catering.builder()
+    public RestaurantResponse createRestaurant(RestaurantRequest req) {
+        Restaurant c = Restaurant.builder()
                 .name(req.name()).location(req.location())
+                .representative(req.representative())
                 .active(req.active() == null || req.active())
                 .maxDevices(req.maxDevices() == null ? 2 : req.maxDevices())
                 .build();
-        c = cateringRepository.save(c);
-        auditService.record("Catering", String.valueOf(c.getId()), "CREATE", null, c.getName());
-        return toCatering(c);
+        c = restaurantRepository.save(c);
+        auditService.record("Restaurant", String.valueOf(c.getId()), "CREATE", null, c.getName());
+        return toRestaurant(c);
     }
 
     @Transactional
-    public CateringResponse updateCatering(Long id, CateringRequest req) {
-        Catering c = cateringRepository.findById(id)
-                .orElseThrow(() -> new NotFoundException("Catering no encontrado: " + id));
+    public RestaurantResponse updateRestaurant(Long id, RestaurantRequest req) {
+        Restaurant c = restaurantRepository.findById(id)
+                .orElseThrow(() -> new NotFoundException("Restaurant no encontrado: " + id));
         String before = c.getName() + "|location=" + c.getLocation() + "|maxDevices=" + c.getMaxDevices();
         c.setName(req.name());
         c.setLocation(req.location());
+        c.setRepresentative(req.representative());
         if (req.active() != null) c.setActive(req.active());
         if (req.maxDevices() != null) c.setMaxDevices(req.maxDevices());
-        c = cateringRepository.save(c);
-        auditService.record("Catering", String.valueOf(id), "UPDATE", before, c.getName() + "|location=" + c.getLocation() + "|maxDevices=" + c.getMaxDevices());
-        return toCatering(c);
+        c = restaurantRepository.save(c);
+        auditService.record("Restaurant", String.valueOf(id), "UPDATE", before, c.getName() + "|location=" + c.getLocation() + "|maxDevices=" + c.getMaxDevices());
+        return toRestaurant(c);
     }
 
-    private CateringResponse toCatering(Catering c) {
-        long connected = deviceRepository.countByCateringIdAndConnectedTrue(c.getId());
-        return new CateringResponse(c.getId(), c.getName(), c.getLocation(), c.isActive(), c.getMaxDevices(), connected);
+    private RestaurantResponse toRestaurant(Restaurant c) {
+        long connected = deviceRepository.countByRestaurantIdAndConnectedTrue(c.getId());
+        return new RestaurantResponse(c.getId(), c.getName(), c.getLocation(), c.getRepresentative(),
+                c.isActive(), c.getMaxDevices(), connected);
     }
 
-    // ----------------- Tipos de comida -----------------
-    @Transactional(readOnly = true)
-    public List<MealTypeResponse> listMealTypes() {
-        return mealTypeRepository.findByActiveTrueOrderBySortOrder().stream().map(this::toMeal).toList();
-    }
 
-    @Transactional
-    public MealTypeResponse createMealType(MealTypeRequest req) {
-        if (mealTypeRepository.findByCode(req.code()).isPresent()) {
-            throw new BusinessException("DUPLICATE", "Ya existe un tipo de comida con ese código.");
-        }
-        MealType m = MealType.builder()
-                .code(req.code()).name(req.name())
-                .sortOrder(req.sortOrder() == null ? 0 : req.sortOrder())
-                .active(req.active() == null || req.active())
-                .build();
-        m = mealTypeRepository.save(m);
-        auditService.record("MealType", String.valueOf(m.getId()), "CREATE", null, m.getCode());
-        return toMeal(m);
-    }
-
-    private MealTypeResponse toMeal(MealType m) {
-        return new MealTypeResponse(m.getId(), m.getCode(), m.getName(), m.isActive(), m.getSortOrder());
-    }
 
     // ----------------- Horarios -----------------
     @Transactional(readOnly = true)
@@ -91,17 +70,10 @@ public class CatalogService {
 
     @Transactional
     public ScheduleResponse upsertSchedule(ScheduleRequest req) {
-        MealType meal = mealTypeRepository.findById(req.mealTypeId())
-                .orElseThrow(() -> new NotFoundException("Tipo de comida no encontrado: " + req.mealTypeId()));
         if (!req.endTime().isAfter(req.startTime())) {
             throw new BusinessException("INVALID_RANGE", "La hora fin debe ser posterior a la hora inicio.");
         }
-        // Reutilizar el Schedule existente para el MealType (sin importar si está activo
-        // o inactivo) en lugar de crear uno nuevo: el índice UNIQUE uq_schedule_meal
-        // impide tener dos filas para el mismo meal_type_id.
-        Schedule s = scheduleRepository.findByMealTypeId(req.mealTypeId())
-                .orElseGet(Schedule::new);
-        s.setMealType(meal);
+        Schedule s = scheduleRepository.findFirstByOrderByIdAsc().orElseGet(Schedule::new);
         s.setStartTime(req.startTime());
         s.setEndTime(req.endTime());
         s.setActive(req.active() == null || req.active());
@@ -109,12 +81,11 @@ public class CatalogService {
         String before = s.getId() == null ? null : "anterior";
         s = scheduleRepository.save(s);
         auditService.record("Schedule", String.valueOf(s.getId()), "UPSERT", before,
-                meal.getCode() + " " + req.startTime() + "-" + req.endTime());
+                req.startTime() + "-" + req.endTime());
         return toSchedule(s);
     }
 
     private ScheduleResponse toSchedule(Schedule s) {
-        return new ScheduleResponse(s.getId(), s.getMealType().getId(), s.getMealType().getName(),
-                s.getStartTime(), s.getEndTime(), s.isActive());
+        return new ScheduleResponse(s.getId(), s.getStartTime(), s.getEndTime(), s.isActive());
     }
 }

@@ -22,7 +22,7 @@ import kotlin.coroutines.resume
  * Android exige permiso explícito del usuario para que una app acceda a un dispositivo
  * USB. Solo se concede automáticamente cuando la actividad se lanza desde el evento
  * `USB_DEVICE_ATTACHED` (al conectar el lector con la app cerrada). Si el usuario abre
- * la pantalla de catering primero y luego conecta el lector —o lo abre desde el menú—
+ * la pantalla de restaurant primero y luego conecta el lector —o lo abre desde el menú—
  * hay que pedir el permiso manualmente con `UsbManager.requestPermission`, o el SDK
  * fallará al abrir el sensor.
  *

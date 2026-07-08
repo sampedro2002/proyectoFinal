@@ -33,9 +33,8 @@ public class ScanService {
     private final EmployeeRepository employeeRepository;
     private final ConsumptionRepository consumptionRepository;
     private final ScheduleRepository scheduleRepository;
-    private final MealTypeRepository mealTypeRepository;
     private final FailedScanRepository failedScanRepository;
-    private final CateringRepository cateringRepository;
+    private final RestaurantRepository restaurantRepository;
 
     /**
      * Procesa un escaneo de huella y registra el consumo según las reglas de negocio.
@@ -47,14 +46,14 @@ public class ScanService {
                 req.clientUuid(), req.offline(), req.consumedAt());
 
         Device device = deviceService.validateSession(req.sessionToken());
-        Catering catering = device.getCatering();
+        Restaurant restaurant = device.getRestaurant();
 
         boolean offline = Boolean.TRUE.equals(req.offline());
         OffsetDateTime when = req.consumedAt() != null ? req.consumedAt() : OffsetDateTime.now();
         UUID clientUuid = req.clientUuid() != null ? req.clientUuid() : UUID.randomUUID();
 
-        log.debug("[SCAN] deviceId={}, cateringId={}, when={}, clientUuid={}",
-                device.getId(), catering.getId(), when, clientUuid);
+        log.debug("[SCAN] deviceId={}, restaurantId={}, when={}, clientUuid={}",
+                device.getId(), restaurant.getId(), when, clientUuid);
 
         // Idempotencia: si ya existe ese registro, devolver éxito sin duplicar
         Optional<Consumption> existingByUuid = consumptionRepository.findByClientUuid(clientUuid);
@@ -68,7 +67,7 @@ public class ScanService {
         Optional<BiometricMatcher.MatchResult> match = matcher.identify(template);
         if (match.isEmpty()) {
             log.debug("[SCAN] NOT_FOUND → huella no matchea con ningún empleado");
-            registerFailed(catering.getId(), device.getId(), "NOT_FOUND", null, null);
+            registerFailed(restaurant.getId(), device.getId(), "NOT_FOUND", null);
             return new ScanResponse("NOT_FOUND", "HUELLA NO ENCONTRADA", null, null, null, when);
         }
 
@@ -79,125 +78,100 @@ public class ScanService {
         if (employee == null || employee.isDeleted() || employee.getStatus() != EmployeeStatus.ACTIVE) {
             log.debug("[SCAN] NOT_ALLOWED → empleado inactivo o eliminado (id={})",
                     employee != null ? employee.getId() : "null");
-            registerFailed(catering.getId(), device.getId(), "NOT_ALLOWED", null,
+            registerFailed(restaurant.getId(), device.getId(), "NOT_ALLOWED",
                     employee != null ? employee.getId() : null);
             return new ScanResponse("NOT_ALLOWED", "EMPLEADO INACTIVO", null, null, null, when);
         }
 
         log.debug("[SCAN] Empleado identificado: id={}, nombre='{}'", employee.getId(), employee.getFullName());
 
-        // 2) Determinar tipo de comida (explícito o inferido por horario)
-        MealType meal = resolveMealType(req.mealTypeCode(), when.toLocalTime());
-        if (meal == null) {
-            log.debug("[SCAN] OUT_OF_SCHEDULE → no se pudo resolver tipo de comida para hora={}", when.toLocalTime());
-            registerFailed(catering.getId(), device.getId(), "OUT_OF_SCHEDULE", null, employee.getId());
-            return new ScanResponse("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO",
+        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Merienda)
+        LocalDate businessDate = when.toLocalDate();
+        MealSelection selection = resolveMealForScan(employee, when.toLocalTime(), businessDate);
+        if (selection.status() != null && !"OK".equals(selection.status())) {
+            log.debug("[SCAN] {} → empleado='{}', hora={}",
+                    selection.failReason(), employee.getFullName(), when.toLocalTime());
+            registerFailed(restaurant.getId(), device.getId(), selection.failReason(), employee.getId());
+            return new ScanResponse(selection.status(), selection.message(),
                     employee.getFullName(), null, null, when);
         }
 
-        log.debug("[SCAN] MealType resuelto: id={}, code='{}', name='{}'", meal.getId(), meal.getCode(), meal.getName());
+        String mealName = selection.mealName();
 
-        // 3) Validar horario del tipo de comida resuelto
-        Schedule schedule = scheduleRepository.findByMealTypeIdAndActiveTrue(meal.getId()).orElse(null);
-        if (schedule == null || !schedule.contains(when.toLocalTime())) {
-            log.debug("[SCAN] OUT_OF_SCHEDULE → schedule={}, hora={}",
-                    schedule != null ? schedule.getStartTime() + "-" + schedule.getEndTime() : "null",
-                    when.toLocalTime());
-            registerFailed(catering.getId(), device.getId(), "OUT_OF_SCHEDULE", meal.getId(), employee.getId());
-            return new ScanResponse("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO",
-                    employee.getFullName(), meal.getName(), null, when);
-        }
-
-        // 4) Validar permiso del empleado para ese tipo de comida
-        if (!isMealAllowed(employee, meal)) {
-            log.debug("[SCAN] NOT_ALLOWED → empleado '{}' no tiene permiso para '{}'",
-                    employee.getFullName(), meal.getCode());
-            registerFailed(catering.getId(), device.getId(), "NOT_ALLOWED", meal.getId(), employee.getId());
-            return new ScanResponse("NOT_ALLOWED", "CONSUMO NO PERMITIDO",
-                    employee.getFullName(), meal.getName(), null, when);
-        }
-
-        // 5) Antiduplicado por día de negocio
-        LocalDate businessDate = when.toLocalDate();
-        boolean duplicate = consumptionRepository.existsByEmployeeIdAndMealTypeIdAndBusinessDate(
-                employee.getId(), meal.getId(), businessDate);
-        log.debug("[SCAN] Antiduplicado: employeeId={}, mealTypeId={}, businessDate={}, ¿existe?={}",
-                employee.getId(), meal.getId(), businessDate, duplicate);
-        if (duplicate) {
-            log.warn("[SCAN] ══ DUPLICATE ══ empleado='{}' (id={}), comida='{}' (id={}), fecha={}",
-                    employee.getFullName(), employee.getId(), meal.getName(), meal.getId(), businessDate);
-            registerFailed(catering.getId(), device.getId(), "DUPLICATE", meal.getId(), employee.getId());
-            return new ScanResponse("DUPLICATE", meal.getName().toUpperCase() + " YA REGISTRADO",
-                    employee.getFullName(), meal.getName(), null, when);
-        }
-
-        // 6) Registrar consumo
+        // 3) Registrar consumo
         Consumption consumption = Consumption.builder()
                 .employee(employee)
-                .catering(catering)
-                .mealType(meal)
+                .restaurant(restaurant)
                 .device(device)
                 .consumedAt(when)
                 .businessDate(businessDate)
                 .offline(offline)
                 .syncStatus(SyncStatus.SYNCED)
+                .mealName(mealName)
                 .clientUuid(clientUuid)
                 .build();
         try {
             consumption = consumptionRepository.save(consumption);
         } catch (DataIntegrityViolationException ex) {
-            // Bajo concurrencia puede ocurrir que dos peticiones pasen el check
-            // existsByEmployeeIdAndMealTypeIdAndBusinessDate (o el findByClientUuid de
-            // idempotencia) casi simultáneamente y una gane el INSERT mientras la otra
-            // viola el UNIQUE. Recuperamos el consumo ya persistido y respondemos
-            // idempotentemente en lugar de devolver 500.
-            log.warn("[SCAN] DataIntegrityViolation al persistir consumo (clientUuid={}, empleado={}, meal={}) — " +
-                    "se resuelve como idempotente/DUPLICATE.", clientUuid, employee.getId(), meal.getId());
+            log.warn("[SCAN] DataIntegrityViolation al persistir consumo (clientUuid={}, empleado={}) — " +
+                    "se resuelve como idempotente/DUPLICATE.", clientUuid, employee.getId());
             Consumption existing = consumptionRepository
                     .findByClientUuid(clientUuid)
                     .orElseGet(() -> consumptionRepository
-                            .findByEmployeeIdAndMealTypeIdAndBusinessDate(employee.getId(), meal.getId(), businessDate)
+                            .findByEmployeeIdAndBusinessDate(employee.getId(), businessDate)
                             .orElse(null));
             if (existing != null) {
                 return success(existing);
             }
-            // Si por algún motivo no se encuentra, re-lanzamos para que el handler global lo trate.
             throw ex;
         }
-        log.info("[SCAN] ✓ SUCCESS → consumptionId={}, empleado='{}', comida='{}', fecha={}",
-                consumption.getId(), employee.getFullName(), meal.getName(), businessDate);
+        log.info("[SCAN] ✓ SUCCESS → consumptionId={}, empleado='{}', fecha={}, comida={}",
+                consumption.getId(), employee.getFullName(), businessDate, selection.mealName());
         return success(consumption);
     }
 
     private ScanResponse success(Consumption c) {
         return new ScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                c.getEmployee().getFullName(), c.getMealType().getName(), 1, c.getConsumedAt());
+                c.getEmployee().getFullName(), c.getMealName(), 1, c.getConsumedAt());
     }
 
-    private MealType resolveMealType(String code, LocalTime time) {
-        if (code != null && !code.isBlank()) {
-            return mealTypeRepository.findByCode(code).orElse(null);
+    private record MealSelection(String status, String message, String failReason, String mealName) {
+        static MealSelection ok(String mealName) { return new MealSelection("OK", null, null, mealName); }
+        static MealSelection fail(String status, String message, String failReason) {
+            return new MealSelection(status, message, failReason, null);
         }
-        // Inferir por el horario activo que contenga la hora
-        return scheduleRepository.findByActiveTrue().stream()
-                .filter(s -> s.contains(time))
-                .map(Schedule::getMealType)
-                .findFirst()
-                .orElse(null);
     }
 
-    private boolean isMealAllowed(Employee employee, MealType meal) {
-        return switch (meal.getCode()) {
-            case "LUNCH" -> employee.isAllowsLunch();
-            case "SNACK" -> employee.effectiveSnack();
-            default -> true; // tipos de comida futuros: permitidos por defecto
-        };
+    /**
+     * Determina si el empleado puede retirar un plato más en el día.
+     */
+    private MealSelection resolveMealForScan(Employee employee, LocalTime now, LocalDate date) {
+        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (sch == null || !sch.contains(now)) {
+            return MealSelection.fail("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO", "OUT_OF_SCHEDULE");
+        }
+        
+        long count = consumptionRepository.countByEmployeeIdAndBusinessDate(employee.getId(), date);
+        if (count == 0) {
+            if (!employee.isAllowsLunch() && !employee.effectiveSnack()) {
+                return MealSelection.fail("NOT_ALLOWED", "CONSUMO NO PERMITIDO", "NOT_ALLOWED");
+            }
+            return MealSelection.ok("Desayuno");
+        } else if (count == 1) {
+            if (employee.effectiveSnack()) { // if allowsSnack is true, allow second scan (Merienda)
+                return MealSelection.ok("Merienda");
+            } else {
+                return MealSelection.fail("DUPLICATE", "CONSUMO YA REGISTRADO", "DUPLICATE");
+            }
+        } else {
+            return MealSelection.fail("DUPLICATE", "LÍMITE ALCANZADO", "DUPLICATE");
+        }
     }
 
-    private void registerFailed(Long cateringId, Long deviceId, String reason, Long mealTypeId, Long employeeId) {
+    private void registerFailed(Long restaurantId, Long deviceId, String reason, Long employeeId) {
         failedScanRepository.save(FailedScan.builder()
-                .cateringId(cateringId).deviceId(deviceId)
-                .reason(reason).mealTypeId(mealTypeId).employeeId(employeeId)
+                .restaurantId(restaurantId).deviceId(deviceId)
+                .reason(reason).employeeId(employeeId)
                 .build());
     }
 
@@ -210,12 +184,12 @@ public class ScanService {
     public List<TodayEntry> todayFeed(String sessionToken) {
         Device device = deviceService.validateSession(sessionToken);
         return consumptionRepository
-                .findByBusinessDateAndCateringId(LocalDate.now(BUSINESS_ZONE), device.getCatering().getId())
+                .findByBusinessDateAndRestaurantId(LocalDate.now(BUSINESS_ZONE), device.getRestaurant().getId())
                 .stream()
                 .sorted(Comparator.comparing(Consumption::getConsumedAt).reversed())
                 .map(c -> new TodayEntry(
                         c.getEmployee().getFullName(),
-                        c.getMealType().getName(),
+                        c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))))
                 .collect(Collectors.toList());
     }
@@ -225,7 +199,7 @@ public class ScanService {
         Device device = deviceService.validateSession(sessionToken);
         LocalDate today = LocalDate.now(BUSINESS_ZONE);
         List<Consumption> consumptions = consumptionRepository
-                .findByBusinessDateAndCateringIdWithDetails(today, device.getCatering().getId());
+                .findByBusinessDateAndRestaurantIdWithDetails(today, device.getRestaurant().getId());
 
         List<ConsumptionRow> rows = consumptions.stream()
                 .map(c -> {
@@ -233,34 +207,37 @@ public class ScanService {
                     return new ConsumptionRow(
                             c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                             e.getFullName(), e.getIdentityCard(),
-                            e.getPositionTitle(),
-                            c.getCatering().getName(), c.getMealType().getName(),
-                            c.isOffline());
+                            c.getRestaurant().getName(), c.getMealName(),
+                            c.getObservation(), c.isOffline());
                 })
                 .toList();
 
-        Map<String, Long> plateCounts = consumptions.stream()
-                .collect(Collectors.groupingBy(
-                        c -> c.getMealType().getName(),
-                        Collectors.counting()));
+        long desayunos = consumptions.stream().filter(c -> "Desayuno".equals(c.getMealName())).count();
+        long meriendas = consumptions.stream().filter(c -> "Merienda".equals(c.getMealName())).count();
+        long general = consumptions.stream().filter(c -> !"Desayuno".equals(c.getMealName()) && !"Merienda".equals(c.getMealName())).count();
+
+        Map<String, Long> plateCounts = new LinkedHashMap<>();
+        plateCounts.put("Desayunos", desayunos);
+        plateCounts.put("Meriendas", meriendas);
+        if (general > 0) plateCounts.put("Otros", general);
 
         return new KioskReport(
-                device.getCatering().getName(),
+                device.getRestaurant().getName(),
                 today,
                 rows,
                 plateCounts);
     }
 
     public record KioskReport(
-            String cateringName,
+            String restaurantName,
             LocalDate date,
             List<ConsumptionRow> rows,
             Map<String, Long> plateCounts) {}
 
     @Transactional
     public ManualScanResponse manualScan(ManualScanRequest req) {
-        log.info("[MANUAL] Registro manual: employeeId={}, mealType='{}', cateringId={}",
-                req.employeeId(), req.mealTypeCode(), req.cateringId());
+        log.info("[MANUAL] Registro manual: employeeId={}, restaurantId={}",
+                req.employeeId(), req.restaurantId());
 
         Employee employee = employeeRepository.findById(req.employeeId())
                 .orElse(null);
@@ -268,39 +245,31 @@ public class ScanService {
             return new ManualScanResponse("NOT_FOUND", "Empleado no encontrado", null, null);
         }
 
-        MealType meal = mealTypeRepository.findByCode(req.mealTypeCode()).orElse(null);
-        if (meal == null) {
-            return new ManualScanResponse("ERROR", "Tipo de comida no válido",
+        Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
+        if (restaurant == null) {
+            return new ManualScanResponse("ERROR", "Restaurant no encontrado",
                     employee.getFullName(), null);
         }
 
-        Catering catering = cateringRepository.findById(req.cateringId()).orElse(null);
-        if (catering == null) {
-            return new ManualScanResponse("ERROR", "Catering no encontrado",
-                    employee.getFullName(), null);
-        }
-
-        // El registro manual del ADMIN es una corrección: NO se validan horario,
-        // permiso ni duplicado. Se persiste tal cual para que aparezca en el feed
-        // del kiosk correspondiente (mismo businessDate=today + cateringId).
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
 
         Consumption consumption = Consumption.builder()
                 .employee(employee)
-                .catering(catering)
-                .mealType(meal)
+                .restaurant(restaurant)
                 .consumedAt(OffsetDateTime.now())
                 .businessDate(businessDate)
+                .observation(blankToNull(req.observation()))
                 .offline(false)
                 .syncStatus(SyncStatus.SYNCED)
+                .mealName("Manual")
                 .clientUuid(UUID.randomUUID())
                 .build();
         consumptionRepository.save(consumption);
 
-        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', comida='{}', catering='{}'",
-                employee.getFullName(), meal.getName(), catering.getName());
+        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', restaurant='{}'",
+                employee.getFullName(), restaurant.getName());
         return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), meal.getName());
+                employee.getFullName(), "Manual");
     }
 
     /**
@@ -311,21 +280,14 @@ public class ScanService {
      */
     @Transactional
     public ManualScanResponse registerExternal(ExternalScanRequest req) {
-        log.info("[EXTERNAL] Registro externo: cedula='{}', nombre='{}', mealType='{}', cateringId={}",
-                req.identityCard(), req.fullName(), req.mealTypeCode(), req.cateringId());
+        log.info("[EXTERNAL] Registro externo: cedula='{}', nombre='{}', restaurantId={}",
+                req.identityCard(), req.fullName(), req.restaurantId());
 
-        MealType meal = mealTypeRepository.findByCode(req.mealTypeCode()).orElse(null);
-        if (meal == null) {
-            return new ManualScanResponse("ERROR", "Tipo de comida no válido", req.fullName(), null);
+        Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
+        if (restaurant == null) {
+            return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null);
         }
 
-        Catering catering = cateringRepository.findById(req.cateringId()).orElse(null);
-        if (catering == null) {
-            return new ManualScanResponse("ERROR", "Catering no encontrado", req.fullName(), null);
-        }
-
-        // Reutilizar empleado existente por cédula (aunque esté inactivo) o crear uno
-        // nuevo marcado como INACTIVE para que no aparezca en la gestión de empleados.
         Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(req.identityCard())
                 .orElseGet(() -> {
                     Employee e = new Employee();
@@ -336,8 +298,6 @@ public class ScanService {
                     e.setAllowsSnack(true);
                     return e;
                 });
-        // Si el empleado existente tiene otro nombre, respetamos el que ya tenía
-        // (puede ser un empleado real dado de baja). Sólo actualizamos nombre si es nuevo.
         if (employee.getId() == null) {
             employee = employeeRepository.save(employee);
             log.info("[EXTERNAL] Empleado externo creado: id={}, cedula='{}', nombre='{}'",
@@ -347,20 +307,27 @@ public class ScanService {
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         Consumption consumption = Consumption.builder()
                 .employee(employee)
-                .catering(catering)
-                .mealType(meal)
+                .restaurant(restaurant)
                 .consumedAt(OffsetDateTime.now())
                 .businessDate(businessDate)
+                .observation(blankToNull(req.observation()))
                 .offline(false)
                 .syncStatus(SyncStatus.SYNCED)
+                .mealName("Externo")
                 .clientUuid(UUID.randomUUID())
                 .build();
         consumptionRepository.save(consumption);
 
-        log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', comida='{}', catering='{}'",
-                employee.getFullName(), meal.getName(), catering.getName());
+        log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}'",
+                employee.getFullName(), restaurant.getName());
         return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), meal.getName());
+                employee.getFullName(), "Externo");
+    }
+
+    private static String blankToNull(String v) {
+        if (v == null) return null;
+        String t = v.trim();
+        return t.isEmpty() ? null : t;
     }
 
     private byte[] decode(String b64) {

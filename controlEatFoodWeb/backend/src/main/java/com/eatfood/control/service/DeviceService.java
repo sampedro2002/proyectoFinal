@@ -1,7 +1,7 @@
 package com.eatfood.control.service;
 
 import com.eatfood.control.domain.AppUser;
-import com.eatfood.control.domain.Catering;
+import com.eatfood.control.domain.Restaurant;
 import com.eatfood.control.domain.Device;
 import com.eatfood.control.dto.ScanDtos.*;
 import com.eatfood.control.exception.BusinessException;
@@ -32,20 +32,20 @@ public class DeviceService {
 
     @Transactional
     public DeviceConnectResponse connect(DeviceConnectRequest req) {
-        AppUser user = userRepository.findByUsername(req.cateringUsername())
-                .orElseThrow(() -> new BusinessException("INVALID_CREDENTIALS", "Credenciales de catering inválidas."));
-        if (!passwordEncoder.matches(req.cateringPassword(), user.getPasswordHash())) {
-            throw new BusinessException("INVALID_CREDENTIALS", "Credenciales de catering inválidas.");
+        AppUser user = userRepository.findByUsername(req.restaurantUsername())
+                .orElseThrow(() -> new BusinessException("INVALID_CREDENTIALS", "Credenciales de restaurant inválidas."));
+        if (!passwordEncoder.matches(req.restaurantPassword(), user.getPasswordHash())) {
+            throw new BusinessException("INVALID_CREDENTIALS", "Credenciales de restaurant inválidas.");
         }
-        Catering catering = user.getCatering();
-        if (catering == null || !catering.isActive()) {
-            throw new BusinessException("NO_CATERING", "El usuario no está asociado a un catering activo.");
+        Restaurant restaurant = user.getRestaurant();
+        if (restaurant == null || !restaurant.isActive()) {
+            throw new BusinessException("NO_CATERING", "El usuario no está asociado a un restaurant activo.");
         }
 
         // ── Limpiar dispositivos fantasma (sin actividad reciente) ────────────
         OffsetDateTime cutoff = OffsetDateTime.now().minusMinutes(STALE_MINUTES);
         List<Device> staleDevices = deviceRepository
-                .findByCateringIdAndConnectedTrueAndLastSeenBefore(catering.getId(), cutoff);
+                .findByRestaurantIdAndConnectedTrueAndLastSeenBefore(restaurant.getId(), cutoff);
         for (Device stale : staleDevices) {
             log.info("[DEVICE] Auto-desconectando dispositivo stale: id={}, uid='{}', lastSeen={}",
                     stale.getId(), stale.getDeviceUid(), stale.getLastSeen());
@@ -56,19 +56,19 @@ public class DeviceService {
                     "stale >" + STALE_MINUTES + "min");
         }
 
-        Device device = deviceRepository.findByCateringIdAndDeviceUid(catering.getId(), req.deviceUid())
+        Device device = deviceRepository.findByRestaurantIdAndDeviceUid(restaurant.getId(), req.deviceUid())
                 .orElseGet(() -> Device.builder()
-                        .catering(catering)
+                        .restaurant(restaurant)
                         .deviceUid(req.deviceUid())
                         .name(req.deviceName())
                         .build());
 
         // Control de máximo de dispositivos simultáneos (no cuenta el propio si reconecta)
-        long connected = deviceRepository.countByCateringIdAndConnectedTrue(catering.getId());
+        long connected = deviceRepository.countByRestaurantIdAndConnectedTrue(restaurant.getId());
         boolean alreadyConnected = device.getId() != null && device.isConnected();
-        if (!alreadyConnected && connected >= catering.getMaxDevices()) {
-            log.warn("[DEVICE] Límite alcanzado: cateringId={}, conectados={}, máx={}",
-                    catering.getId(), connected, catering.getMaxDevices());
+        if (!alreadyConnected && connected >= restaurant.getMaxDevices()) {
+            log.warn("[DEVICE] Límite alcanzado: restaurantId={}, conectados={}, máx={}",
+                    restaurant.getId(), connected, restaurant.getMaxDevices());
             throw new BusinessException("DEVICE_LIMIT",
                     "Se alcanzó el límite máximo de dispositivos permitidos.");
         }
@@ -80,13 +80,13 @@ public class DeviceService {
         if (req.deviceName() != null) device.setName(req.deviceName());
         device = deviceRepository.save(device);
 
-        log.info("[DEVICE] Conectado: id={}, uid='{}', catering='{}'",
-                device.getId(), req.deviceUid(), catering.getName());
+        log.info("[DEVICE] Conectado: id={}, uid='{}', restaurant='{}'",
+                device.getId(), req.deviceUid(), restaurant.getName());
 
         auditService.record("Device", String.valueOf(device.getId()), "CONNECT", null,
-                "catering=" + catering.getId() + ", uid=" + req.deviceUid());
+                "restaurant=" + restaurant.getId() + ", uid=" + req.deviceUid());
 
-        return new DeviceConnectResponse(catering.getId(), catering.getName(), device.getId(), token);
+        return new DeviceConnectResponse(restaurant.getId(), restaurant.getName(), device.getId(), token);
     }
 
     @Transactional

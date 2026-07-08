@@ -18,5 +18,5 @@ public final class AuthDtos {
             String username,
             String fullName,
             List<String> roles,
-            Long cateringId) {}
+            Long restaurantId) {}
 }

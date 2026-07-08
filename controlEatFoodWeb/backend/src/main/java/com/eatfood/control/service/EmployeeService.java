@@ -81,7 +81,6 @@ public class EmployeeService {
     private void apply(Employee e, EmployeeRequest req) {
         e.setIdentityCard(req.identityCard());
         e.setFullName(req.fullName());
-        e.setPositionTitle(blankToNull(req.positionTitle()));
         e.setObservation(blankToNull(req.observation()));
         if (req.status() != null) {
             try {
@@ -114,8 +113,8 @@ public class EmployeeService {
     }
 
     private String snapshot(Employee e) {
-        return "%s|%s|cargo=%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
-                e.getIdentityCard(), e.getFullName(), e.getPositionTitle(),
+        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
+                e.getIdentityCard(), e.getFullName(),
                 e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus());
     }
 
@@ -126,8 +125,6 @@ public class EmployeeService {
                 e.getIdentityCard(),
                 e.getFullName(),
                 e.getPublicCode(),
-                e.getPositionTitle(),
-                e.getPositionTitle(),
                 e.getObservation(),
                 e.getStatus().name(),
                 e.isAllowsLunch(),

@@ -12,16 +12,16 @@ public final class ReportDtos {
             OffsetDateTime consumedAt,
             String employeeName,
             String identityCard,
-            String positionName,
-            String cateringName,
+            String restaurantName,
             String mealName,
+            String observation,
             boolean offline) {}
 
     public record DashboardStats(
             LocalDate date,
             long totalConsumptions,
-            long lunchCount,
-            long snackCount,
+            long desayunoCount,
+            long meriendaCount,
             long expectedEmployees,
             long employeesConsumed,
             long employeesPending,
@@ -29,7 +29,7 @@ public final class ReportDtos {
             long failedNotFound,
             long failedOutOfSchedule) {}
 
-    public record EmployeeNotConsumed(Long employeeId, String identityCard, String fullName, String positionName) {}
+    public record EmployeeNotConsumed(Long employeeId, String identityCard, String fullName) {}
 
     public record TrendPoint(LocalDate date, long records) {}
 }

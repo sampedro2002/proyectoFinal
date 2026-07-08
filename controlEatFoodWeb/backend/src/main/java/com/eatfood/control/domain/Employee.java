@@ -21,9 +21,6 @@ public class Employee extends Auditable {
     @Column(name = "public_code", unique = true, length = 12)
     private String publicCode;
 
-    @Column(name = "position_title", length = 120)
-    private String positionTitle;
-
     @Column(name = "observation", length = 500)
     private String observation;
 

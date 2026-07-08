@@ -20,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <ul>
  *   <li><b>Autenticación</b>: {@code POST /api/auth/login}, {@code POST /api/auth/refresh}
  *       — limita fuerza bruta e inundación de intentos de credenciales.</li>
- *   <li><b>Dispositivos de catering</b>: {@code POST /api/scan}, {@code POST /api/scan/connect}
+ *   <li><b>Dispositivos de restaurant</b>: {@code POST /api/scan}, {@code POST /api/scan/connect}
  *       — limita el registro masivo de escaneos y de conexiones.</li>
  * </ul>
  *

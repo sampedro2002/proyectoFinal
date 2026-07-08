@@ -15,8 +15,8 @@ public class Device {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "catering_id")
-    private Catering catering;
+    @JoinColumn(name = "restaurant_id")
+    private Restaurant restaurant;
 
     @Column(name = "device_uid", nullable = false, length = 80)
     private String deviceUid;

@@ -17,11 +17,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * Endpoints usados por el dispositivo de catering. Se autentican mediante el
+ * Endpoints usados por el dispositivo de restaurant. Se autentican mediante el
  * token de sesión de dispositivo (no JWT de usuario), por eso están bajo /api/scan
  * (permitAll en SecurityConfig). El token se valida en cada operación.
  */
-@Tag(name = "Catering / Escaneo")
+@Tag(name = "Restaurant / Escaneo")
 @RestController
 @RequestMapping("/api/scan")
 @RequiredArgsConstructor
@@ -32,13 +32,13 @@ public class ScanController {
     private final DeviceService deviceService;
     private final ExportService exportService;
 
-    @Operation(summary = "Conecta un dispositivo de catering (máx. 2 simultáneos)")
+    @Operation(summary = "Conecta un dispositivo de restaurant (máx. 2 simultáneos)")
     @PostMapping("/connect")
     public DeviceConnectResponse connect(@Valid @RequestBody DeviceConnectRequest req) {
         return deviceService.connect(req);
     }
 
-    @Operation(summary = "Desconecta el dispositivo de catering")
+    @Operation(summary = "Desconecta el dispositivo de restaurant")
     @PostMapping("/disconnect")
     public void disconnect(@RequestParam String sessionToken) {
         deviceService.disconnect(sessionToken);
@@ -76,20 +76,20 @@ public class ScanController {
         switch (format.toLowerCase()) {
             case "excel" -> {
                 body = exportService.kioskDailyExcel(
-                        report.cateringName(), report.date(), report.rows(), report.plateCounts());
+                        report.restaurantName(), report.date(), report.rows(), report.plateCounts());
                 filename = "reporte-diario-" + report.date() + ".xlsx";
                 mediaType = MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             }
             case "csv" -> {
                 body = exportService.kioskDailyCsv(
-                        report.cateringName(), report.date(), report.rows(), report.plateCounts());
+                        report.restaurantName(), report.date(), report.rows(), report.plateCounts());
                 filename = "reporte-diario-" + report.date() + ".csv";
                 mediaType = MediaType.parseMediaType("text/csv");
             }
             default -> {
                 body = exportService.kioskDailyPdf(
-                        report.cateringName(), report.date(), report.rows(), report.plateCounts());
+                        report.restaurantName(), report.date(), report.rows(), report.plateCounts());
                 filename = "reporte-diario-" + report.date() + ".pdf";
                 mediaType = MediaType.APPLICATION_PDF;
             }

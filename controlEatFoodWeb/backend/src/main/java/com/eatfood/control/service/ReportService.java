@@ -8,7 +8,7 @@ import com.eatfood.control.exception.BusinessException;
 import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.FailedScanRepository;
-import com.eatfood.control.repository.MealTypeRepository;
+import com.eatfood.control.repository.FailedScanRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,7 +33,6 @@ public class ReportService {
 
     private final ConsumptionRepository consumptionRepository;
     private final EmployeeRepository employeeRepository;
-    private final MealTypeRepository mealTypeRepository;
     private final FailedScanRepository failedScanRepository;
 
     /** Valida que el rango de fechas sea coherente y no excesivamente amplio. */
@@ -51,10 +50,10 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
-    public List<ConsumptionRow> consumptions(LocalDate from, LocalDate to, Long cateringId,
-                                             Long mealTypeId, Long employeeId) {
+    public List<ConsumptionRow> consumptions(LocalDate from, LocalDate to, Long restaurantId,
+                                             Long employeeId) {
         validateRange(from, to);
-        return consumptionRepository.report(from, to, cateringId, mealTypeId, employeeId).stream()
+        return consumptionRepository.report(from, to, restaurantId, employeeId).stream()
                 .map(this::toRow).toList();
     }
 
@@ -63,21 +62,17 @@ public class ReportService {
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                 e.getFullName(), e.getIdentityCard(),
-                e.getPositionTitle(),
-                c.getCatering().getName(), c.getMealType().getName(),
-                c.isOffline());
+                c.getRestaurant().getName(), c.getMealName(),
+                c.getObservation(), c.isOffline());
     }
 
     @Transactional(readOnly = true)
     public DashboardStats dashboard(LocalDate date) {
         if (date == null) date = LocalDate.now(BUSINESS_ZONE);
 
-        Long lunchId = mealTypeRepository.findByCode("LUNCH").map(m -> m.getId()).orElse(null);
-        Long snackId = mealTypeRepository.findByCode("SNACK").map(m -> m.getId()).orElse(null);
-
         long total = consumptionRepository.countByBusinessDate(date);
-        long lunch = lunchId != null ? consumptionRepository.countByBusinessDateAndMealTypeId(date, lunchId) : 0;
-        long snack = snackId != null ? consumptionRepository.countByBusinessDateAndMealTypeId(date, snackId) : 0;
+        long desayunos = consumptionRepository.countByBusinessDateAndMealName(date, "Desayuno");
+        long meriendas = consumptionRepository.countByBusinessDateAndMealName(date, "Merienda");
 
         long expected = employeeRepository.countByDeletedFalseAndStatus(EmployeeStatus.ACTIVE);
         long consumed = consumptionRepository.countDistinctEmployees(date);
@@ -90,7 +85,7 @@ public class ReportService {
         long notFound = failed.stream().filter(f -> "NOT_FOUND".equals(f.getReason())).count();
         long outOfSchedule = failed.stream().filter(f -> "OUT_OF_SCHEDULE".equals(f.getReason())).count();
 
-        return new DashboardStats(date, total, lunch, snack,
+        return new DashboardStats(date, total, desayunos, meriendas,
                 expected, consumed, pending, pct, notFound, outOfSchedule);
     }
 
@@ -98,8 +93,7 @@ public class ReportService {
     public List<EmployeeNotConsumed> notConsumed(LocalDate date) {
         if (date == null) date = LocalDate.now(BUSINESS_ZONE);
         return employeeRepository.findActiveNotConsumed(EmployeeStatus.ACTIVE, date).stream()
-                .map(e -> new EmployeeNotConsumed(e.getId(), e.getIdentityCard(), e.getFullName(),
-                        e.getPositionTitle()))
+                .map(e -> new EmployeeNotConsumed(e.getId(), e.getIdentityCard(), e.getFullName()))
                 .toList();
     }
 

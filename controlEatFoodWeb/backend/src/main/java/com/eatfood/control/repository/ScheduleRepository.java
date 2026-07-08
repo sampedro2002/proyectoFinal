@@ -8,6 +8,5 @@ import java.util.Optional;
 
 public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     List<Schedule> findByActiveTrue();
-    Optional<Schedule> findByMealTypeIdAndActiveTrue(Long mealTypeId);
-    Optional<Schedule> findByMealTypeId(Long mealTypeId);
+    Optional<Schedule> findFirstByOrderByIdAsc();
 }

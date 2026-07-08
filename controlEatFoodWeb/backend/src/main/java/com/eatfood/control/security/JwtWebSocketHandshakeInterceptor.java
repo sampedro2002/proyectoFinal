@@ -37,7 +37,7 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
             try {
                 var claims = jwtService.parse(token);
                 attributes.put("username", claims.getSubject());
-                attributes.put("cateringId", claims.get("cateringId"));
+                attributes.put("restaurantId", claims.get("restaurantId"));
                 if (deviceToken != null && !deviceToken.isBlank()) {
                     attributes.put("deviceToken", deviceToken);
                     log.info("[WS AUTH] JWT válido — usuario='{}', dispositivo='{}'",

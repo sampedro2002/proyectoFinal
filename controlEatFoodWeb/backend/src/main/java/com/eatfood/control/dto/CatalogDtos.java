@@ -7,27 +7,23 @@ import java.time.LocalTime;
 
 public final class CatalogDtos {
 
-    public record CateringRequest(
+    public record RestaurantRequest(
             @NotBlank String name,
             String location,
+            String representative,
             Boolean active,
             Integer maxDevices) {}
 
-    public record CateringResponse(
-            Long id, String name, String location, boolean active, int maxDevices, long connectedDevices) {}
+    public record RestaurantResponse(
+            Long id, String name, String location, String representative,
+            boolean active, int maxDevices, long connectedDevices) {}
 
-    public record MealTypeRequest(
-            @NotBlank String code, @NotBlank String name, Integer sortOrder, Boolean active) {}
-
-    public record MealTypeResponse(Long id, String code, String name, boolean active, int sortOrder) {}
 
     public record ScheduleRequest(
-            @NotNull Long mealTypeId,
             @NotNull LocalTime startTime,
             @NotNull LocalTime endTime,
             Boolean active) {}
 
     public record ScheduleResponse(
-            Long id, Long mealTypeId, String mealTypeName,
-            LocalTime startTime, LocalTime endTime, boolean active) {}
+            Long id, LocalTime startTime, LocalTime endTime, boolean active) {}
 }

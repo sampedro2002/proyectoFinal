@@ -15,9 +15,6 @@ public class Schedule {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "meal_type_id")
-    private MealType mealType;
 
     @Column(name = "start_time", nullable = false)
     private LocalTime startTime;

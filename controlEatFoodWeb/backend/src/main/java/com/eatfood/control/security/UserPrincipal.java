@@ -16,7 +16,7 @@ public class UserPrincipal implements UserDetails {
     private final String username;
     private final String password;
     private final boolean enabled;
-    private final Long cateringId;
+    private final Long restaurantId;
     private final List<GrantedAuthority> authorities;
 
     public UserPrincipal(AppUser user) {
@@ -24,7 +24,7 @@ public class UserPrincipal implements UserDetails {
         this.username = user.getUsername();
         this.password = user.getPasswordHash();
         this.enabled = user.isEnabled();
-        this.cateringId = user.getCatering() != null ? user.getCatering().getId() : null;
+        this.restaurantId = user.getRestaurant() != null ? user.getRestaurant().getId() : null;
         this.authorities = user.getRoles().stream()
                 .map(r -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + r.getName()))
                 .toList();

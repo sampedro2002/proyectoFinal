@@ -8,7 +8,7 @@ import com.sun.jna.ptr.IntByReference;
  * Enlace JNA con la librería nativa del SDK ZKFinger (libzkfp).
  *
  * <p>Mapea las funciones reales del motor biométrico de ZKTeco usado por el lector ZK9500.
- * La captura de la huella se realiza en el dispositivo de catering a través del
+ * La captura de la huella se realiza en el dispositivo de restaurant a través del
  * ZKFinger WebAPI (agente local sobre WebSocket); el servidor recibe la <b>plantilla</b>
  * (template) y resuelve la identificación 1:N usando este motor.</p>
  *

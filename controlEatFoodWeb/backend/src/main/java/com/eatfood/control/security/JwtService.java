@@ -24,12 +24,12 @@ public class JwtService {
         this.accessMillis = props.getSecurity().getJwt().getAccessTokenMinutes() * 60_000L;
     }
 
-    public String generateAccessToken(String username, List<String> roles, Long cateringId) {
+    public String generateAccessToken(String username, List<String> roles, Long restaurantId) {
         Date now = new Date();
         return Jwts.builder()
                 .subject(username)
                 .claim("roles", roles)
-                .claim("cateringId", cateringId)
+                .claim("restaurantId", restaurantId)
                 .issuedAt(now)
                 .expiration(new Date(now.getTime() + accessMillis))
                 .signWith(key)

@@ -52,19 +52,12 @@ interface ApiService {
     suspend fun deleteFingerprint(@Path("id") id: Long): Response<Unit>
 
     // ── Catálogos ───────────────────────────────────────────────────────────--
-    @GET("positions")
-    suspend fun positions(): List<PositionResponse>
-    @POST("positions")
-    suspend fun createPosition(@Body body: PositionRequest): PositionResponse
-    @PUT("positions/{id}")
-    suspend fun updatePosition(@Path("id") id: Long, @Body body: PositionRequest): PositionResponse
-
-    @GET("caterings")
-    suspend fun caterings(): List<CateringResponse>
-    @POST("caterings")
-    suspend fun createCatering(@Body body: CateringRequest): CateringResponse
-    @PUT("caterings/{id}")
-    suspend fun updateCatering(@Path("id") id: Long, @Body body: CateringRequest): CateringResponse
+    @GET("restaurants")
+    suspend fun restaurants(): List<RestaurantResponse>
+    @POST("restaurants")
+    suspend fun createRestaurant(@Body body: RestaurantRequest): RestaurantResponse
+    @PUT("restaurants/{id}")
+    suspend fun updateRestaurant(@Path("id") id: Long, @Body body: RestaurantRequest): RestaurantResponse
 
     @GET("meal-types")
     suspend fun mealTypes(): List<MealTypeResponse>
@@ -85,7 +78,7 @@ interface ApiService {
     suspend fun consumptions(
         @Query("from") from: String,
         @Query("to") to: String,
-        @Query("cateringId") cateringId: Long? = null,
+        @Query("restaurantId") restaurantId: Long? = null,
         @Query("mealTypeId") mealTypeId: Long? = null,
         @Query("employeeId") employeeId: Long? = null
     ): List<ConsumptionRow>
@@ -96,7 +89,7 @@ interface ApiService {
         @Query("format") format: String,
         @Query("from") from: String,
         @Query("to") to: String,
-        @Query("cateringId") cateringId: Long? = null,
+        @Query("restaurantId") restaurantId: Long? = null,
         @Query("mealTypeId") mealTypeId: Long? = null
     ): Response<ResponseBody>
 

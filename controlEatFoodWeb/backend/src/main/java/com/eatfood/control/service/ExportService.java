@@ -32,28 +32,31 @@ public class ExportService {
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final String[] HEADERS =
-            {"Fecha", "Hora", "Cédula", "Empleado", "Cargo", "Catering", "Comida", "Offline"};
+            {"Fecha", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación", "Offline"};
     private static final String[] EMP_HEADERS =
-            {"Código", "Cédula", "Nombre", "Cargo", "Almuerzo", "Merienda", "Estado",
+            {"Código", "Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
 
-    public byte[] toCsv(List<ConsumptionRow> rows) {
+    public byte[] toCsv(List<ConsumptionRow> rows, String title) {
         StringBuilder sb = new StringBuilder();
+        if (title != null && !title.isBlank()) {
+            sb.append(csv(title)).append("\n\n");
+        }
         sb.append(String.join(";", HEADERS)).append("\n");
         for (ConsumptionRow r : rows) {
             sb.append(csv(r.businessDate() != null ? r.businessDate().toString() : "")).append(';')
               .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
-              .append(csv(r.positionName())).append(';')
-              .append(csv(r.cateringName())).append(';')
+              .append(csv(r.restaurantName())).append(';')
               .append(csv(r.mealName())).append(';')
+              .append(csv(r.observation())).append(';')
               .append(r.offline() ? "Sí" : "No").append('\n');
         }
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    public byte[] toExcel(List<ConsumptionRow> rows) {
+    public byte[] toExcel(List<ConsumptionRow> rows, String title) {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Consumos");
             CellStyle headerStyle = wb.createCellStyle();
@@ -61,22 +64,36 @@ public class ExportService {
             bold.setBold(true);
             headerStyle.setFont(bold);
 
-            Row header = sheet.createRow(0);
+            int headerRowIdx = 0;
+            if (title != null && !title.isBlank()) {
+                CellStyle titleStyle = wb.createCellStyle();
+                org.apache.poi.ss.usermodel.Font titleFont = wb.createFont();
+                titleFont.setBold(true);
+                titleFont.setFontHeightInPoints((short) 14);
+                titleStyle.setFont(titleFont);
+                Row titleRow = sheet.createRow(0);
+                Cell titleCell = titleRow.createCell(0);
+                titleCell.setCellValue(title);
+                titleCell.setCellStyle(titleStyle);
+                headerRowIdx = 2;
+            }
+
+            Row header = sheet.createRow(headerRowIdx);
             for (int i = 0; i < HEADERS.length; i++) {
                 Cell c = header.createCell(i);
                 c.setCellValue(HEADERS[i]);
                 c.setCellStyle(headerStyle);
             }
-            int rn = 1;
+            int rn = headerRowIdx + 1;
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
                 row.createCell(0).setCellValue(String.valueOf(r.businessDate()));
                 row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
                 row.createCell(2).setCellValue(safe(r.identityCard()));
                 row.createCell(3).setCellValue(safe(r.employeeName()));
-                row.createCell(4).setCellValue(safe(r.positionName()));
-                row.createCell(5).setCellValue(safe(r.cateringName()));
-                row.createCell(6).setCellValue(safe(r.mealName()));
+                row.createCell(4).setCellValue(safe(r.restaurantName()));
+                row.createCell(5).setCellValue(safe(r.mealName()));
+                row.createCell(6).setCellValue(safe(r.observation()));
                 row.createCell(7).setCellValue(r.offline() ? "Sí" : "No");
             }
             for (int i = 0; i < HEADERS.length; i++) sheet.autoSizeColumn(i);
@@ -111,9 +128,9 @@ public class ExportService {
                 table.addCell(new Phrase(r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf));
                 table.addCell(new Phrase(safe(r.identityCard()), cf));
                 table.addCell(new Phrase(safe(r.employeeName()), cf));
-                table.addCell(new Phrase(safe(r.positionName()), cf));
-                table.addCell(new Phrase(safe(r.cateringName()), cf));
+                table.addCell(new Phrase(safe(r.restaurantName()), cf));
                 table.addCell(new Phrase(safe(r.mealName()), cf));
+                table.addCell(new Phrase(safe(r.observation()), cf));
                 table.addCell(new Phrase(r.offline() ? "Sí" : "No", cf));
             }
             doc.add(table);
@@ -128,12 +145,12 @@ public class ExportService {
     // Reporte diario del Kiosk (con conteo de platos al final)
     // ------------------------------------------------------------------------
     private static final String[] KIOSK_HEADERS =
-            {"#", "Hora", "Cédula", "Empleado", "Cargo", "Comida"};
+            {"#", "Hora", "Cédula", "Empleado", "Comida", "Observación"};
 
-    public byte[] kioskDailyCsv(String cateringName, LocalDate date,
+    public byte[] kioskDailyCsv(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
         StringBuilder sb = new StringBuilder();
-        sb.append("Reporte Diario - ").append(cateringName)
+        sb.append("Reporte Diario - ").append(restaurantName)
           .append(" - Fecha: ").append(date.format(DATE_FMT)).append("\n\n");
         sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
         int num = 1;
@@ -142,8 +159,8 @@ public class ExportService {
               .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
-              .append(csv(r.positionName())).append(';')
-              .append(csv(r.mealName())).append('\n');
+              .append(csv(r.mealName())).append(';')
+              .append(csv(r.observation())).append('\n');
         }
         sb.append("\n");
         sb.append("RESUMEN DE PLATOS").append("\n");
@@ -157,7 +174,7 @@ public class ExportService {
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    public byte[] kioskDailyExcel(String cateringName, LocalDate date,
+    public byte[] kioskDailyExcel(String restaurantName, LocalDate date,
                                   List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
         try (Workbook wb = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = wb.createSheet("Reporte Diario");
@@ -174,7 +191,7 @@ public class ExportService {
 
             Row titleRow = sheet.createRow(0);
             Cell titleCell = titleRow.createCell(0);
-            titleCell.setCellValue("Reporte Diario - " + cateringName + " - " + date.format(DATE_FMT));
+            titleCell.setCellValue("Reporte Diario - " + restaurantName + " - " + date.format(DATE_FMT));
             titleCell.setCellStyle(titleStyle);
 
             Row header = sheet.createRow(2);
@@ -191,8 +208,8 @@ public class ExportService {
                 row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
                 row.createCell(2).setCellValue(safe(r.identityCard()));
                 row.createCell(3).setCellValue(safe(r.employeeName()));
-                row.createCell(4).setCellValue(safe(r.positionName()));
-                row.createCell(5).setCellValue(safe(r.mealName()));
+                row.createCell(4).setCellValue(safe(r.mealName()));
+                row.createCell(5).setCellValue(safe(r.observation()));
             }
 
             rn += 1;
@@ -226,7 +243,7 @@ public class ExportService {
         }
     }
 
-    public byte[] kioskDailyPdf(String cateringName, LocalDate date,
+    public byte[] kioskDailyPdf(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Document doc = new Document(PageSize.A4.rotate(), 24, 24, 30, 24);
@@ -234,7 +251,7 @@ public class ExportService {
             doc.open();
 
             Font titleFont = new Font(Font.HELVETICA, 14, Font.BOLD);
-            doc.add(new Paragraph("Reporte Diario - " + cateringName, titleFont));
+            doc.add(new Paragraph("Reporte Diario - " + restaurantName, titleFont));
             Font subFont = new Font(Font.HELVETICA, 10, Font.NORMAL);
             doc.add(new Paragraph("Fecha: " + date.format(DATE_FMT), subFont));
             doc.add(new Paragraph(" "));
@@ -255,8 +272,8 @@ public class ExportService {
                 table.addCell(new Phrase(r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf));
                 table.addCell(new Phrase(safe(r.identityCard()), cf));
                 table.addCell(new Phrase(safe(r.employeeName()), cf));
-                table.addCell(new Phrase(safe(r.positionName()), cf));
                 table.addCell(new Phrase(safe(r.mealName()), cf));
+                table.addCell(new Phrase(safe(r.observation()), cf));
             }
             doc.add(table);
             doc.add(new Paragraph(" "));
@@ -311,7 +328,6 @@ public class ExportService {
             sb.append(csv(r.publicCode())).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.fullName())).append(';')
-              .append(csv(r.positionTitle())).append(';')
               .append(r.allowsLunch() ? "Sí" : "No").append(';')
               .append(r.effectiveSnack() ? "Sí" : "No").append(';')
               .append(csv(r.status())).append(';')
@@ -341,12 +357,11 @@ public class ExportService {
                 row.createCell(0).setCellValue(safe(r.publicCode()));
                 row.createCell(1).setCellValue(safe(r.identityCard()));
                 row.createCell(2).setCellValue(safe(r.fullName()));
-                row.createCell(3).setCellValue(safe(r.positionTitle()));
-                row.createCell(4).setCellValue(r.allowsLunch() ? "Sí" : "No");
-                row.createCell(5).setCellValue(r.effectiveSnack() ? "Sí" : "No");
-                row.createCell(6).setCellValue(safe(r.status()));
-                row.createCell(7).setCellValue(r.fingerprintCount());
-                row.createCell(8).setCellValue(safe(r.observation()));
+                row.createCell(3).setCellValue(r.allowsLunch() ? "Sí" : "No");
+                row.createCell(4).setCellValue(r.effectiveSnack() ? "Sí" : "No");
+                row.createCell(5).setCellValue(safe(r.status()));
+                row.createCell(6).setCellValue(r.fingerprintCount());
+                row.createCell(7).setCellValue(safe(r.observation()));
             }
             for (int i = 0; i < EMP_HEADERS.length; i++) sheet.autoSizeColumn(i);
             wb.write(out);

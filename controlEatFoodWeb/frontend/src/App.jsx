@@ -4,7 +4,8 @@ import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
-import Caterings from './pages/Caterings.jsx';
+import Restaurants from './pages/Restaurants.jsx';
+import Users from './pages/Users.jsx';
 import Schedules from './pages/Schedules.jsx';
 import Reports from './pages/Reports.jsx';
 import Audit from './pages/Audit.jsx';
@@ -28,7 +29,8 @@ export default function App() {
       <Route path="/" element={<Protected><Layout /></Protected>}>
         <Route index element={<Dashboard />} />
         <Route path="employees" element={<Protected roles={['ADMIN']}><Employees /></Protected>} />
-        <Route path="caterings" element={<Protected roles={['ADMIN']}><Caterings /></Protected>} />
+        <Route path="restaurants" element={<Protected roles={['ADMIN']}><Restaurants /></Protected>} />
+        <Route path="users" element={<Protected roles={['ADMIN']}><Users /></Protected>} />
         <Route path="schedules" element={<Protected roles={['ADMIN']}><Schedules /></Protected>} />
         <Route path="reports" element={<Protected roles={['ADMIN']}><Reports /></Protected>} />
         <Route path="audit" element={<Protected roles={['ADMIN']}><Audit /></Protected>} />

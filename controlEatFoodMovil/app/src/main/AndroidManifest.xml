@@ -30,7 +30,7 @@
             android:value="barcode_ui" />
 
         <!-- Login de administración (empleados, reportes, etc.). Se abre desde el
-             enlace "Acceso Admin" de la pantalla de catering, no es la de arranque. -->
+             enlace "Acceso Admin" de la pantalla de restaurante, no es la de arranque. -->
         <activity
             android:name=".ui.MainActivity"
             android:exported="true"

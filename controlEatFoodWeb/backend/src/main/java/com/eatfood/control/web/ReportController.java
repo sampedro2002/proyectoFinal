@@ -1,6 +1,8 @@
 package com.eatfood.control.web;
 
+import com.eatfood.control.domain.Restaurant;
 import com.eatfood.control.dto.ReportDtos.*;
+import com.eatfood.control.repository.RestaurantRepository;
 import com.eatfood.control.service.ExportService;
 import com.eatfood.control.service.ReportService;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,15 +26,15 @@ public class ReportController {
 
     private final ReportService reportService;
     private final ExportService exportService;
+    private final RestaurantRepository restaurantRepository;
 
     @GetMapping("/consumptions")
     public List<ConsumptionRow> consumptions(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) Long cateringId,
-            @RequestParam(required = false) Long mealTypeId,
+            @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Long employeeId) {
-        return reportService.consumptions(from, to, cateringId, mealTypeId, employeeId);
+        return reportService.consumptions(from, to, restaurantId, employeeId);
     }
 
     @GetMapping("/dashboard")
@@ -60,29 +62,29 @@ public class ReportController {
             @RequestParam String format, // csv | excel | pdf
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) Long cateringId,
-            @RequestParam(required = false) Long mealTypeId,
+            @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Long employeeId) {
 
-        List<ConsumptionRow> rows = reportService.consumptions(from, to, cateringId, mealTypeId, employeeId);
+        List<ConsumptionRow> rows = reportService.consumptions(from, to, restaurantId, employeeId);
+        String title = buildTitle(restaurantId, from, to);
         byte[] body;
         String filename;
         MediaType mediaType;
 
         switch (format.toLowerCase()) {
             case "excel" -> {
-                body = exportService.toExcel(rows);
+                body = exportService.toExcel(rows, title);
                 filename = "consumos.xlsx";
                 mediaType = MediaType.parseMediaType(
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
             }
             case "pdf" -> {
-                body = exportService.toPdf(rows, "Consumos " + from + " a " + to);
+                body = exportService.toPdf(rows, title);
                 filename = "consumos.pdf";
                 mediaType = MediaType.APPLICATION_PDF;
             }
             default -> {
-                body = exportService.toCsv(rows);
+                body = exportService.toCsv(rows, title);
                 filename = "consumos.csv";
                 mediaType = MediaType.parseMediaType("text/csv");
             }
@@ -92,5 +94,18 @@ public class ReportController {
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(mediaType)
                 .body(body);
+    }
+
+    /** Título del reporte: nombre del restaurante y el día (o rango) del consumo. */
+    private String buildTitle(Long restaurantId, LocalDate from, LocalDate to) {
+        String restaurantName = restaurantId == null
+                ? "Todos los restaurantes"
+                : restaurantRepository.findById(restaurantId)
+                        .map(Restaurant::getName)
+                        .orElse("Restaurante #" + restaurantId);
+        String period = from.equals(to)
+                ? "Consumo del día " + from
+                : "Consumo del " + from + " al " + to;
+        return "Restaurante: " + restaurantName + " — " + period;
     }
 }

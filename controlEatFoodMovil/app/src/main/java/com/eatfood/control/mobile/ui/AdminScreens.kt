@@ -113,7 +113,6 @@ fun EmployeesScreen(canModify: Boolean) {
     }
 
     var items by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
-    var positions by remember { mutableStateOf<List<PositionResponse>>(emptyList()) }
     var term by remember { mutableStateOf("") }
     var statusFilter by remember { mutableStateOf("ALL") }
     var editing by remember { mutableStateOf<EmployeeResponse?>(null) }
@@ -124,7 +123,7 @@ fun EmployeesScreen(canModify: Boolean) {
         try { items = api.employees(term.ifBlank { null }, 0, 100).content ?: emptyList() }
         catch (e: Exception) { snackbar.showSnackbar(e.apiMessage()) }
     }
-    LaunchedEffect(Unit) { positions = runCatching { api.positions() }.getOrDefault(emptyList()); reload() }
+    LaunchedEffect(Unit) { reload() }
 
     val filtered = remember(items, statusFilter) {
         if (statusFilter == "ALL") items
@@ -172,8 +171,8 @@ fun EmployeesScreen(canModify: Boolean) {
                 items(filtered) { e ->
                     RowItem(
                         title = e.fullName,
-                        subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"} · ${e.fingerprintCount}/3 huellas",
-                        trailing = "${e.status} · ${e.effectivePlates}🍽",
+                        subtitle = "CI ${e.identityCard} · ${e.fingerprintCount}/3 huellas",
+                        trailing = e.status ?: "",
                         onClick = { actionsFor = e }
                     )
                 }
@@ -206,7 +205,7 @@ fun EmployeesScreen(canModify: Boolean) {
 
     if (creating || editing != null) {
         EmployeeDialog(
-            existing = editing, positions = positions,
+            existing = editing,
             onDismiss = { creating = false; editing = null },
             onSaved = { creating = false; editing = null; scope.launch { reload() } },
             api = api, snackbar = snackbar, scope = scope
@@ -218,7 +217,6 @@ fun EmployeesScreen(canModify: Boolean) {
 @Composable
 private fun EmployeeDialog(
     existing: EmployeeResponse?,
-    positions: List<PositionResponse>,
     onDismiss: () -> Unit,
     onSaved: () -> Unit,
     api: com.eatfood.control.mobile.data.remote.ApiService,
@@ -227,12 +225,10 @@ private fun EmployeeDialog(
 ) {
     var identity by remember { mutableStateOf(existing?.identityCard ?: "") }
     var fullName by remember { mutableStateOf(existing?.fullName ?: "") }
-    var plates by remember { mutableStateOf(existing?.allowedPlates?.toString() ?: "") }
+    var observation by remember { mutableStateOf(existing?.observation ?: "") }
     var allowsLunch by remember { mutableStateOf(existing?.allowsLunch ?: true) }
-    var allowsSnack by remember { mutableStateOf(existing?.effectiveSnack ?: false) }
+    var allowsSnack by remember { mutableStateOf(existing?.allowsSnack ?: existing?.effectiveSnack ?: false) }
     var inactive by remember { mutableStateOf(existing?.status == "INACTIVE") }
-    var positionId by remember { mutableStateOf(existing?.positionId) }
-    var posMenu by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -241,27 +237,13 @@ private fun EmployeeDialog(
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(identity, { identity = it }, label = { Text("Cédula") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Box {
-                    OutlinedTextField(
-                        value = positions.firstOrNull { it.id == positionId }?.name ?: "— Sin cargo —",
-                        onValueChange = {}, readOnly = true, label = { Text("Cargo") },
-                        trailingIcon = { TextButton(onClick = { posMenu = true }) { Text("▼") } },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    DropdownMenu(expanded = posMenu, onDismissRequest = { posMenu = false }) {
-                        DropdownMenuItem(text = { Text("— Sin cargo —") }, onClick = { positionId = null; posMenu = false })
-                        positions.forEach { p ->
-                            DropdownMenuItem(text = { Text(p.name) }, onClick = { positionId = p.id; posMenu = false })
-                        }
-                    }
-                }
-                OutlinedTextField(plates, { plates = it }, label = { Text("Platos (vacío = usar cargo)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(allowsLunch, { allowsLunch = it }); Text("Almuerzo")
                     Spacer(Modifier.width(16.dp))
                     Switch(allowsSnack, { allowsSnack = it }); Text("Merienda")
                 }
+                OutlinedTextField(observation, { observation = it }, label = { Text("Observación (opcional)") },
+                    modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(inactive, { inactive = it }); Text("Inactivo")
                 }
@@ -274,8 +256,8 @@ private fun EmployeeDialog(
                 }
                 val req = EmployeeRequest(
                     identityCard = identity.trim(), fullName = fullName.trim(),
-                    positionId = positionId, status = if (inactive) "INACTIVE" else "ACTIVE",
-                    allowedPlates = plates.trim().toIntOrNull(),
+                    observation = observation.trim().ifBlank { null },
+                    status = if (inactive) "INACTIVE" else "ACTIVE",
                     allowsLunch = allowsLunch, allowsSnack = allowsSnack
                 )
                 scope.launch {
@@ -384,82 +366,19 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     }
 }
 
-// ───────────────────────────── Cargos ────────────────────────────────────────
+// ───────────────────────────── Restaurants ─────────────────────────────────────
 @Composable
-fun PositionsScreen(isAdmin: Boolean) {
+fun RestaurantsScreen(isAdmin: Boolean) {
     val context = LocalContext.current
     val api = remember { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var items by remember { mutableStateOf<List<PositionResponse>>(emptyList()) }
-    var editing by remember { mutableStateOf<PositionResponse?>(null) }
+    var items by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
+    var editing by remember { mutableStateOf<RestaurantResponse?>(null) }
     var creating by remember { mutableStateOf(false) }
+    var actionsFor by remember { mutableStateOf<RestaurantResponse?>(null) }
 
-    suspend fun reload() { items = runCatching { api.positions() }.getOrDefault(emptyList()) }
-    LaunchedEffect(Unit) { reload() }
-
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbar) },
-        floatingActionButton = { if (isAdmin) FloatingActionButton(onClick = { creating = true }) { Icon(Icons.Default.Add, null) } }
-    ) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            items(items) { p ->
-                RowItem(
-                    title = p.name,
-                    subtitle = "Platos: ${p.defaultPlates} · Merienda: ${if (p.allowsSnack) "Sí" else "No"}",
-                    trailing = if (p.active) "Activo" else "Inactivo",
-                    onClick = { if (isAdmin) editing = p }
-                )
-            }
-        }
-    }
-
-    if (creating || editing != null) {
-        val p = editing
-        var name by remember { mutableStateOf(p?.name ?: "") }
-        var plates by remember { mutableStateOf((p?.defaultPlates ?: 1).toString()) }
-        var snack by remember { mutableStateOf(p?.allowsSnack ?: false) }
-        var active by remember { mutableStateOf(p?.active ?: true) }
-        AlertDialog(
-            onDismissRequest = { creating = false; editing = null },
-            title = { Text(if (p == null) "Nuevo cargo" else "Editar cargo") },
-            text = {
-                Column {
-                    OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
-                    OutlinedTextField(plates, { plates = it }, label = { Text("Platos por defecto") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
-                    Row(verticalAlignment = Alignment.CenterVertically) { Switch(snack, { snack = it }); Text("Permite merienda") }
-                    Row(verticalAlignment = Alignment.CenterVertically) { Switch(active, { active = it }); Text("Activo") }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val req = PositionRequest(name.trim(), plates.toIntOrNull() ?: 0, snack, active)
-                    scope.launch {
-                        runCatching { if (p == null) api.createPosition(req) else api.updatePosition(p.id, req) }
-                            .onSuccess { creating = false; editing = null; reload() }
-                            .onFailure { snackbar.showSnackbar(it.apiMessage("Error al guardar")) }
-                    }
-                }) { Text("Guardar") }
-            },
-            dismissButton = { TextButton(onClick = { creating = false; editing = null }) { Text("Cancelar") } }
-        )
-    }
-}
-
-// ───────────────────────────── Caterings ─────────────────────────────────────
-@Composable
-fun CateringsScreen(isAdmin: Boolean) {
-    val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
-    val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
-    var items by remember { mutableStateOf<List<CateringResponse>>(emptyList()) }
-    var editing by remember { mutableStateOf<CateringResponse?>(null) }
-    var creating by remember { mutableStateOf(false) }
-    var actionsFor by remember { mutableStateOf<CateringResponse?>(null) }
-
-    suspend fun reload() { items = runCatching { api.caterings() }.getOrDefault(emptyList()) }
+    suspend fun reload() { items = runCatching { api.restaurants() }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
 
     Scaffold(
@@ -470,7 +389,7 @@ fun CateringsScreen(isAdmin: Boolean) {
             items(items) { c ->
                 RowItem(
                     title = c.name,
-                    subtitle = "${c.location ?: "Sin ubicación"} · Conectados ${c.connectedDevices}/${c.maxDevices}",
+                    subtitle = "${c.location ?: "Sin ubicación"} · Resp.: ${c.representative ?: "—"} · ${c.connectedDevices}/${c.maxDevices}",
                     trailing = if (c.active) "Activo" else "Inactivo",
                     onClick = { actionsFor = c }
                 )
@@ -485,6 +404,7 @@ fun CateringsScreen(isAdmin: Boolean) {
             text = {
                 Column {
                     Text("Ubicación: ${c.location ?: "Sin ubicación"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Responsable: ${c.representative ?: "—"}", style = MaterialTheme.typography.bodyMedium)
                     Text("Dispositivos: ${c.connectedDevices}/${c.maxDevices}", style = MaterialTheme.typography.bodyMedium)
                     Text("Estado: ${if (c.active) "Activo" else "Inactivo"}", style = MaterialTheme.typography.bodyMedium)
                     Spacer(Modifier.height(8.dp))
@@ -501,15 +421,17 @@ fun CateringsScreen(isAdmin: Boolean) {
         val c = editing
         var name by remember { mutableStateOf(c?.name ?: "") }
         var location by remember { mutableStateOf(c?.location ?: "") }
+        var representative by remember { mutableStateOf(c?.representative ?: "") }
         var maxDevices by remember { mutableStateOf((c?.maxDevices ?: 2).toString()) }
         var active by remember { mutableStateOf(c?.active ?: true) }
         AlertDialog(
             onDismissRequest = { creating = false; editing = null },
-            title = { Text(if (c == null) "Nuevo catering" else "Editar catering") },
+            title = { Text(if (c == null) "Nuevo restaurante" else "Editar restaurante") },
             text = {
                 Column {
                     OutlinedTextField(name, { name = it }, label = { Text("Nombre") }, singleLine = true)
                     OutlinedTextField(location, { location = it }, label = { Text("Ubicación") }, singleLine = true)
+                    OutlinedTextField(representative, { representative = it }, label = { Text("Responsable / Representante") }, singleLine = true)
                     OutlinedTextField(maxDevices, { maxDevices = it }, label = { Text("Máx. dispositivos") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                     Row(verticalAlignment = Alignment.CenterVertically) { Switch(active, { active = it }); Text("Activo") }
@@ -517,9 +439,9 @@ fun CateringsScreen(isAdmin: Boolean) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val req = CateringRequest(name.trim(), location.trim().ifBlank { null }, active, maxDevices.toIntOrNull() ?: 2)
+                    val req = RestaurantRequest(name.trim(), location.trim().ifBlank { null }, representative.trim().ifBlank { null }, active, maxDevices.toIntOrNull() ?: 2)
                     scope.launch {
-                        runCatching { if (c == null) api.createCatering(req) else api.updateCatering(c.id, req) }
+                        runCatching { if (c == null) api.createRestaurant(req) else api.updateRestaurant(c.id, req) }
                             .onSuccess { creating = false; editing = null; reload() }
                             .onFailure { snackbar.showSnackbar(it.apiMessage("Error al guardar")) }
                     }
@@ -600,10 +522,10 @@ fun ExtraMealsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // Catálogos cargados al inicio: caterings y tipos de comida
-    var caterings by remember { mutableStateOf<List<CateringResponse>>(emptyList()) }
+    // Catálogos cargados al inicio: restaurants y tipos de comida
+    var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var mealTypes by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
-    var selectedCateringId by remember { mutableStateOf<Long?>(null) }
+    var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
 
     // Búsqueda de empleado existente
     var employees by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
@@ -618,16 +540,17 @@ fun ExtraMealsScreen() {
     // Comidas a registrar (LUNCH / SNACK)
     var almuerzo by remember { mutableStateOf(false) }
     var merienda by remember { mutableStateOf(false) }
+    var observation by remember { mutableStateOf("") }
 
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
     var isEditing by remember { mutableStateOf(false) }
 
-    // Carga inicial de caterings y meal types
+    // Carga inicial de restaurants y meal types
     LaunchedEffect(Unit) {
-        runCatching { api.caterings() }.onSuccess { list ->
-            caterings = list
-            if (selectedCateringId == null && list.isNotEmpty()) selectedCateringId = list.first().id
+        runCatching { api.restaurants() }.onSuccess { list ->
+            restaurants = list
+            if (selectedRestaurantId == null && list.isNotEmpty()) selectedRestaurantId = list.first().id
         }
         runCatching { api.mealTypes() }.onSuccess { mealTypes = it }
     }
@@ -646,24 +569,24 @@ fun ExtraMealsScreen() {
             Spacer(Modifier.height(16.dp))
 
             if (!isEditing) {
-                // Selector de catering (el backend lo exige @NotNull)
-                Text("Catering:", style = MaterialTheme.typography.labelLarge)
+                // Selector de restaurant (el backend lo exige @NotNull)
+                Text("Restaurante:", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
                 Box {
                     var catMenu by remember { mutableStateOf(false) }
                     OutlinedTextField(
-                        value = caterings.firstOrNull { it.id == selectedCateringId }?.name
-                            ?: "Seleccione catering",
+                        value = restaurants.firstOrNull { it.id == selectedRestaurantId }?.name
+                            ?: "Seleccione restaurante",
                         onValueChange = {},
                         readOnly = true,
-                        enabled = caterings.isNotEmpty(),
+                        enabled = restaurants.isNotEmpty(),
                         modifier = Modifier.fillMaxWidth().clickable { catMenu = true }
                     )
                     DropdownMenu(catMenu, { catMenu = false }) {
-                        caterings.forEach { c ->
+                        restaurants.forEach { c ->
                             DropdownMenuItem(
                                 text = { Text(c.name) },
-                                onClick = { selectedCateringId = c.id; catMenu = false }
+                                onClick = { selectedRestaurantId = c.id; catMenu = false }
                             )
                         }
                     }
@@ -684,7 +607,7 @@ fun ExtraMealsScreen() {
                             employees.forEach { e ->
                                 RowItem(
                                     title = e.fullName,
-                                    subtitle = "CI ${e.identityCard} · ${e.positionName ?: "Sin cargo"}",
+                                    subtitle = "CI ${e.identityCard}",
                                     onClick = {
                                         selectedEmployee = e
                                         isExternal = false
@@ -724,9 +647,9 @@ fun ExtraMealsScreen() {
                         )
                         Spacer(Modifier.height(12.dp))
 
-                        // Catering seleccionado (sólo lectura en modo edición)
+                        // Restaurant seleccionado (sólo lectura en modo edición)
                         Text(
-                            "Catering: ${caterings.firstOrNull { it.id == selectedCateringId }?.name ?: "—"}",
+                            "Restaurant: ${restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "—"}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -776,9 +699,16 @@ fun ExtraMealsScreen() {
                             Text("Merienda", Modifier.clickable { merienda = !merienda })
                         }
 
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = observation, onValueChange = { observation = it },
+                            label = { Text("Observación (opcional)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
                         Spacer(Modifier.height(20.dp))
                         val canSubmit = !busy && (almuerzo || merienda) &&
-                            selectedCateringId != null &&
+                            selectedRestaurantId != null &&
                             if (isExternal) extName.isNotBlank() && extCard.isNotBlank()
                             else selectedEmployee != null
 
@@ -791,19 +721,20 @@ fun ExtraMealsScreen() {
                                     if (almuerzo) codes.add("LUNCH")
                                     if (merienda) codes.add("SNACK")
                                     val res = mutableListOf<String>()
-                                    val cateringId = selectedCateringId!!
+                                    val restaurantId = selectedRestaurantId!!
+                                    val obs = observation.trim().ifBlank { null }
                                     for (code in codes) {
                                         if (isExternal) {
                                             runCatching {
                                                 api.manualScanExternal(
-                                                    ExternalScanRequest(extCard.trim(), extName.trim(), code, cateringId)
+                                                    ExternalScanRequest(extCard.trim(), extName.trim(), code, restaurantId, obs)
                                                 )
                                             }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
                                              .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
                                         } else {
                                             runCatching {
                                                 api.manualScan(
-                                                    ManualScanRequest(selectedEmployee!!.id, code, cateringId)
+                                                    ManualScanRequest(selectedEmployee!!.id, code, restaurantId, obs)
                                                 )
                                             }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
                                              .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
@@ -815,7 +746,7 @@ fun ExtraMealsScreen() {
                                         isEditing = false
                                         almuerzo = false; merienda = false
                                         selectedEmployee = null
-                                        extName = ""; extCard = ""
+                                        extName = ""; extCard = ""; observation = ""
                                     }
                                     busy = false
                                 }

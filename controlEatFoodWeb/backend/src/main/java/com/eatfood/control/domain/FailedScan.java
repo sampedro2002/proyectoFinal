@@ -14,8 +14,8 @@ public class FailedScan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "catering_id")
-    private Long cateringId;
+    @Column(name = "restaurant_id")
+    private Long restaurantId;
 
     @Column(name = "device_id")
     private Long deviceId;
@@ -24,8 +24,6 @@ public class FailedScan {
     @Column(nullable = false, length = 30)
     private String reason;
 
-    @Column(name = "meal_type_id")
-    private Long mealTypeId;
 
     @Column(name = "employee_id")
     private Long employeeId;

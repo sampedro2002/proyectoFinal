@@ -12,7 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
-import com.eatfood.control.mobile.data.model.CateringResponse
+import com.eatfood.control.mobile.data.model.RestaurantResponse
 import com.eatfood.control.mobile.data.model.ConsumptionRow
 import com.eatfood.control.mobile.data.model.MealTypeResponse
 import com.eatfood.control.mobile.data.remote.ApiClient
@@ -34,23 +34,23 @@ fun ReportsScreen() {
 
     var from by remember { mutableStateOf(LocalDate.now()) }
     var to by remember { mutableStateOf(LocalDate.now()) }
-    var caterings by remember { mutableStateOf<List<CateringResponse>>(emptyList()) }
+    var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var meals by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
-    var cateringId by remember { mutableStateOf<Long?>(null) }
+    var restaurantId by remember { mutableStateOf<Long?>(null) }
     var mealTypeId by remember { mutableStateOf<Long?>(null) }
     var rows by remember { mutableStateOf<List<ConsumptionRow>>(emptyList()) }
     var catMenu by remember { mutableStateOf(false) }
     var mealMenu by remember { mutableStateOf(false) }
 
     suspend fun search() {
-        runCatching { api.consumptions(from.toString(), to.toString(), cateringId, mealTypeId) }
+        runCatching { api.consumptions(from.toString(), to.toString(), restaurantId, mealTypeId) }
             .onSuccess { rows = it }
             .onFailure { snackbar.showSnackbar(it.apiMessage()) }
     }
     fun exportFile(format: String) {
         scope.launch {
             try {
-                val res = api.export(format, from.toString(), to.toString(), cateringId, mealTypeId)
+                val res = api.export(format, from.toString(), to.toString(), restaurantId, mealTypeId)
                 val body = res.body() ?: error("Respuesta vacía")
                 val ext = if (format == "excel") "xlsx" else format
                 val file = withContext(Dispatchers.IO) {
@@ -73,7 +73,7 @@ fun ReportsScreen() {
     }
 
     LaunchedEffect(Unit) {
-        caterings = runCatching { api.caterings() }.getOrDefault(emptyList())
+        restaurants = runCatching { api.restaurants() }.getOrDefault(emptyList())
         meals = runCatching { api.mealTypes() }.getOrDefault(emptyList())
         search()
     }
@@ -94,11 +94,11 @@ fun ReportsScreen() {
                     }
                     Box {
                         OutlinedButton(onClick = { catMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(caterings.firstOrNull { it.id == cateringId }?.name ?: "Todos los caterings")
+                            Text(restaurants.firstOrNull { it.id == restaurantId }?.name ?: "Todos los restaurants")
                         }
                         DropdownMenu(catMenu, { catMenu = false }) {
-                            DropdownMenuItem(text = { Text("Todos los caterings") }, onClick = { cateringId = null; catMenu = false })
-                            caterings.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { cateringId = c.id; catMenu = false }) }
+                            DropdownMenuItem(text = { Text("Todos los restaurants") }, onClick = { restaurantId = null; catMenu = false })
+                            restaurants.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { restaurantId = c.id; catMenu = false }) }
                         }
                     }
                     Box {
@@ -126,7 +126,7 @@ fun ReportsScreen() {
                 items(rows) { r ->
                     RowItem(
                         title = "${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
-                        subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.cateringName ?: ""}",
+                        subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}",
                         trailing = if (r.offline) "offline" else ""
                     )
                 }

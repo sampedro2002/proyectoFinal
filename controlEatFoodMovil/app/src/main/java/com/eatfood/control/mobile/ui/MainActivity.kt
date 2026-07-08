@@ -51,14 +51,13 @@ class MainActivity : ComponentActivity() {
 
 /** Pantallas del panel (equivale a las rutas del frontend web). */
 enum class Screen(val title: String, val roles: List<String>) {
-    DASHBOARD("Dashboard", listOf("ADMIN", "SUPERVISOR", "CATERING")),
-    EMPLOYEES("Empleados", listOf("ADMIN", "SUPERVISOR")),
-    POSITIONS("Cargos", listOf("SUPERVISOR")),
-    CATERINGS("Caterings", listOf("SUPERVISOR")),
+    DASHBOARD("Dashboard", listOf("ADMIN")),
+    EMPLOYEES("Empleados", listOf("ADMIN")),
+    RESTAURANTS("Restaurantes", listOf("ADMIN")),
     SCHEDULES("Horarios", listOf("ADMIN")),
-    REPORTS("Reportes", listOf("ADMIN", "SUPERVISOR")),
-    AUDIT("Auditoría", listOf("SUPERVISOR")),
-    EXTRA_MEALS("Almuerzos Extra", listOf("ADMIN"))
+    REPORTS("Reportes", listOf("ADMIN")),
+    AUDIT("Auditoría", listOf("ADMIN")),
+    EXTRA_MEALS("Registro manual", listOf("ADMIN"))
 }
 
 @Composable
@@ -69,7 +68,7 @@ fun AppRoot() {
     var user by remember { mutableStateOf(store.user) }
     var showSettings by remember { mutableStateOf(false) }
 
-    // Retroceder desde el login admin vuelve a la pantalla de Catering (pantalla de arranque)
+    // Retroceder desde el login admin vuelve a la pantalla de Restaurant (pantalla de arranque)
     // en lugar de cerrar la app.
     BackHandler(enabled = !showSettings && user == null) {
         activity?.let {
@@ -175,9 +174,8 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (current) {
                     Screen.DASHBOARD -> DashboardScreen()
-                    Screen.EMPLOYEES -> EmployeesScreen(canModify = "SUPERVISOR" in roles)
-                    Screen.POSITIONS -> PositionsScreen(isAdmin = "ADMIN" in roles)
-                    Screen.CATERINGS -> CateringsScreen(isAdmin = "ADMIN" in roles)
+                    Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
+                    Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
                     Screen.SCHEDULES -> SchedulesScreen()
                     Screen.REPORTS -> ReportsScreen()
                     Screen.AUDIT -> AuditScreen()

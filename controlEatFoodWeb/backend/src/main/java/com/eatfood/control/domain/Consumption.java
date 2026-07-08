@@ -21,12 +21,9 @@ public class Consumption {
     private Employee employee;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "catering_id")
-    private Catering catering;
+    @JoinColumn(name = "restaurant_id")
+    private Restaurant restaurant;
 
-    @ManyToOne(fetch = FetchType.EAGER, optional = false)
-    @JoinColumn(name = "meal_type_id")
-    private MealType mealType;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "device_id")
@@ -39,6 +36,10 @@ public class Consumption {
     @Column(name = "business_date", nullable = false)
     private LocalDate businessDate;
 
+    /** Observación opcional; se captura en el registro manual. */
+    @Column(length = 500)
+    private String observation;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean offline = false;
@@ -47,6 +48,9 @@ public class Consumption {
     @Column(name = "sync_status", nullable = false, length = 12)
     @Builder.Default
     private SyncStatus syncStatus = SyncStatus.SYNCED;
+
+    @Column(name = "meal_name", length = 30)
+    private String mealName;
 
     @org.hibernate.annotations.JdbcTypeCode(java.sql.Types.VARCHAR)
     @Column(name = "client_uuid", nullable = false, unique = true)

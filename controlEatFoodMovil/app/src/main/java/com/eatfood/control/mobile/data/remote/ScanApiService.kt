@@ -10,7 +10,7 @@ import retrofit2.http.Query
 import retrofit2.http.Streaming
 
 /**
- * Endpoints de escaneo/catering. Usan token de DISPOSITIVO (sessionToken), no JWT,
+ * Endpoints de escaneo/restaurant. Usan token de DISPOSITIVO (sessionToken), no JWT,
  * por eso van en un cliente Retrofit separado SIN el interceptor de autorización.
  */
 interface ScanApiService {

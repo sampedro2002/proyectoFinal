@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
-@Tag(name = "Catálogos (caterings, comidas, horarios)")
+@Tag(name = "Catálogos (restaurants, comidas, horarios)")
 @RestController
 @RequestMapping("/api")
 @RequiredArgsConstructor
@@ -18,35 +18,23 @@ public class CatalogController {
 
     private final CatalogService catalogService;
 
-    // ---- Caterings ----
-    @GetMapping("/caterings")
+    // ---- Restaurants ----
+    @GetMapping("/restaurants")
     @PreAuthorize("hasRole('ADMIN')")
-    public List<CateringResponse> listCaterings() {
-        return catalogService.listCaterings();
+    public List<RestaurantResponse> listRestaurants() {
+        return catalogService.listRestaurants();
     }
 
-    @PostMapping("/caterings")
+    @PostMapping("/restaurants")
     @PreAuthorize("hasRole('ADMIN')")
-    public CateringResponse createCatering(@Valid @RequestBody CateringRequest req) {
-        return catalogService.createCatering(req);
+    public RestaurantResponse createRestaurant(@Valid @RequestBody RestaurantRequest req) {
+        return catalogService.createRestaurant(req);
     }
 
-    @PutMapping("/caterings/{id}")
+    @PutMapping("/restaurants/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public CateringResponse updateCatering(@PathVariable Long id, @Valid @RequestBody CateringRequest req) {
-        return catalogService.updateCatering(id, req);
-    }
-
-    // ---- Tipos de comida ----
-    @GetMapping("/meal-types")
-    public List<MealTypeResponse> listMealTypes() {
-        return catalogService.listMealTypes();
-    }
-
-    @PostMapping("/meal-types")
-    @PreAuthorize("hasRole('ADMIN')")
-    public MealTypeResponse createMealType(@Valid @RequestBody MealTypeRequest req) {
-        return catalogService.createMealType(req);
+    public RestaurantResponse updateRestaurant(@PathVariable Long id, @Valid @RequestBody RestaurantRequest req) {
+        return catalogService.updateRestaurant(id, req);
     }
 
     // ---- Horarios ----

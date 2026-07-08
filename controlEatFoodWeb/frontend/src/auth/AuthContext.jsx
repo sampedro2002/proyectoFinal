@@ -36,8 +36,8 @@ export function AuthProvider({ children }) {
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     // Persistir sólo lo necesario para no exponer más datos de la cuenta.
-    const { id, fullName, roles, cateringId } = data;
-    localStorage.setItem('user', JSON.stringify({ id, fullName, roles, cateringId }));
+    const { id, fullName, roles, restaurantId } = data;
+    localStorage.setItem('user', JSON.stringify({ id, fullName, roles, restaurantId }));
     setUser(data);
     return data;
   }

@@ -4,9 +4,9 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "catering")
+@Table(name = "restaurant")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-public class Catering extends Auditable {
+public class Restaurant extends Auditable {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,6 +17,10 @@ public class Catering extends Auditable {
 
     @Column(length = 160)
     private String location;
+
+    /** Nombre del responsable / representante que maneja el restaurante. */
+    @Column(length = 120)
+    private String representative;
 
     @Column(nullable = false)
     @Builder.Default

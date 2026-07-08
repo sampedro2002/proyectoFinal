@@ -40,8 +40,8 @@ public class AppUser extends Auditable {
     private OffsetDateTime lockedUntil;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "catering_id")
-    private Catering catering;
+    @JoinColumn(name = "restaurant_id")
+    private Restaurant restaurant;
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(name = "user_roles",

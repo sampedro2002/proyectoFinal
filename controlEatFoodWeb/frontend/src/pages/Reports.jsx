@@ -5,25 +5,23 @@ import EmployeeSelect from '../components/EmployeeSelect.jsx';
 function today() { return new Date().toISOString().slice(0, 10); }
 
 export default function Reports() {
-  const [filters, setFilters] = useState({ from: today(), to: today(), cateringId: '', mealTypeId: '', employeeId: '' });
+  const [filters, setFilters] = useState({ from: today(), to: today(), restaurantId: '', employeeId: '' });
   const [rows, setRows] = useState([]);
-  const [caterings, setCaterings] = useState([]);
-  const [meals, setMeals] = useState([]);
+  const [restaurants, setRestaurants] = useState([]);
   const [employees, setEmployees] = useState([]);
   const [error, setError] = useState('');
 
   useEffect(() => {
     Promise.all([
-      api.get('/caterings').then((r) => setCaterings(r.data)).catch(() => {}),
-      api.get('/meal-types').then((r) => setMeals(r.data)).catch(() => {}),
+      api.get('/restaurants').then((r) => setRestaurants(r.data)).catch(() => {}),
+
       api.get('/employees', { params: { size: 2000, status: 'ACTIVE' } }).then((r) => setEmployees(r.data.content || r.data)).catch(() => {}),
     ]);
   }, []);
 
   function params() {
     const p = { from: filters.from, to: filters.to };
-    if (filters.cateringId) p.cateringId = filters.cateringId;
-    if (filters.mealTypeId) p.mealTypeId = filters.mealTypeId;
+    if (filters.restaurantId) p.restaurantId = filters.restaurantId;
     if (filters.employeeId) p.employeeId = filters.employeeId;
     return p;
   }
@@ -68,16 +66,12 @@ export default function Reports() {
             <input type="date" value={filters.from} onChange={(e) => setFilters({ ...filters, from: e.target.value })} /></div>
           <div className="field"><label>Hasta</label>
             <input type="date" value={filters.to} onChange={(e) => setFilters({ ...filters, to: e.target.value })} /></div>
-          <div className="field"><label>Catering</label>
-            <select value={filters.cateringId} onChange={(e) => setFilters({ ...filters, cateringId: e.target.value })}>
+          <div className="field"><label>Restaurante</label>
+            <select value={filters.restaurantId} onChange={(e) => setFilters({ ...filters, restaurantId: e.target.value })}>
               <option value="">Todos</option>
-              {caterings.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              {restaurants.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></div>
-          <div className="field"><label>Comida</label>
-            <select value={filters.mealTypeId} onChange={(e) => setFilters({ ...filters, mealTypeId: e.target.value })}>
-              <option value="">Todas</option>
-              {meals.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select></div>
+
           <div className="field" style={{ flex: 1, minWidth: '220px' }}><label>Empleado</label>
             <EmployeeSelect 
               employees={employees} 
@@ -99,7 +93,7 @@ export default function Reports() {
         <table>
           <thead><tr>
             <th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
-            <th>Cargo</th><th>Catering</th><th>Comida</th><th>Modo</th>
+            <th>Restaurante</th><th>Comida</th><th>Observación</th><th>Modo</th>
           </tr></thead>
           <tbody>
             {rows.map((r) => (
@@ -108,9 +102,9 @@ export default function Reports() {
                 <td>{new Date(r.consumedAt).toLocaleTimeString()}</td>
                 <td>{r.identityCard}</td>
                 <td>{r.employeeName}</td>
-                <td>{r.positionName || '—'}</td>
-                <td>{r.cateringName}</td>
+                <td>{r.restaurantName}</td>
                 <td>{r.mealName}</td>
+                <td>{r.observation || '—'}</td>
                 <td>{r.offline ? <span className="badge off">offline</span> : <span className="badge ok">online</span>}</td>
               </tr>
             ))}

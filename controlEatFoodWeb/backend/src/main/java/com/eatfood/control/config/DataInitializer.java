@@ -1,10 +1,10 @@
 package com.eatfood.control.config;
 
 import com.eatfood.control.domain.AppUser;
-import com.eatfood.control.domain.Catering;
+import com.eatfood.control.domain.Restaurant;
 import com.eatfood.control.domain.Role;
 import com.eatfood.control.repository.AppUserRepository;
-import com.eatfood.control.repository.CateringRepository;
+import com.eatfood.control.repository.RestaurantRepository;
 import com.eatfood.control.repository.RoleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +18,7 @@ import java.util.Set;
 /**
  * Garantiza credenciales utilizables tras las migraciones Flyway:
  *  - admin / Admin123*
- *  - un usuario CATERING por cada catering (usuario = slug del nombre, clave = catering123)
+ *  - un usuario CATERING por cada restaurant (usuario = slug del nombre, clave = restaurant123)
  * Las contraseñas se cifran con el PasswordEncoder real (BCrypt) para evitar hashes inválidos en el seed SQL.
  */
 @Slf4j
@@ -28,7 +28,7 @@ import java.util.Set;
 public class DataInitializer implements CommandLineRunner {
 
     private final AppUserRepository userRepository;
-    private final CateringRepository cateringRepository;
+    private final RestaurantRepository restaurantRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -43,37 +43,37 @@ public class DataInitializer implements CommandLineRunner {
             }
         });
 
-        // Crear usuarios de catering si no existen. El nombre de usuario se deriva
-        // del nombre del catering (p. ej. "Catering Norte" -> "cateringNorte").
-        Role cateringRole = roleRepository.findByName("CATERING").orElse(null);
-        if (cateringRole == null) return;
+        // Crear usuarios de restaurant si no existen. El nombre de usuario se deriva
+        // del nombre del restaurant (p. ej. "Restaurant Norte" -> "restaurantNorte").
+        Role restaurantRole = roleRepository.findByName("CATERING").orElse(null);
+        if (restaurantRole == null) return;
 
-        for (Catering catering : cateringRepository.findAll()) {
-            String username = cateringUsername(catering.getName());
+        for (Restaurant restaurant : restaurantRepository.findAll()) {
+            String username = restaurantUsername(restaurant.getName());
             if (!userRepository.existsByUsername(username)) {
                 AppUser user = AppUser.builder()
                         .username(username)
-                        .passwordHash(passwordEncoder.encode("catering123"))
-                        .fullName("Operador " + catering.getName())
+                        .passwordHash(passwordEncoder.encode("restaurant123"))
+                        .fullName("Operador " + restaurant.getName())
                         .enabled(true)
-                        .catering(catering)
-                        .roles(Set.of(cateringRole))
+                        .restaurant(restaurant)
+                        .roles(Set.of(restaurantRole))
                         .build();
                 userRepository.save(user);
-                log.info("Usuario de catering creado: {} (clave: catering123) -> {}", username, catering.getName());
+                log.info("Usuario de restaurant creado: {} (clave: restaurant123) -> {}", username, restaurant.getName());
             }
         }
     }
 
     /**
-     * Genera el nombre de usuario de catering a partir del nombre del catering.
+     * Genera el nombre de usuario de restaurant a partir del nombre del restaurant.
      * Regla: quitar espacios y poner la primera letra en minúscula.
-     * Ej: "Catering Norte" -> "cateringNorte", "Catering Centro" -> "cateringCentro".
+     * Ej: "Restaurant Norte" -> "restaurantNorte", "Restaurant Centro" -> "restaurantCentro".
      */
-    private static String cateringUsername(String cateringName) {
-        if (cateringName == null || cateringName.isBlank()) return "catering";
-        String noSpaces = cateringName.replaceAll("\\s+", "");
-        if (noSpaces.isEmpty()) return "catering";
+    private static String restaurantUsername(String restaurantName) {
+        if (restaurantName == null || restaurantName.isBlank()) return "restaurant";
+        String noSpaces = restaurantName.replaceAll("\\s+", "");
+        if (noSpaces.isEmpty()) return "restaurant";
         return Character.toLowerCase(noSpaces.charAt(0)) + noSpaces.substring(1);
     }
 }

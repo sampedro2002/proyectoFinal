@@ -252,8 +252,8 @@ export default function Kiosk() {
 
     try {
       const { data } = await scanApi.post('/scan/connect', {
-        cateringUsername: f.get('username'),
-        cateringPassword: f.get('password'),
+        restaurantUsername: f.get('username'),
+        restaurantPassword: f.get('password'),
         deviceUid,
         deviceName: f.get('deviceName') || navigator.userAgent.slice(0, 60),
       });
@@ -308,13 +308,13 @@ export default function Kiosk() {
     return (
       <div className="login-wrap">
         <form className="card login-card" onSubmit={connect} style={{ width: 400 }}>
-          <h1 style={{ fontSize: 22, letterSpacing: 2 }}>🖐 CATERING</h1>
+          <h1 style={{ fontSize: 22, letterSpacing: 2 }}>🖐 RESTAURANTE</h1>
           <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 0 }}>
             Conecte este dispositivo al sistema
           </p>
 
           <div className="field">
-            <label>Usuario de catering</label>
+            <label>Usuario de restaurante</label>
             <input name="username" required autoFocus autoComplete="username" />
           </div>
 
@@ -340,7 +340,7 @@ export default function Kiosk() {
 
           <div className="field">
             <label>Nombre del dispositivo (opcional)</label>
-            <input name="deviceName" placeholder={`PC-${navigator.platform || 'Catering'}`} />
+            <input name="deviceName" placeholder={`PC-${navigator.platform || 'Restaurante'}`} />
           </div>
 
           {/* URL del agente ZKFinger – configurable para cada PC / entorno */}
@@ -392,7 +392,7 @@ export default function Kiosk() {
 
   const rInfo = readerStatusLabel[readerStatus] || readerStatusLabel[READER_STATUS.DISCONNECTED];
 
-  const totalAlmuerzos = feed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
+  const totalDesayunos = feed.filter(e => e.mealName?.toLowerCase().includes('desayuno')).length;
   const totalMeriendas = feed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
 
   return (
@@ -420,7 +420,7 @@ export default function Kiosk() {
       </div>
 
       {/* Elementos Estáticos Principales */}
-      <div className="title" style={{ marginTop: '20px' }}>{session.cateringName?.toUpperCase()}</div>
+      <div className="title" style={{ marginTop: '20px' }}>{session.restaurantName?.toUpperCase()}</div>
       
       <div className="fingerprint-icon" style={{
         opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25,
@@ -499,7 +499,7 @@ export default function Kiosk() {
               </tbody>
             </table>
             <div className="kiosk-feed-summary">
-              <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
+              <div>Desayunos: <strong>{totalDesayunos}</strong></div>
               <div>Meriendas: <strong>{totalMeriendas}</strong></div>
               <div>Total: <strong>{feed.length}</strong></div>
             </div>

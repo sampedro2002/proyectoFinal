@@ -13,50 +13,53 @@ import java.util.UUID;
 
 public interface ConsumptionRepository extends JpaRepository<Consumption, Long> {
 
-    boolean existsByEmployeeIdAndMealTypeIdAndBusinessDate(Long employeeId, Long mealTypeId, LocalDate businessDate);
+    boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    Optional<Consumption> findByEmployeeIdAndMealTypeIdAndBusinessDate(Long employeeId, Long mealTypeId, LocalDate businessDate);
+    /** Nº de consumos que el empleado ya retiró en el día (para el tope según permisos). */
+    long countByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
+
+    Optional<Consumption> findByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
     Optional<Consumption> findByClientUuid(UUID clientUuid);
 
-    List<Consumption> findByBusinessDateAndCateringId(LocalDate businessDate, Long cateringId);
+    List<Consumption> findByBusinessDateAndRestaurantId(LocalDate businessDate, Long restaurantId);
 
-    @EntityGraph(attributePaths = {"catering", "mealType", "employee"})
+    @EntityGraph(attributePaths = {"restaurant", "employee"})
     @Query("""
             SELECT c FROM Consumption c
-            WHERE c.businessDate = :date AND c.catering.id = :cateringId
+            WHERE c.businessDate = :date AND c.restaurant.id = :restaurantId
             ORDER BY c.consumedAt DESC
             """)
-    List<Consumption> findByBusinessDateAndCateringIdWithDetails(
-            @Param("date") LocalDate date, @Param("cateringId") Long cateringId);
+    List<Consumption> findByBusinessDateAndRestaurantIdWithDetails(
+            @Param("date") LocalDate date, @Param("restaurantId") Long restaurantId);
 
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
-     * las relaciones LAZY ({@code catering}, {@code mealType}) que
+     * las relaciones LAZY ({@code restaurant}) que
      * {@link com.eatfood.control.service.ReportService#toRow} accede después,
      * evitando un problema de N+1 SELECT.
      */
-    @EntityGraph(attributePaths = {"catering", "mealType"})
+    @EntityGraph(attributePaths = {"restaurant"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to
-              AND (:cateringId IS NULL OR c.catering.id = :cateringId)
-              AND (:mealTypeId IS NULL OR c.mealType.id = :mealTypeId)
+              AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:employeeId IS NULL OR c.employee.id = :employeeId)
             ORDER BY c.consumedAt DESC
             """)
     List<Consumption> report(@Param("from") LocalDate from,
                              @Param("to") LocalDate to,
-                             @Param("cateringId") Long cateringId,
-                             @Param("mealTypeId") Long mealTypeId,
+                             @Param("restaurantId") Long restaurantId,
                              @Param("employeeId") Long employeeId);
 
     long countByBusinessDate(LocalDate date);
 
+    long countByBusinessDateAndMealName(LocalDate date, String mealName);
+
     @Query("SELECT COUNT(DISTINCT c.employee.id) FROM Consumption c WHERE c.businessDate = :date")
     long countDistinctEmployees(@Param("date") LocalDate date);
 
-    long countByBusinessDateAndMealTypeId(LocalDate date, Long mealTypeId);
+
 
     @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date")
     List<Long> findConsumedEmployeeIds(@Param("date") LocalDate date);

@@ -74,7 +74,7 @@ public class SecurityConfig {
                         "/zkfinger-ws",
                         "/zkfinger-ws/**"
                 ).permitAll()
-                // El dispositivo de catering se autentica con token de dispositivo en el propio servicio
+                // El dispositivo de restaurant se autentica con token de dispositivo en el propio servicio
                 .requestMatchers("/api/scan/**").permitAll()
                 .anyRequest().authenticated()
             )

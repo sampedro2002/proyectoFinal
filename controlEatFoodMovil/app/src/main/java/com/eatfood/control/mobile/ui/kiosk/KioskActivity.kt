@@ -110,11 +110,11 @@ private fun ConnectPanel(onConnected: () -> Unit) {
                 Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("🖐 CATERING", style = MaterialTheme.typography.headlineSmall)
+                Text("🖐 RESTAURANTE", style = MaterialTheme.typography.headlineSmall)
                 Text("Conecte este dispositivo al sistema",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))
-                OutlinedTextField(user, { user = it }, label = { Text("Usuario de catering") },
+                OutlinedTextField(user, { user = it }, label = { Text("Usuario de restaurante") },
                     singleLine = true, modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
@@ -425,7 +425,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 
             Spacer(Modifier.height(40.dp))
 
-            // ── Centro: Título de Catering y Animación/Estado ─────────────────────
+            // ── Centro: Título de Restaurant y Animación/Estado ─────────────────────
             val r = result
             Column(
                 Modifier.weight(1f).fillMaxWidth(),
@@ -434,7 +434,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             ) {
                 if (r == null) {
                     Text(
-                        session.cateringName?.uppercase() ?: "CATERING",
+                        session.restaurantName?.uppercase() ?: "RESTAURANTE",
                         style = MaterialTheme.typography.headlineMedium,
                         letterSpacing = 2.sp,
                         fontWeight = FontWeight.Light,
@@ -510,7 +510,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
                     store.kioskSession = null
                     onDisconnect()
                 }) { 
-                    Text("Cerrar Sesión de Catering", color = Muted) 
+                    Text("Cerrar Sesión de Restaurante", color = Muted) 
                 }
             }
         }

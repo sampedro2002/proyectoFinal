@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.Optional;
 
 public interface DeviceRepository extends JpaRepository<Device, Long> {
-    Optional<Device> findByCateringIdAndDeviceUid(Long cateringId, String deviceUid);
-    long countByCateringIdAndConnectedTrue(Long cateringId);
-    List<Device> findByCateringId(Long cateringId);
+    Optional<Device> findByRestaurantIdAndDeviceUid(Long restaurantId, String deviceUid);
+    long countByRestaurantIdAndConnectedTrue(Long restaurantId);
+    List<Device> findByRestaurantId(Long restaurantId);
     Optional<Device> findBySessionToken(String sessionToken);
-    List<Device> findByCateringIdAndConnectedTrueAndLastSeenBefore(Long cateringId, OffsetDateTime cutoff);
+    List<Device> findByRestaurantIdAndConnectedTrueAndLastSeenBefore(Long restaurantId, OffsetDateTime cutoff);
 }

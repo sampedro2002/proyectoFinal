@@ -68,7 +68,7 @@ class SessionStore private constructor(context: Context) {
         prefs.edit().remove(K_ACCESS).remove(K_REFRESH).remove(K_USER).apply()
     }
 
-    // ── Sesión de kiosco (dispositivo de catering) ──────────────────────────---
+    // ── Sesión de kiosco (dispositivo de restaurant) ──────────────────────────---
     var kioskSession: DeviceConnectResponse?
         get() = prefs.getString(K_KIOSK, null)?.let { runCatching { gson.fromJson(it, DeviceConnectResponse::class.java) }.getOrNull() }
         set(v) = prefs.edit().putString(K_KIOSK, v?.let { gson.toJson(it) }).apply()

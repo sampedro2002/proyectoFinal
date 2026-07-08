@@ -17,16 +17,15 @@ data class AuthResponse(
     val username: String?,
     val fullName: String?,
     val roles: List<String>?,
-    val cateringId: Long?
+    val restaurantId: Long?
 )
 
 // ── Empleados ────────────────────────────────────────────────────────────────
 data class EmployeeRequest(
     val identityCard: String,
     val fullName: String,
-    val positionId: Long?,
+    val observation: String?,
     val status: String?,
-    val allowedPlates: Int?,
     val allowsLunch: Boolean?,
     val allowsSnack: Boolean?
 )
@@ -35,12 +34,11 @@ data class EmployeeResponse(
     val id: Long,
     val identityCard: String,
     val fullName: String,
-    val positionId: Long?,
-    val positionName: String?,
+    val publicCode: String?,
+    val observation: String?,
     val status: String?,
-    val allowedPlates: Int?,
-    val effectivePlates: Int,
     val allowsLunch: Boolean,
+    val allowsSnack: Boolean,
     val effectiveSnack: Boolean,
     val fingerprintCount: Int
 )
@@ -66,13 +64,13 @@ data class FingerprintResponse(
 )
 
 // ── Catálogos ────────────────────────────────────────────────────────────────
-data class PositionRequest(val name: String, val defaultPlates: Int, val allowsSnack: Boolean, val active: Boolean?)
-data class PositionResponse(val id: Long, val name: String, val defaultPlates: Int, val allowsSnack: Boolean, val active: Boolean)
-
-data class CateringRequest(val name: String, val location: String?, val active: Boolean?, val maxDevices: Int?)
-data class CateringResponse(
-    val id: Long, val name: String, val location: String?, val active: Boolean,
-    val maxDevices: Int, val connectedDevices: Long
+data class RestaurantRequest(
+    val name: String, val location: String?, val representative: String?,
+    val active: Boolean?, val maxDevices: Int?
+)
+data class RestaurantResponse(
+    val id: Long, val name: String, val location: String?, val representative: String?,
+    val active: Boolean, val maxDevices: Int, val connectedDevices: Long
 )
 
 data class MealTypeResponse(val id: Long, val code: String, val name: String, val active: Boolean, val sortOrder: Int)
@@ -83,17 +81,17 @@ data class ScheduleResponse(
     val startTime: String?, val endTime: String?, val active: Boolean
 )
 
-// ── Escaneo / catering ───────────────────────────────────────────────────────
+// ── Escaneo / restaurant ───────────────────────────────────────────────────────
 data class DeviceConnectRequest(
-    val cateringUsername: String,
-    val cateringPassword: String,
+    val restaurantUsername: String,
+    val restaurantPassword: String,
     val deviceUid: String,
     val deviceName: String?
 )
 
 data class DeviceConnectResponse(
-    val cateringId: Long?,
-    val cateringName: String?,
+    val restaurantId: Long?,
+    val restaurantName: String?,
     val deviceId: Long?,
     val sessionToken: String
 )
@@ -139,9 +137,9 @@ data class ConsumptionRow(
     val consumedAt: String?,
     val employeeName: String?,
     val identityCard: String?,
-    val positionName: String?,
-    val cateringName: String?,
+    val restaurantName: String?,
     val mealName: String?,
+    val observation: String?,
     val offline: Boolean
 )
 
@@ -184,14 +182,16 @@ data class ApiError(
 data class ManualScanRequest(
     val employeeId: Long,
     val mealTypeCode: String,
-    val cateringId: Long
+    val restaurantId: Long,
+    val observation: String? = null
 )
 
 data class ExternalScanRequest(
     val identityCard: String,
     val fullName: String,
     val mealTypeCode: String,
-    val cateringId: Long
+    val restaurantId: Long,
+    val observation: String? = null
 )
 
 data class ManualScanResponse(
