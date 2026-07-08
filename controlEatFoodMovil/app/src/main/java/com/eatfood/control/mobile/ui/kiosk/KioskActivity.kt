@@ -19,6 +19,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -110,7 +112,13 @@ private fun ConnectPanel(onConnected: () -> Unit) {
                 Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text("🖐 RESTAURANTE", style = MaterialTheme.typography.headlineSmall)
+                Image(
+                    painter = painterResource(com.eatfood.control.mobile.R.drawable.ic_logo),
+                    contentDescription = "EatFood",
+                    modifier = Modifier.size(72.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("RESTAURANTE", style = MaterialTheme.typography.headlineSmall)
                 Text("Conecte este dispositivo al sistema",
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(16.dp))

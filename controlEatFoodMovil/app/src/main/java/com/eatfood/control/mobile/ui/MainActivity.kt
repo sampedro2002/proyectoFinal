@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -24,11 +25,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.eatfood.control.mobile.R
 import com.eatfood.control.mobile.data.model.AuthResponse
 import com.eatfood.control.mobile.data.model.LoginRequest
 import com.eatfood.control.mobile.data.model.LogoutRequest
@@ -124,12 +127,26 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
         drawerContent = {
             ModalDrawerSheet {
                 Spacer(Modifier.height(24.dp))
-                Text("🍽 EatFood", style = MaterialTheme.typography.headlineSmall,
-                    modifier = Modifier.padding(start = 20.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(start = 20.dp, end = 20.dp)
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_logo),
+                        contentDescription = "EatFood",
+                        modifier = Modifier.size(40.dp)
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("EatFood", style = MaterialTheme.typography.titleLarge)
+                        Text("Control de Alimentos", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
                 Text("${user.fullName ?: user.username ?: ""} · ${roles.joinToString(", ")}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 20.dp, bottom = 12.dp))
+                    modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 12.dp))
                 HorizontalDivider()
                 visibleScreens.forEach { s ->
                     NavigationDrawerItem(
@@ -200,7 +217,17 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
     Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
         Card(Modifier.fillMaxWidth().widthIn(max = 440.dp)) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("🍽 Control de Alimentos", style = MaterialTheme.typography.titleLarge)
+                Image(
+                    painter = painterResource(R.drawable.ic_logo),
+                    contentDescription = "EatFood",
+                    modifier = Modifier.size(88.dp)
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("EatFood", style = MaterialTheme.typography.headlineSmall)
+                Text("Control de Consumo de Alimentos",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center)
                 Spacer(Modifier.height(20.dp))
                 OutlinedTextField(
                     value = username, onValueChange = { username = it },

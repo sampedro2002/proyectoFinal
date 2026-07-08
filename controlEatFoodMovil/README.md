@@ -1,8 +1,9 @@
 # Control de Consumo de Alimentos — App Móvil Android
 
 Aplicación móvil Android para la gestión administrativa del sistema de control de
-consumo de alimentos por huella digital. Permite a administradores y supervisores
-gestionar empleados, cargos y consultar reportes desde un dispositivo móvil.
+consumo de alimentos por huella digital. Permite a administradores y personal de
+catering gestionar empleados, registrar consumos y consultar reportes desde un
+dispositivo móvil.
 
 > Esta app consume la API REST del proyecto hermano **`controlEatFoodWeb`** (backend Spring Boot 3).
 
@@ -82,6 +83,15 @@ controlEatFoodMovil/
 
 Asegúrate de que el backend del proyecto `controlEatFoodWeb` esté corriendo en `http://localhost:8080`.
 
+**Para desarrollo:** Sigue las instrucciones en [controlEatFoodWeb/README.md](../controlEatFoodWeb/README.md).
+
+**Para producción (Windows Server):** Usa el instalador automatizado:
+```powershell
+cd ../RunWindowns
+.\install.ps1
+```
+El instalador configura el backend como servicio de Windows, conecta a base de datos remota (Linux), y genera los archivos de producción automáticamente.
+
 ### 2. Configurar la URL del API
 
 ```bash
@@ -120,7 +130,7 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 
 | Pantalla | Descripción |
 |----------|-------------|
-| **Login** | Autenticación con JWT (mismas credenciales que el panel web) |
+| **Login** | Autenticación con JWT (mismas credenciales que el panel web). Roles: ADMIN, CATERING |
 | **Dashboard** | Resumen de consumos del día + tendencia de 7 días |
 | **Empleados** | CRUD de empleados (crear, editar, inactivar, gestionar huellas) |
 | **Cargos** | CRUD de cargos/posiciones |

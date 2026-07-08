@@ -8,6 +8,28 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 
 *   **[controlEatFoodWeb](./controlEatFoodWeb/)**: El núcleo del sistema. Contiene el **Backend** (construido con Spring Boot 3, gestiona la API REST, la seguridad y el motor biométrico 1:N) y el **Frontend Web** (una PWA construida en React + Vite) usada para el panel de administración, la interfaz de los puntos de catering y el modo kiosco con soporte offline.
 *   **[controlEatFoodMovil](./controlEatFoodMovil/)**: La **Aplicación Móvil Android** (desarrollada en Kotlin con Jetpack Compose). Está orientada a la gestión administrativa rápida desde dispositivos móviles, permitiendo consultar dashboards, gestionar empleados y registrar consumos manuales (incluyendo un modo kiosco mediante conexión USB OTG al lector biométrico).
+*   **[RunWindowns](./RunWindowns/)**: Scripts de automatización para Windows.
+
+## 📦 Scripts de Instalación (RunWindowns)
+
+| Archivo | Propósito |
+|---------|-----------|
+| `setup_env.bat` | Configuración de entorno de **desarrollo** (Java, Node, DB local, dependencias, SDK) |
+| `install.ps1` | Instalador automatizado de **producción** (interactivo, servicio Windows, DB remota) |
+| `uninstall.ps1` | Desinstalador de producción (elimina servicio, firewall, archivos) |
+| `setup.exe` | Instalador del SDK del lector biométrico ZK9500 |
+| `config/` | Configuración generada por `install.ps1` (install_config.json, application-prod.yml) |
+| `logs/` | Logs de instalación y del servicio |
+
+**Desarrollo:** `setup_env.bat` prepara el entorno local con Docker para MySQL.
+
+**Producción:** `install.ps1` es un instalador guiado que permite:
+- Conectar a base de datos MySQL **local o remota** (servidor Linux)
+- Probar conexión antes de continuar
+- Generar claves de seguridad (JWT, AES) automáticamente
+- Compilar y empaquetar para producción
+- Registrar como servicio de Windows (NSSM)
+- Configurar firewall y reverse proxy
 
 ## 🚀 Puesta en Marcha (Paso a Paso)
 
@@ -29,7 +51,7 @@ Dependiendo de tu sistema operativo, sigue las instrucciones para preparar Java,
    *El script verificará e instalará automáticamente Java 21 y Node.js (vía Winget), e intentará configurar el contenedor de base de datos MySQL (`control-mysql` en Docker) o un servidor MySQL local.*
 3. **Instalar el Driver/Agente del Lector Biométrico**:
    - Para que el cliente Web (Frontend) pueda comunicarse con el lector ZK9500 a través de WebSockets, debes ejecutar el instalador del SDK/agente local ubicado en:
-     `RunWindowns/setup.exe`
+      `RunWindowns/setup.exe`
    - Sigue los pasos en pantalla del asistente de instalación.
 4. **Importante**: Si el script instaló Java o Node.js, cierra la terminal actual y abre una nueva para que las variables de entorno surtan efecto.
 
@@ -59,18 +81,41 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
 
 - **Cifrado Biométrico**: Las plantillas de huellas digitales de los empleados se cifran usando AES-128/CBC antes de almacenarse en la base de datos.
 - **Autenticación**: Todos los accesos se validan y aseguran con tokens JWT (JSON Web Tokens).
-- **Roles y Auditoría**: El acceso está particionado en roles (Administrador, Supervisor, Catering) y todas las acciones críticas (cambios, altas, bajas) quedan registradas en un log de auditoría inmutable.
+- **Roles y Auditoría**: El acceso está particionado en roles (Administrador, Catering) y todas las acciones críticas (cambios, altas, bajas) quedan registradas en un log de auditoría inmutable.
 
 ## 🌍 Puesta en Producción
 
 Para desplegar el sistema en un entorno de producción, sigue estas directrices y mejores prácticas:
 
-### 1. Base de Datos
+### 1. Instalación Automatizada (Recomendado)
+
+El proyecto incluye un **instalador automatizado** para Windows Server que guía paso a paso la configuración del entorno de producción:
+
+```powershell
+# Ejecutar PowerShell como Administrador
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+cd RunWindowns
+.\install.ps1
+```
+
+**El instalador interactivo permite:**
+- ✅ Instalar prerequisitos (Java 21, Node.js, Maven)
+- ✅ Configurar base de datos **local o remota** (MySQL en servidor Linux)
+- ✅ Probar conexión TCP y autenticación MySQL
+- ✅ Generar automáticamente JWT_SECRET y BIOMETRIC_ENCRYPTION_KEY
+- ✅ Compilar backend (JAR) y frontend (dist)
+- ✅ Registrar como **servicio de Windows** (con NSSM)
+- ✅ Configurar firewall y reverse proxy
+- ✅ Actualizar, reparar o desinstalar
+
+El instalador guarda la configuración en `RunWindowns/config/install_config.json` para futuras actualizaciones.
+
+### 2. Base de Datos
 - Utiliza una instancia dedicada de MySQL (v8.0+).
 - Asegúrate de cambiar las contraseñas predeterminadas y restringir el acceso remoto.
 - Configura copias de seguridad (backups) automáticas y periódicas de la base de datos `control_eat_food`.
 
-### 2. Backend (Spring Boot)
+### 3. Backend (Spring Boot)
 1. Compila el proyecto para generar el archivo JAR ejecutable:
    ```bash
    cd controlEatFoodWeb/backend
@@ -89,7 +134,7 @@ Para desplegar el sistema en un entorno de producción, sigue estas directrices 
    ```
    *(Nota: Se recomienda administrar el proceso mediante `systemd` o contenedorizarlo con Docker para garantizar su reinicio automático).*
 
-### 3. Frontend Web (React + Vite)
+### 4. Frontend Web (React + Vite)
 1. Genera los archivos estáticos optimizados para producción:
    ```bash
    cd controlEatFoodWeb/frontend
@@ -97,7 +142,7 @@ Para desplegar el sistema en un entorno de producción, sigue estas directrices 
    ```
 2. Esto creará una carpeta `dist/`. Este contenido es estático y debe ser servido utilizando un servidor web moderno (ver Paso 4).
 
-### 4. Servidor Web y Proxy Inverso (Nginx)
+### 5. Servidor Web y Proxy Inverso (Nginx)
 Se recomienda utilizar Nginx como servidor web para entregar la SPA de React (Frontend) y redirigir el tráfico hacia la API (Backend), asegurando todas las comunicaciones con HTTPS:
 
 ```nginx
@@ -125,7 +170,7 @@ server {
 }
 ```
 
-### 5. App Móvil Android
+### 6. App Móvil Android
 1. Ajusta la URL de conexión en `controlEatFoodMovil/local.properties` para que apunte a tu entorno de producción:
    ```properties
    API_BASE_URL=https://tu-dominio.com/api

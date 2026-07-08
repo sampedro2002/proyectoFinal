@@ -6,7 +6,13 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h1>🍽 EatFood</h1>
+        <div className="brand">
+          <img src="/logo.png" alt="EatFood" className="brand-logo" />
+          <div className="brand-text">
+            <span className="brand-name">EatFood</span>
+            <span className="brand-tag">Control de Alimentos</span>
+          </div>
+        </div>
         <NavLink to="/" end>Dashboard</NavLink>
         {hasRole('ADMIN') && <NavLink to="/employees">Empleados</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/restaurants">Restaurantes</NavLink>}

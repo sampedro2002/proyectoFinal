@@ -89,6 +89,11 @@ Para iniciar con una base de datos limpia:
 - `V4__remove_plates.sql`: elimina las columnas `allowed_plates`/`default_plates`/`plates` (ya no se usan; un consumo equivale a 1 plato).
 - `V5__fix_views_after_plates_removal.sql`: recrea las vistas `v_daily_consumption` y `v_employee_effective_config` sin las columnas eliminadas en V4.
 - `V6__rename_catering_users.sql`: renombra los usuarios de catering de `catering<id>` a `catering<Nombre>` (p. ej. `cateringNorte`, `cateringCentro`, `cateringSur`).
+- `V7__employee_personal_refactor.sql`: refactor del empleado (public_code, observation, position_title). Sin tabla `position`.
+- `V8__restaurant_refactor.sql`: refactor de caterings.
+- `V9__drop_consumption_meal_type.sql`: elimina columna de tipo de comida en consumption.
+- `V10__fix_timezone_utc_to_local.sql`: corrección de zona horaria.
+- `V11__add_consumption_meal_name.sql`: agrega nombre de comida en consumption.
 
 > Si modificas una migración ya aplicada, ejecuta `flyway repair` para alinear el checksum en `flyway_schema_history`.
 
@@ -154,11 +159,73 @@ npm run dev              # http://localhost:5173
 
 ---
 
+## 🌍 Despliegue en Producción
+
+### Instalación Automatizada (Recomendado)
+
+Para desplegar en un servidor Windows (producción), utiliza el **instalador automatizado**:
+
+```powershell
+# Ejecutar PowerShell como Administrador
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+cd RunWindowns
+.\install.ps1
+```
+
+**El instalador interactivo realiza:**
+- ✅ Verifica/instala Java 21, Node.js, Maven
+- ✅ Configura base de datos **local o remota** (MySQL en servidor Linux)
+- ✅ Prueba conexión TCP y autenticación MySQL antes de continuar
+- ✅ Genera automáticamente JWT_SECRET y BIOMETRIC_ENCRYPTION_KEY
+- ✅ Compila backend (JAR) y frontend (dist)
+- ✅ Registra como **servicio de Windows** (con NSSM, auto-descarga)
+- ✅ Configura reglas de firewall
+- ✅ Guarda configuración en `config/install_config.json`
+
+**Comandos útiles después de la instalación:**
+```powershell
+nssm status ControlEatFood          # Ver estado del servicio
+nssm restart ControlEatFood         # Reiniciar servicio
+nssm stop ControlEatFood            # Detener servicio
+nssm edit ControlEatFood            # Editar configuración avanzada
+```
+
+**Desinstalación:**
+```powershell
+.\uninstall.ps1
+```
+
+### Instalación Manual (Alternativa)
+
+Si prefieres instalar manualmente o en Linux:
+
+1. **Compilar backend:**
+   ```bash
+   cd backend
+   mvn clean package -DskipTests -Dspring.profiles.active=prod
+   ```
+
+2. **Compilar frontend:**
+   ```bash
+   cd frontend
+   npm run build
+   ```
+
+3. **Configurar variables de entorno** (ver tabla arriba) y ejecutar el JAR:
+   ```bash
+   java -jar backend/target/control-eat-food-*.jar --spring.profiles.active=prod
+   ```
+
+4. **Servir frontend** desde Nginx/Apache apuntando a `frontend/dist/`
+
+---
+
 ## 🔐 Roles y permisos
 
-- **Administrador:** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **registra consumos manuales** (empleado o persona externa) sin validar horario/permiso/duplicado.
-- **Supervisor:** solo consulta (reportes, consumos, estadísticas).
-- **Catering:** registra consumos desde su dispositivo; ve solo lo propio.
+- **Administrador (ADMIN):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **registra consumos manuales** (empleado o persona externa) sin validar horario/permiso/duplicado.
+- **Catering (CATERING):** registra consumos desde su dispositivo; ve solo lo propio. Usuarios: `cateringNorte`, `cateringCentro`, `cateringSur`.
+
+> *Nota: El rol SUPERVISOR fue eliminado en la migración V7.*
 
 ---
 

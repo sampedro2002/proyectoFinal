@@ -308,7 +308,10 @@ export default function Kiosk() {
     return (
       <div className="login-wrap">
         <form className="card login-card" onSubmit={connect} style={{ width: 400 }}>
-          <h1 style={{ fontSize: 22, letterSpacing: 2 }}>🖐 RESTAURANTE</h1>
+          <div className="login-brand">
+            <img src="/logo.png" alt="EatFood" className="login-logo" />
+            <h1 style={{ fontSize: 22, letterSpacing: 2 }}>RESTAURANTE</h1>
+          </div>
           <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 0 }}>
             Conecte este dispositivo al sistema
           </p>

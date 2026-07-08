@@ -28,7 +28,11 @@ export default function Login() {
   return (
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
-        <h1>🍽 Control de Alimentos</h1>
+        <div className="login-brand">
+          <img src="/logo.png" alt="EatFood" className="login-logo" />
+          <h1>EatFood</h1>
+          <p className="login-sub">Control de Consumo de Alimentos</p>
+        </div>
         <div className="field">
           <label>Usuario</label>
           <input value={username} onChange={(e) => setUsername(e.target.value)} required autoFocus />
