@@ -41,3 +41,10 @@ controlEatFoodWeb/TestNet*.java
 
 # Lock local de setup.exe (marca "ya ejecutado" por maquina; no debe versionarse)
 RunWindowns/.setup_completado.lock
+
+# Generado/descargado en tiempo de ejecucion por Inicio.ps1 (NSSM, MySQL Shell portable,
+# config con secretos, logs) -- no debe versionarse
+RunWindowns/tools/
+RunWindowns/config/
+RunWindowns/logs/
+RunWindowns/native/

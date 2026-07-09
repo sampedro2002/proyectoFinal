@@ -1,51 +1,68 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api, { setAuthFailureHandler } from '../api/client.js';
+import api, { setAccessToken, setAuthFailureHandler } from '../api/client.js';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
+function pickUser(data) {
+  const { id, username, fullName, roles, restaurantId } = data;
+  return { id, username, fullName, roles, restaurantId };
+}
+
 export function AuthProvider({ children }) {
   const navigate = useNavigate();
-  const [user, setUser] = useState(() => {
-    try {
-      const raw = localStorage.getItem('user');
-      return raw ? JSON.parse(raw) : null;
-    } catch (_) {
-      localStorage.removeItem('user');
-      return null;
-    }
-  });
+  const [user, setUser] = useState(null);
+  // true hasta que el refresh silencioso inicial resuelve; evita que las rutas
+  // protegidas redirijan a /login antes de saber si la cookie sigue siendo válida.
+  const [loading, setLoading] = useState(true);
+
+  const clearSession = useCallback(() => {
+    setAccessToken(null);
+    setUser(null);
+  }, []);
 
   const logout = useCallback(() => {
-    const refreshToken = localStorage.getItem('refreshToken');
-    if (refreshToken) api.post('/auth/logout', { refreshToken }).catch(() => {});
-    localStorage.removeItem('accessToken');
-    localStorage.removeItem('refreshToken');
-    localStorage.removeItem('user');
-    setUser(null);
+    api.post('/auth/logout').catch(() => {});
+    clearSession();
     navigate('/login');
-  }, [navigate]);
+  }, [navigate, clearSession]);
 
   useEffect(() => {
-    setAuthFailureHandler(() => logout());
-  }, [logout]);
+    setAuthFailureHandler(() => clearSession());
+  }, [clearSession]);
+
+  // Al montar, intenta renovar la sesión con el refreshToken de la cookie httpOnly.
+  // Sustituye al antiguo localStorage.getItem('user'): como el token ya no persiste
+  // en el navegador, la sesión "se recuerda" del lado del servidor, no del cliente.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.post('/auth/refresh');
+        if (cancelled) return;
+        setAccessToken(data.accessToken);
+        setUser(pickUser(data));
+      } catch (_) {
+        if (!cancelled) clearSession();
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [clearSession]);
 
   async function login(username, password) {
     const { data } = await api.post('/auth/login', { username, password });
-    localStorage.setItem('accessToken', data.accessToken);
-    localStorage.setItem('refreshToken', data.refreshToken);
-    // Persistir sólo lo necesario para no exponer más datos de la cuenta.
-    const { id, fullName, roles, restaurantId } = data;
-    localStorage.setItem('user', JSON.stringify({ id, fullName, roles, restaurantId }));
-    setUser(data);
+    setAccessToken(data.accessToken);
+    setUser(pickUser(data));
     return data;
   }
 
   const hasRole = (...roles) => !!user?.roles?.some((r) => roles.includes(r));
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

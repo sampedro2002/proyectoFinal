@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- Permite tráfico HTTP (sin cifrar) para el servidor local y pruebas -->
+    <!-- Permite tráfico HTTP (sin cifrar) hacia el backend, cuya URL el usuario configura
+         libremente en Ajustes (o aprovisiona por QR) apuntando a una IP de la LAN del
+         restaurante. Android network_security_config NO soporta rangos CIDR en <domain>
+         (solo hostnames/IPs exactos, ver docs oficiales), así que no es posible restringir
+         esto de forma declarativa a "cualquier IP privada" sin arriesgar romper la conexión
+         real del kiosco a su servidor. Riesgo aceptado de forma consciente para un despliegue
+         de LAN cerrada; si el backend se expone con dominio público, debe servirse por HTTPS
+         (ver PUBLIC_URL) y configurarse la URL del servidor con https:// en Ajustes. -->
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />

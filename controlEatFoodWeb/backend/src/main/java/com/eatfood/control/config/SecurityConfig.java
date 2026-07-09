@@ -36,11 +36,14 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
-            // CSRF deshabilitado de forma segura: la API es stateless (SessionCreationPolicy.STATELESS)
-            // y no usa cookies de sesión. La autenticación viaja en el header Authorization: Bearer <JWT>,
-            // que el navegador NO adjunta automáticamente en peticiones cross-site, por lo que no existe
-            // el vector clásico de CSRF (que depende del envío automático de cookies). Si en el futuro el
-            // token se moviera a una cookie, habría que rehabilitar CSRF o usar cookies SameSite=Strict.
+            // CSRF deshabilitado de forma segura: la API es stateless (SessionCreationPolicy.STATELESS).
+            // El access token viaja en el header Authorization: Bearer <JWT>, que el navegador NO adjunta
+            // automáticamente en peticiones cross-site, por lo que no existe el vector clásico de CSRF
+            // (que depende del envío automático de cookies) para el resto de la API.
+            // El refresh token del cliente web SÍ viaja en una cookie (ver AuthController), pero está
+            // acotada a Path=/api/auth y marcada SameSite=Strict: el navegador no la adjunta en peticiones
+            // originadas desde otro sitio, que es precisamente lo que CSRF explota. Con eso el riesgo queda
+            // cubierto sin necesitar el token de CSRF de Spring Security.
             .csrf(csrf -> csrf.disable())
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             // ── Cabeceras de seguridad (defensa en profundidad) ──────────────────
@@ -95,7 +98,9 @@ public class SecurityConfig {
         CorsConfiguration config = new CorsConfiguration();
         config.setAllowedOrigins(Arrays.asList(props.getCors().getAllowedOrigins().split(",")));
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
+        // Lista explícita en vez de "*": con allowCredentials(true) un comodín de headers
+        // es una combinación frágil de mantener; el frontend solo necesita estos dos.
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
         config.setAllowCredentials(true);
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);

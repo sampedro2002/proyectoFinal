@@ -1,6 +1,9 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
 
+const ROLE_LABELS = { ADMIN: 'Administrador', CATERING: 'Restaurante' };
+const roleLabel = (name) => ROLE_LABELS[name] || name;
+
 export default function Layout() {
   const { user, logout, hasRole } = useAuth();
   return (
@@ -28,7 +31,7 @@ export default function Layout() {
       <main className="content">
         <div className="topbar">
           <div />
-          <div className="user">{user?.fullName} · {user?.roles?.join(', ')}</div>
+          <div className="user">{user?.fullName} · {user?.roles?.map(roleLabel).join(', ')}</div>
         </div>
         <Outlet />
       </main>

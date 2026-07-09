@@ -53,13 +53,17 @@ export function setWsUrl(url) {
 }
 
 export class ZkFingerClient {
-  constructor({ onStatus, onProgress, wsUrl } = {}) {
+  constructor({ onStatus, onProgress, wsUrl, getAccessToken } = {}) {
     this.ws = null;
     this.ready = false;
     this.onStatus = onStatus || (() => {});
     this.onProgress = onProgress || (() => {});
     this.onCapture = null;
     this._pendingCapture = null;
+    // El accessToken ya no vive en localStorage (ver api/client.js): quien necesite
+    // autenticar el WebSocket como admin debe pasar un getter explícito. Sin él, se
+    // conecta sin JWT (ruta del Kiosk, que se autentica con deviceToken).
+    this.getAccessToken = getAccessToken || (() => '');
     // Permite sobrescribir la URL por instancia; si no, usa la guardada/default
     this.wsUrl = wsUrl || getWsUrl();
     this.heartbeatTimer = null;
@@ -73,7 +77,7 @@ export class ZkFingerClient {
   async connect() {
     return new Promise((resolve, reject) => {
       try {
-        const token = localStorage.getItem('accessToken') || '';
+        const token = this.getAccessToken() || '';
         let devToken = '';
         try {
           const session = JSON.parse(localStorage.getItem('kioskSession'));

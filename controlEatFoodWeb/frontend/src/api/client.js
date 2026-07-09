@@ -1,13 +1,20 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api' });
+const api = axios.create({ baseURL: '/api', withCredentials: true });
+
+// El accessToken vive solo en memoria (nunca en localStorage/sessionStorage): un XSS que
+// logre ejecutar JS no puede leerlo del almacenamiento del navegador porque no queda ahí.
+// Se pierde a propósito al recargar la página; AuthContext lo repone con un refresh
+// silencioso contra la cookie httpOnly del refreshToken (ver /auth/refresh).
+let accessTokenMemory = null;
+export function getAccessToken() { return accessTokenMemory; }
+export function setAccessToken(token) { accessTokenMemory = token; }
 
 let onAuthFailure = () => {};
 export function setAuthFailureHandler(fn) { onAuthFailure = fn; }
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+  if (accessTokenMemory) config.headers.Authorization = `Bearer ${accessTokenMemory}`;
   return config;
 });
 
@@ -25,16 +32,14 @@ api.interceptors.response.use(
 
     if (status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true;
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (!refreshToken) { onAuthFailure(); return Promise.reject(error); }
       try {
-        refreshing = refreshing || axios.post('/api/auth/refresh', { refreshToken });
+        // Sin body: el refreshToken viaja en la cookie httpOnly (Path=/api/auth) que el
+        // navegador adjunta solo gracias a withCredentials. axios plano (no `api`) evita
+        // reentrar en este mismo interceptor.
+        refreshing = refreshing || axios.post('/api/auth/refresh', undefined, { withCredentials: true });
         const { data } = await refreshing;
         if (!data?.accessToken) { onAuthFailure(); return Promise.reject(error); }
-        localStorage.setItem('accessToken', data.accessToken);
-        // Sólo sobrescribir el refreshToken si el backend entregó uno nuevo;
-        // si no, conservamos el anterior para no dejarlo como "undefined".
-        if (data?.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+        setAccessToken(data.accessToken);
         original.headers.Authorization = `Bearer ${data.accessToken}`;
         return api(original);
       } catch (e) {
@@ -45,8 +50,8 @@ api.interceptors.response.use(
       }
     }
 
-    // 403 sin token en localStorage significa sesión perdida, no falta de permisos
-    if (status === 403 && !localStorage.getItem('accessToken')) {
+    // 403 sin token en memoria significa sesión perdida, no falta de permisos
+    if (status === 403 && !accessTokenMemory) {
       onAuthFailure();
     }
 

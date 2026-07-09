@@ -32,6 +32,9 @@ public class StartupSecurityValidator implements ApplicationRunner {
     private static final String INSECURE_JWT_DEFAULT =
             "Y29udHJvbC1lYXQtZm9vZC1zZWNyZXQta2V5LWNoYW5nZS1pbi1wcm9kdWN0aW9uLTEyMzQ1Ng==";
 
+    /** Placeholder no funcional de application.yml; jamás debe usarse en producción. */
+    private static final String INSECURE_DB_PASSWORD_DEFAULT = "changeme-set-DB_PASSWORD-env-var";
+
     private final AppProperties props;
     private final Environment env;
 
@@ -46,6 +49,10 @@ public class StartupSecurityValidator implements ApplicationRunner {
         String bioKey = props.getBiometric().getEncryptionKey();
         boolean bioInsecure = bioKey == null || bioKey.isBlank();
 
+        String dbPassword = env.getProperty("spring.datasource.password");
+        boolean dbPasswordInsecure = dbPassword == null || dbPassword.isBlank()
+                || INSECURE_DB_PASSWORD_DEFAULT.equals(dbPassword.trim());
+
         if (production) {
             if (jwtInsecure) {
                 throw new IllegalStateException(
@@ -57,6 +64,11 @@ public class StartupSecurityValidator implements ApplicationRunner {
                         "BIOMETRIC_ENCRYPTION_KEY no está definida. En producción es obligatoria para " +
                         "cifrar las plantillas biométricas. Defina la variable de entorno con un valor aleatorio (mín. 16 bytes).");
             }
+            if (dbPasswordInsecure) {
+                throw new IllegalStateException(
+                        "DB_PASSWORD no está definida o usa el placeholder por defecto. " +
+                        "Defina la variable de entorno DB_PASSWORD con la contraseña real de la base de datos.");
+            }
             log.info("[SECURITY] Validación de secretos de producción superada.");
         } else {
             if (jwtInsecure) {
@@ -64,6 +76,9 @@ public class StartupSecurityValidator implements ApplicationRunner {
             }
             if (bioInsecure) {
                 log.warn("[SECURITY] BIOMETRIC_ENCRYPTION_KEY vacía: se usará la clave por defecto. NO usar así en producción.");
+            }
+            if (dbPasswordInsecure) {
+                log.warn("[SECURITY] DB_PASSWORD usa el placeholder por defecto. NO usar así en producción.");
             }
         }
     }

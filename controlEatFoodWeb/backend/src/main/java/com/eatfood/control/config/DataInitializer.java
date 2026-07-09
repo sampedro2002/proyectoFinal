@@ -10,15 +10,22 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.security.SecureRandom;
 import java.util.Set;
 
 /**
- * Garantiza credenciales utilizables tras las migraciones Flyway:
- *  - admin / Admin123*
- *  - un usuario CATERING por cada restaurant (usuario = slug del nombre, clave = restaurant123)
+ * Garantiza credenciales utilizables tras las migraciones Flyway.
+ * Fuera de producción usa contraseñas fijas conocidas (admin/Admin123*,
+ * restaurantXxx/restaurant123) para no entorpecer el desarrollo local.
+ * En producción (perfil {@code prod}) genera una contraseña aleatoria de un
+ * solo uso por usuario y la imprime una vez en el log de arranque: así ningún
+ * despliegue nuevo queda con una credencial por defecto públicamente conocida
+ * (ver StartupSecurityValidator, mismo criterio aplicado a JWT/biometría).
  * Las contraseñas se cifran con el PasswordEncoder real (BCrypt) para evitar hashes inválidos en el seed SQL.
  */
 @Slf4j
@@ -27,19 +34,31 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
 
+    private static final String DEV_ADMIN_PASSWORD = "Admin123*";
+    private static final String DEV_RESTAURANT_PASSWORD = "restaurant123";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
     private final AppUserRepository userRepository;
     private final RestaurantRepository restaurantRepository;
     private final RoleRepository roleRepository;
     private final PasswordEncoder passwordEncoder;
+    private final Environment env;
 
     @Override
     public void run(String... args) {
+        boolean production = env.acceptsProfiles(Profiles.of("prod"));
+
         // Asegurar contraseña válida del admin
         userRepository.findByUsername("admin").ifPresent(admin -> {
             if (admin.getPasswordHash() == null || !admin.getPasswordHash().startsWith("$2")) {
-                admin.setPasswordHash(passwordEncoder.encode("Admin123*"));
+                String pwd = production ? generateOneTimePassword() : DEV_ADMIN_PASSWORD;
+                admin.setPasswordHash(passwordEncoder.encode(pwd));
                 userRepository.save(admin);
-                log.info("Contraseña del usuario 'admin' inicializada (Admin123*).");
+                if (production) {
+                    log.warn("[SECURITY] Contraseña de 'admin' generada al azar (solo se muestra esta vez): {}", pwd);
+                } else {
+                    log.info("Contraseña del usuario 'admin' inicializada ({}).", DEV_ADMIN_PASSWORD);
+                }
             }
         });
 
@@ -51,18 +70,31 @@ public class DataInitializer implements CommandLineRunner {
         for (Restaurant restaurant : restaurantRepository.findAll()) {
             String username = restaurantUsername(restaurant.getName());
             if (!userRepository.existsByUsername(username)) {
+                String pwd = production ? generateOneTimePassword() : DEV_RESTAURANT_PASSWORD;
                 AppUser user = AppUser.builder()
                         .username(username)
-                        .passwordHash(passwordEncoder.encode("restaurant123"))
+                        .passwordHash(passwordEncoder.encode(pwd))
                         .fullName("Operador " + restaurant.getName())
                         .enabled(true)
                         .restaurant(restaurant)
                         .roles(Set.of(restaurantRole))
                         .build();
                 userRepository.save(user);
-                log.info("Usuario de restaurant creado: {} (clave: restaurant123) -> {}", username, restaurant.getName());
+                if (production) {
+                    log.warn("[SECURITY] Usuario de restaurant creado: {} -> {} (clave generada al azar, solo se muestra esta vez: {})",
+                            username, restaurant.getName(), pwd);
+                } else {
+                    log.info("Usuario de restaurant creado: {} (clave: {}) -> {}", username, DEV_RESTAURANT_PASSWORD, restaurant.getName());
+                }
             }
         }
+    }
+
+    /** Contraseña aleatoria (no persistida en código fuente) para el primer arranque en producción. */
+    private static String generateOneTimePassword() {
+        byte[] bytes = new byte[18];
+        RANDOM.nextBytes(bytes);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     /**

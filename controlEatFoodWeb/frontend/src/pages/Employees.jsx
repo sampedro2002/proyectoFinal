@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import api from '../api/client.js';
+import api, { getAccessToken } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { ZkFingerClient } from '../biometric/zkfinger.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
@@ -179,6 +179,7 @@ export default function Employees() {
     try {
       setBioStatus('connecting');
       const client = new ZkFingerClient({
+        getAccessToken,
         onStatus: (s) => {
           if (isStale()) return;
           if (s === 'no-device' || s === 'error' || s === 'disconnected') {

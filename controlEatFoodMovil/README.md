@@ -86,11 +86,12 @@ Asegúrate de que el backend del proyecto `controlEatFoodWeb` esté corriendo en
 **Para desarrollo:** Sigue las instrucciones en [controlEatFoodWeb/README.md](../controlEatFoodWeb/README.md).
 
 **Para producción (Windows Server):** Usa el instalador automatizado:
-```powershell
-cd ../RunWindowns
-.\install.ps1
+```cmd
+cd ..\RunWindowns
+Inicio.bat
+:: Elegir la opcion [2] Produccion
 ```
-El instalador configura el backend como servicio de Windows, conecta a base de datos remota (Linux), y genera los archivos de producción automáticamente.
+El instalador configura el backend como servicio de Windows, conecta a un servidor MySQL remoto, y genera los archivos de producción automáticamente.
 
 ### 2. Configurar la URL del API
 

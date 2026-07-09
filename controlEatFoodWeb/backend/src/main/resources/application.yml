@@ -2,6 +2,9 @@ server:
   port: 3000
   servlet:
     context-path: /
+  # Respeta X-Forwarded-Proto de un proxy inverso (nginx/PUBLIC_URL con TLS) para que
+  # request.isSecure() sea correcto y la cookie httpOnly de refresh se marque Secure.
+  forward-headers-strategy: framework
   compression:
     enabled: true
     mime-types: application/json,application/xml,text/html,text/plain,text/css,application/javascript
@@ -11,9 +14,11 @@ spring:
   application:
     name: control-eat-food
   datasource:
-    url: ${DB_URL:jdbc:mysql://localhost:3306/control_eat_food?createDatabaseIfNotExist=true&serverTimezone=America/Guayaquil}
+    url: ${DB_URL:jdbc:mysql://localhost:3306/control_almuerzos?createDatabaseIfNotExist=true&serverTimezone=America/Guayaquil}
     username: ${DB_USER:admin}
-    password: ${DB_PASSWORD:BN2002sg}
+    # Placeholder no funcional: nunca un secreto real. Debe definirse DB_PASSWORD por
+    # variable de entorno; StartupSecurityValidator bloquea el arranque en prod si no se hizo.
+    password: ${DB_PASSWORD:changeme-set-DB_PASSWORD-env-var}
     hikari:
       maximum-pool-size: 15
       minimum-idle: 3
@@ -38,12 +43,19 @@ spring:
     # Si es una base de datos existente con tablas creadas manualmente, cambie a true y use baseline-version: 2.
     baseline-on-migrate: false
     locations: classpath:db/migration
+    # Debe estar en false para que app.dev.flyway-clean-on-start pueda limpiar el esquema.
+    clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}
   jackson:
     time-zone: America/Guayaquil
     serialization:
       write-dates-as-timestamps: false
 
 app:
+  dev:
+    # Si es true, borra TODO el esquema (flyway clean) antes de migrar en cada arranque.
+    # Requiere ademas spring.flyway.clean-disabled=false (FLYWAY_CLEAN_DISABLED=false).
+    # Dejar en false salvo que se necesite forzar una recreacion limpia puntual.
+    flyway-clean-on-start: ${FLYWAY_CLEAN_ON_START:false}
   # URL pública canónica del backend (sin /api). Defínala en despliegues con dominio/proxy
   # inverso, p. ej. PUBLIC_URL=https://catering.midominio.com. Vacío = se detecta por red/petición.
   public-url: ${PUBLIC_URL:}

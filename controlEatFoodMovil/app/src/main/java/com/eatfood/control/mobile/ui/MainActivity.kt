@@ -144,7 +144,8 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                Text("${user.fullName ?: user.username ?: ""} · ${roles.joinToString(", ")}",
+                val roleLabels = roles.joinToString(", ") { when (it) { "ADMIN" -> "Administrador"; "CATERING" -> "Restaurante"; else -> it } }
+                Text("${user.fullName ?: user.username ?: ""} · $roleLabels",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 20.dp, top = 10.dp, bottom = 12.dp))

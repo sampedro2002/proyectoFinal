@@ -253,7 +253,7 @@ public class ExportService {
 
     public byte[] toPdf(List<ConsumptionRow> rows, String title) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Document doc = new Document(PageSize.A4.rotate(), 28, 28, 92, 40);
+            Document doc = new Document(PageSize.A4, 28, 28, 92, 40);
             PdfWriter writer = PdfWriter.getInstance(doc, out);
             writer.setPageEvent(new BrandPageEvent());
             doc.open();
@@ -554,7 +554,7 @@ public class ExportService {
     public byte[] kioskDailyPdf(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            Document doc = new Document(PageSize.A4.rotate(), 28, 28, 92, 40);
+            Document doc = new Document(PageSize.A4, 28, 28, 92, 40);
             PdfWriter writer = PdfWriter.getInstance(doc, out);
             writer.setPageEvent(new BrandPageEvent());
             doc.open();

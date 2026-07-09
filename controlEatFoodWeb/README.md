@@ -80,7 +80,7 @@ controlEatFood/
 El sistema está configurado para utilizar **MySQL** (por ejemplo, mediante una instancia en Docker `mi-mysql` con puerto `3306`). 
 
 Para iniciar con una base de datos limpia:
-- Asegúrate de que las bases de datos `control_eat_food` y `registerfoot` estén creadas.
+- Asegúrate de que las bases de datos `control_almuerzos` y `registerfoot` estén creadas.
 - Flyway creará el esquema y cargará los datos iniciales automáticamente al arrancar el backend.
 
 *Notas de migración:*
@@ -102,7 +102,7 @@ Para iniciar con una base de datos limpia:
 ```bash
 cd backend
 # Variables (opcionales; ver application.yml para valores por defecto)
-export DB_URL=jdbc:mysql://localhost:3306/control_eat_food
+export DB_URL=jdbc:mysql://localhost:3306/control_almuerzos
 export DB_USER=root
 export DB_PASSWORD=BN2002sg
 export JWT_SECRET=<clave-base64-256bits>
@@ -121,7 +121,7 @@ mvn spring-boot:run
 | Variable | Default | Descripción |
 |----------|---------|-------------|
 | `PUBLIC_URL` | — | URL pública canónica del backend (opcional, para proxies y códigos QR). |
-| `DB_URL` | `jdbc:mysql://localhost:3306/control_eat_food?...` | URL JDBC de MySQL |
+| `DB_URL` | `jdbc:mysql://localhost:3306/control_almuerzos?...` | URL JDBC de MySQL |
 | `DB_USER` | `admin` | Usuario de BD |
 | `DB_PASSWORD` | — | Contraseña de BD (definir siempre en producción) |
 | `JWT_SECRET` | — | Clave Base64 (mín. 256 bits). **Definir siempre en producción.** |
@@ -152,7 +152,7 @@ npm run dev              # http://localhost:5173
 | Rol | Usuario | Contraseña |
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
-| Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `catering123` |
+| Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `restaurant123` |
 
 > Las contraseñas se cifran con BCrypt al primer arranque (`DataInitializer`).
 > **Cámbialas en producción.**
@@ -165,16 +165,15 @@ npm run dev              # http://localhost:5173
 
 Para desplegar en un servidor Windows (producción), utiliza el **instalador automatizado**:
 
-```powershell
-# Ejecutar PowerShell como Administrador
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```cmd
 cd RunWindowns
-.\install.ps1
+Inicio.bat
+:: Elegir la opcion [2] Produccion (se auto-eleva a Administrador via UAC)
 ```
 
 **El instalador interactivo realiza:**
 - ✅ Verifica/instala Java 21, Node.js, Maven
-- ✅ Configura base de datos **local o remota** (MySQL en servidor Linux)
+- ✅ Configura base de datos: se conecta directo a un **servidor MySQL remoto** (sin Docker), con opción de crear la BD/usuario ahí mismo
 - ✅ Prueba conexión TCP y autenticación MySQL antes de continuar
 - ✅ Genera automáticamente JWT_SECRET y BIOMETRIC_ENCRYPTION_KEY
 - ✅ Compila backend (JAR) y frontend (dist)
@@ -191,8 +190,9 @@ nssm edit ControlEatFood            # Editar configuración avanzada
 ```
 
 **Desinstalación:**
-```powershell
-.\uninstall.ps1
+```cmd
+Inicio.bat
+:: Elegir [2] Produccion -> [4] Desinstalar
 ```
 
 ### Instalación Manual (Alternativa)

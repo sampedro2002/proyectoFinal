@@ -14,7 +14,10 @@ import ServerQr from './pages/ServerQr.jsx';
 import Kiosk from './pages/Kiosk.jsx';
 
 function Protected({ children, roles }) {
-  const { user, hasRole } = useAuth();
+  const { user, loading, hasRole } = useAuth();
+  // Mientras se resuelve el refresh silencioso inicial no se sabe aún si hay sesión
+  // válida (cookie httpOnly); redirigir aquí produciría un salto a /login en cada F5.
+  if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (roles && !hasRole(...roles)) return <Navigate to="/" replace />;
   return children;
