@@ -38,3 +38,6 @@ controlEatFoodWeb/backend/src/main/resources/application-prod.yml
 # Artefactos temporales / de trabajo
 *.patch
 controlEatFoodWeb/TestNet*.java
+
+# Lock local de setup.exe (marca "ya ejecutado" por maquina; no debe versionarse)
+RunWindowns/.setup_completado.lock

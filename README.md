@@ -14,6 +14,7 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 
 | Archivo | Propósito |
 |---------|-----------|
+| `Inicio.bat` | **Punto de entrada único**: menú que permite preparar el entorno (dev), instalar o desinstalar el servicio (producción) |
 | `setup_env.bat` | Configuración de entorno de **desarrollo** (Java, Node, DB local, dependencias, SDK) |
 | `install.ps1` | Instalador automatizado de **producción** (interactivo, servicio Windows, DB remota) |
 | `uninstall.ps1` | Desinstalador de producción (elimina servicio, firewall, archivos) |
@@ -21,7 +22,7 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 | `config/` | Configuración generada por `install.ps1` (install_config.json, application-prod.yml) |
 | `logs/` | Logs de instalación y del servicio |
 
-**Desarrollo:** `setup_env.bat` prepara el entorno local con Docker para MySQL.
+**Desarrollo:** `setup_env.bat` prepara el entorno local con Docker para MySQL. Se recomienda ejecutar `Inicio.bat` y elegir la opción [1] en vez de llamarlo directamente.
 
 **Producción:** `install.ps1` es un instalador guiado que permite:
 - Conectar a base de datos MySQL **local o remota** (servidor Linux)
@@ -43,10 +44,10 @@ Dependiendo de tu sistema operativo, sigue las instrucciones para preparar Java,
 
 #### 💻 En Windows
 1. Abre una terminal de comandos (CMD o PowerShell) en la raíz de este proyecto.
-2. Dirígete a la carpeta `RunWindowns` y ejecuta el script de configuración:
+2. Dirígete a la carpeta `RunWindowns` y ejecuta `Inicio.bat`, luego elige la opción **[1] Preparar Entorno Local**:
    ```cmd
    cd RunWindowns
-   setup_env.bat
+   Inicio.bat
    ```
    *El script verificará e instalará automáticamente Java 21 y Node.js (vía Winget), e intentará configurar el contenedor de base de datos MySQL (`control-mysql` en Docker) o un servidor MySQL local.*
 3. **Instalar el Driver/Agente del Lector Biométrico**:
@@ -91,11 +92,11 @@ Para desplegar el sistema en un entorno de producción, sigue estas directrices 
 
 El proyecto incluye un **instalador automatizado** para Windows Server que guía paso a paso la configuración del entorno de producción:
 
-```powershell
-# Ejecutar PowerShell como Administrador
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```cmd
 cd RunWindowns
-.\install.ps1
+Inicio.bat
+:: Elegir la opción [2] Instalar Servicio (Modo Produccion)
+:: Se solicitarán permisos de Administrador automáticamente (UAC)
 ```
 
 **El instalador interactivo permite:**
