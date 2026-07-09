@@ -912,7 +912,15 @@ function Install-Full {
     }
     Write-Host "  Aplicacion:   http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)  (API + frontend, mismo puerto)" -ForegroundColor Cyan
     Write-Host "  Swagger:      http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)/swagger-ui.html" -ForegroundColor Cyan
-    Write-Host "  DB:           $($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)" -ForegroundColor Cyan
+    Write-Host "  ------------------------------------------------------------" -ForegroundColor DarkGray
+    Write-Host "  CONFIGURACIONES APLICADAS:" -ForegroundColor Yellow
+    Write-Host "  Base de Datos:  $($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)" -ForegroundColor Cyan
+    Write-Host "  Usuario BD:     $($dbConfig.User)" -ForegroundColor Cyan
+    Write-Host "  Firewall:       Regla entrante (TCP) creada en el puerto $($prodConfig.BackendPort)" -ForegroundColor Cyan
+    Write-Host "  CORS Origins:   $($prodConfig.CorsOrigins)" -ForegroundColor Cyan
+    Write-Host "  Rate Limit:     $(if($prodConfig.RateLimitEnabled -eq 'true'){'Activado'}else{'Desactivado'})" -ForegroundColor Cyan
+    Write-Host "  JWT Secret:     [Generado y Guardado de forma segura]" -ForegroundColor Cyan
+    Write-Host "  ------------------------------------------------------------" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Config:       $ConfigFile" -ForegroundColor DarkGray
     Write-Host "  Log:          $LogFile" -ForegroundColor DarkGray
