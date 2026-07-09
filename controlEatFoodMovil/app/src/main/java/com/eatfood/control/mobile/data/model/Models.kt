@@ -76,8 +76,11 @@ data class RestaurantResponse(
 data class MealTypeResponse(val id: Long, val code: String, val name: String, val active: Boolean, val sortOrder: Int)
 
 data class ScheduleRequest(val mealTypeId: Long, val startTime: String, val endTime: String, val active: Boolean?)
+
+/** Request para actualizar el horario general (sin mealTypeId, igual que la web). */
+data class GeneralScheduleRequest(val startTime: String, val endTime: String, val active: Boolean?)
 data class ScheduleResponse(
-    val id: Long, val mealTypeId: Long, val mealTypeName: String?,
+    val id: Long, val mealTypeId: Long? = null, val mealTypeName: String? = null,
     val startTime: String?, val endTime: String?, val active: Boolean
 )
 
@@ -128,6 +131,12 @@ data class TodayFeedEntry(
     val employeeName: String?,
     val mealName: String?,
     val time: String?
+)
+
+/** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
+data class TodayFeedResponse(
+    val restaurantName: String?,
+    val entries: List<TodayFeedEntry>?
 )
 
 // ── Reportes ─────────────────────────────────────────────────────────────────

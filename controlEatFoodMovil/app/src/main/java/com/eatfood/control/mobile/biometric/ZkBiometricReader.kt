@@ -20,7 +20,10 @@ import kotlinx.coroutines.withTimeout
 
 class ZkBiometricReader(private val context: Context) : BiometricReader {
 
-    private var sensor: FingerprintSensor? = null
+    // @Volatile: open() escribe `sensor` en Dispatchers.IO; close() puede correr en el hilo
+    // principal (lo dispara el BroadcastReceiver de desconexión USB de KioskActivity). Sin
+    // esto, la escritura de open() podría no ser visible aún para el hilo que llama close().
+    @Volatile private var sensor: FingerprintSensor? = null
     private val templates = Channel<String>(Channel.CONFLATED)
     @Volatile private var deviceError = false
 
@@ -160,6 +163,8 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
             withTimeout(timeoutMs) { templates.receive() }
         } catch (e: TimeoutCancellationException) {
             throw BiometricException("Tiempo de espera agotado para la captura.")
+        } catch (e: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
+            throw BiometricException("Lector cerrado.")
         }
     }
 
@@ -173,6 +178,10 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
         } catch (e: Exception) {
             Log.w(TAG, "Error cerrando ZK9500", e)
         }
+        // Desbloquea inmediatamente cualquier capture() suspendida en templates.receive():
+        // sin esto, una desconexión USB a mitad de captura no se refleja en la UI hasta
+        // agotar el timeout completo (hasta 20s), aunque el estado ya muestre "Reconectando…".
+        templates.close()
     }
 
     class BiometricException(message: String) : Exception(message)

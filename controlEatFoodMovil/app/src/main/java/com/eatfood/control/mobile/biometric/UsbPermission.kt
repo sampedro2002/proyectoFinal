@@ -14,6 +14,7 @@ import androidx.core.app.NotificationCompat
 import com.eatfood.control.mobile.EatFoodApp
 import com.eatfood.control.mobile.R
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 
 /**
@@ -102,6 +103,14 @@ object UsbPermission {
         val device = findReader(context) ?: return Result.NoDevice
         if (um.hasPermission(device)) return Result.Granted(device)
 
+        // Si el lector se desconecta con el diálogo de permiso del sistema pendiente,
+        // Android normalmente no dispara ACTION_USB_PERMISSION para un dispositivo que ya
+        // no existe: sin este timeout, la corrutina (y con ella el bucle de captura de
+        // KioskActivity) quedaba colgada indefinidamente en "Conectando…".
+        return withTimeoutOrNull(60_000) { ensureWithPrompt(context, um, device) } ?: Result.NoDevice
+    }
+
+    private suspend fun ensureWithPrompt(context: Context, um: UsbManager, device: UsbDevice): Result {
         return suspendCancellableCoroutine { cont ->
             val receiver = object : BroadcastReceiver() {
                 override fun onReceive(c: Context, intent: Intent) {

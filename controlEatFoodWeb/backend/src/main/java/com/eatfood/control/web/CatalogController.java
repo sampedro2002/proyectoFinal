@@ -9,6 +9,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Arrays;
 
 @Tag(name = "Catálogos (restaurants, comidas, horarios)")
 @RestController
@@ -47,5 +48,16 @@ public class CatalogController {
     @PreAuthorize("hasRole('ADMIN')")
     public ScheduleResponse upsertSchedule(@Valid @RequestBody ScheduleRequest req) {
         return catalogService.upsertSchedule(req);
+    }
+
+    // ---- Tipos de comida ----
+    @GetMapping("/meal-types")
+    public List<MealTypeResponse> listMealTypes() {
+        return Arrays.asList(
+            new MealTypeResponse("BREAKFAST", "Desayuno", "Primera comida del día"),
+            new MealTypeResponse("LUNCH", "Almuerzo", "Comida del mediodía"),
+            new MealTypeResponse("DINNER", "Cena", "Comida de la noche"),
+            new MealTypeResponse("SNACK", "Merienda", "Refrigerio entre comidas")
+        );
     }
 }

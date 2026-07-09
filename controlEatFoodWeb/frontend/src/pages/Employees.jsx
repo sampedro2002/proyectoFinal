@@ -46,19 +46,27 @@ export default function Employees() {
   const [bioStatus, setBioStatus]       = useState('idle');
   const [bioMsg, setBioMsg]             = useState('');
   const zkRef = useRef(null);
+  const formIdRef = useRef(null);
+  const loadSeq = useRef(0);
 
 
   async function load() {
+    // Descarta respuestas obsoletas: el debounce y el botón "Buscar"/Enter pueden disparar
+    // varias peticiones en vuelo, y sin esto una respuesta lenta y vieja podía sobrescribir
+    // la lista con resultados que ya no corresponden al texto actual del buscador.
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const { data } = await api.get('/employees', { params: { term, size: 200 } });
+      if (seq !== loadSeq.current) return;
       setItems(data.content || data);
       setError('');
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setItems([]);
       setError(err.response?.data?.message || 'No se pudieron cargar los empleados');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }
 
@@ -79,6 +87,7 @@ export default function Employees() {
   }, [term]);
 
   useEffect(() => {
+    formIdRef.current = form?.id ?? null;
     if (form?.id) loadFp(form.id);
     else setFingerprints([]);
   }, [form?.id]);
@@ -114,6 +123,11 @@ export default function Employees() {
   }
 
   function closeForm() {
+    // Corta cualquier captura de huella en curso; si no, su promesa sigue resolviendo
+    // en segundo plano y termina aplicando su resultado al modal del siguiente empleado
+    // que se abra (ver guardas por formIdRef en enroll()).
+    try { zkRef.current && zkRef.current.close(); } catch (_) {}
+    zkRef.current = null;
     setForm(null);
     setSavedMsg('');
     load();
@@ -155,23 +169,30 @@ export default function Employees() {
 
   async function enroll() {
     if (!form?.id) return;
+    // Fija el empleado objetivo: si el admin cierra este modal o abre el de otro empleado
+    // mientras la captura (hasta 60s) sigue en curso, las actualizaciones de estado de más
+    // abajo se descartan en vez de aplicarse al modal que quedó abierto.
+    const targetId = form.id;
+    const isStale = () => formIdRef.current !== targetId;
     setBioMsg('');
     if (fingerprints.length >= 3) { setBioMsg('Máximo 3 huellas por empleado.'); return; }
     try {
       setBioStatus('connecting');
       const client = new ZkFingerClient({
         onStatus: (s) => {
+          if (isStale()) return;
           if (s === 'no-device' || s === 'error' || s === 'disconnected') {
             setBioStatus('idle');
             setBioMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
           }
         },
         onProgress: (step, total) => {
-          setBioMsg(`Captura ${step}/${total} completada — levante el dedo y vuelva a colocarlo...`);
+          if (!isStale()) setBioMsg(`Captura ${step}/${total} completada — levante el dedo y vuelva a colocarlo...`);
         },
       });
       zkRef.current = client;
       await client.connect();
+      if (isStale()) { client.close(); zkRef.current = null; return; }
       if (!client.ready) {
         setBioStatus('idle');
         setBioMsg('Conecte el ZKTeco9500 al puerto USB para registrar huellas.');
@@ -182,19 +203,22 @@ export default function Employees() {
       const templateB64 = await client.capture(60000, 'register');
       client.close();
       zkRef.current = null;
+      if (isStale()) return;
       setBioStatus('saving');
       setBioMsg('');
       await api.post('/fingerprints/enroll', {
-        employeeId: Number(form.id),
+        employeeId: Number(targetId),
         fingerIndex: Number(fingerIndex),
         templateB64,
       });
+      if (isStale()) return;
       setBioStatus('idle');
       setBioMsg('Huella registrada correctamente.');
-      loadFp(form.id);
+      loadFp(targetId);
     } catch (err) {
       try { zkRef.current && zkRef.current.close(); } catch (_) {}
       zkRef.current = null;
+      if (isStale()) return;
       setBioStatus('idle');
       setBioMsg(err.response?.data?.message || err.message || 'Error al registrar la huella');
     }

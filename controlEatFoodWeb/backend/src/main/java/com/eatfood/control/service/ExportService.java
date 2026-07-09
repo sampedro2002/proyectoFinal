@@ -77,7 +77,7 @@ public class ExportService {
     }
 
     private static final String[] HEADERS =
-            {"Fecha", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
+            {"Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
     private static final String[] EMP_HEADERS =
             {"Código", "Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
@@ -98,6 +98,16 @@ public class ExportService {
               .append(csv(r.mealName())).append(';')
               .append(csv(r.observation())).append('\n');
         }
+        sb.append("\n");
+        sb.append("RESUMEN DE PLATOS").append("\n");
+        Map<String, Long> plateCounts = buildPlateCounts(rows);
+        long total = 0;
+        for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+            sb.append(csv(entry.getKey())).append(':').append(';')
+              .append(entry.getValue()).append('\n');
+            total += entry.getValue();
+        }
+        sb.append("TOTAL").append(':').append(';').append(total).append('\n');
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
@@ -209,6 +219,30 @@ public class ExportService {
                 row.createCell(4).setCellValue(safe(r.mealName()));
                 row.createCell(5).setCellValue(safe(r.observation()));
             }
+
+            // Resumen de platos
+            rn += 1;
+            Row summaryTitle = sheet.createRow(rn++);
+            Cell stCell = summaryTitle.createCell(0);
+            stCell.setCellValue("RESUMEN DE PLATOS");
+            stCell.setCellStyle(headerStyle);
+
+            Map<String, Long> plateCounts = buildPlateCounts(rows);
+            long total = 0;
+            for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+                Row sr = sheet.createRow(rn++);
+                sr.createCell(0).setCellValue(entry.getKey());
+                sr.createCell(1).setCellValue(entry.getValue());
+                total += entry.getValue();
+            }
+            Row totalRow = sheet.createRow(rn);
+            Cell tc0 = totalRow.createCell(0);
+            tc0.setCellValue("TOTAL");
+            tc0.setCellStyle(headerStyle);
+            Cell tc1 = totalRow.createCell(1);
+            tc1.setCellValue(total);
+            tc1.setCellStyle(headerStyle);
+
             for (int i = 0; i < HEADERS.length; i++) sheet.autoSizeColumn(i);
             wb.write(out);
             return out.toByteArray();
@@ -243,6 +277,40 @@ public class ExportService {
                 addBodyCell(table, safe(r.observation()), cf, bg);
             }
             doc.add(table);
+            doc.add(new Paragraph(" "));
+
+            Font sumTitleFont = new Font(Font.HELVETICA, 11, Font.BOLD, BRAND_INK);
+            doc.add(new Paragraph("RESUMEN DE PLATOS", sumTitleFont));
+            doc.add(new Paragraph(" "));
+
+            PdfPTable sumTable = new PdfPTable(2);
+            sumTable.setWidthPercentage(40);
+            sumTable.setHorizontalAlignment(PdfPTable.ALIGN_LEFT);
+            addHeaderRow(sumTable, new String[]{"Tipo de Comida", "Cantidad"});
+
+            Font scf = new Font(Font.HELVETICA, 9);
+            Map<String, Long> plateCounts = buildPlateCounts(rows);
+            long total = 0;
+            boolean zebra2 = false;
+            for (Map.Entry<String, Long> entry : plateCounts.entrySet()) {
+                Color bg = (zebra2 = !zebra2) ? new Color(244, 247, 251) : Color.WHITE;
+                addBodyCell(sumTable, entry.getKey(), scf, bg);
+                addBodyCell(sumTable, String.valueOf(entry.getValue()), scf, bg);
+                total += entry.getValue();
+            }
+            Font tf = new Font(Font.HELVETICA, 10, Font.BOLD, Color.WHITE);
+            PdfPCell totalLabel = new PdfPCell(new Phrase("TOTAL", tf));
+            totalLabel.setBackgroundColor(BRAND_INK);
+            totalLabel.setBorderColor(BRAND_INK);
+            totalLabel.setPadding(5);
+            sumTable.addCell(totalLabel);
+            PdfPCell totalVal = new PdfPCell(new Phrase(String.valueOf(total), tf));
+            totalVal.setBackgroundColor(BRAND_INK);
+            totalVal.setBorderColor(BRAND_INK);
+            totalVal.setPadding(5);
+            sumTable.addCell(totalVal);
+
+            doc.add(sumTable);
             doc.close();
             return out.toByteArray();
         } catch (Exception e) {
@@ -397,7 +465,7 @@ public class ExportService {
     // Reporte diario del Kiosk (con conteo de platos al final)
     // ------------------------------------------------------------------------
     private static final String[] KIOSK_HEADERS =
-            {"#", "Hora", "Cédula", "Empleado", "Comida", "Observación"};
+            {"Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
 
     public byte[] kioskDailyCsv(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
@@ -406,12 +474,11 @@ public class ExportService {
         sb.append("Reporte Diario - ").append(restaurantName)
           .append(" - Fecha: ").append(date.format(DATE_FMT)).append("\n\n");
         sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
-        int num = 1;
         for (ConsumptionRow r : rows) {
-            sb.append(num++).append(';')
-              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+            sb.append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
+              .append(csv(restaurantName)).append(';')
               .append(csv(r.mealName())).append(';')
               .append(csv(r.observation())).append('\n');
         }
@@ -443,13 +510,12 @@ public class ExportService {
                 c.setCellStyle(headerStyle);
             }
             int rn = headerRowIdx + 1;
-            int num = 1;
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(num++);
-                row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
-                row.createCell(2).setCellValue(safe(r.identityCard()));
-                row.createCell(3).setCellValue(safe(r.employeeName()));
+                row.createCell(0).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
+                row.createCell(1).setCellValue(safe(r.identityCard()));
+                row.createCell(2).setCellValue(safe(r.employeeName()));
+                row.createCell(3).setCellValue(safe(restaurantName));
                 row.createCell(4).setCellValue(safe(r.mealName()));
                 row.createCell(5).setCellValue(safe(r.observation()));
             }
@@ -501,14 +567,13 @@ public class ExportService {
             table.setHeaderRows(1);
             addHeaderRow(table, KIOSK_HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
-            int num = 1;
             boolean zebra = false;
             for (ConsumptionRow r : rows) {
                 Color bg = (zebra = !zebra) ? new Color(244, 247, 251) : Color.WHITE;
-                addBodyCell(table, String.valueOf(num++), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);
+                addBodyCell(table, safe(restaurantName), cf, bg);
                 addBodyCell(table, safe(r.mealName()), cf, bg);
                 addBodyCell(table, safe(r.observation()), cf, bg);
             }
@@ -615,10 +680,14 @@ public class ExportService {
     private String csv(String v) {
         if (v == null || v.isEmpty()) return "";
         String s = v.replace(";", ","); // mantener separador ';'
-        boolean needsQuoting = s.indexOf(';') >= 0 || s.indexOf(',') >= 0
+        boolean formulaLike = "=+-@".indexOf(s.charAt(0)) >= 0;
+        // Neutraliza fórmulas anteponiendo un apóstrofo FUERA de las comillas: Excel/Sheets
+        // evalúan un campo que empieza por =/+/-/@ como fórmula sin importar que esté citado
+        // entre comillas, así que citar solo no evita la inyección (CSV injection).
+        if (formulaLike) s = "'" + s;
+        boolean needsQuoting = formulaLike || s.indexOf(';') >= 0 || s.indexOf(',') >= 0
                 || s.indexOf('"') >= 0 || s.indexOf('\n') >= 0 || s.indexOf('\r') >= 0;
-        boolean formulaLike = !s.isEmpty() && "=+-@".indexOf(s.charAt(0)) >= 0;
-        if (needsQuoting || formulaLike) {
+        if (needsQuoting) {
             s = "\"" + s.replace("\"", "\"\"") + "\"";
         }
         return s;
@@ -626,5 +695,18 @@ public class ExportService {
 
     private String safe(String v) {
         return v == null ? "" : v.replace(";", ",");
+    }
+
+    /**
+     * Agrupa los consumos por tipo de comida y cuenta cuántos hay de cada uno.
+     * Se usa tanto en los reportes del Kiosk como en los reportes generales.
+     */
+    private Map<String, Long> buildPlateCounts(List<ConsumptionRow> rows) {
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        for (ConsumptionRow r : rows) {
+            String meal = r.mealName() != null ? r.mealName() : "Sin tipo";
+            counts.merge(meal, 1L, Long::sum);
+        }
+        return counts;
     }
 }

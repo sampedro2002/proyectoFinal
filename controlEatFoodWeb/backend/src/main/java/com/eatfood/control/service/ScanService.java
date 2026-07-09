@@ -49,7 +49,7 @@ public class ScanService {
         Restaurant restaurant = device.getRestaurant();
 
         boolean offline = Boolean.TRUE.equals(req.offline());
-        OffsetDateTime when = req.consumedAt() != null ? req.consumedAt() : OffsetDateTime.now();
+        OffsetDateTime when = req.consumedAt() != null ? req.consumedAt() : OffsetDateTime.now(BUSINESS_ZONE);
         UUID clientUuid = req.clientUuid() != null ? req.clientUuid() : UUID.randomUUID();
 
         log.debug("[SCAN] deviceId={}, restaurantId={}, when={}, clientUuid={}",
@@ -74,7 +74,9 @@ public class ScanService {
         log.debug("[SCAN] MATCH → employeeId={}, score={}",
                 match.get().employeeId(), match.get().score());
 
-        Employee employee = employeeRepository.findById(match.get().employeeId()).orElse(null);
+        // Bloqueo pesimista: serializa escaneos concurrentes del mismo empleado (p. ej. dos
+        // dispositivos o un doble toque) para que el tope diario de comidas se respete siempre.
+        Employee employee = employeeRepository.findByIdForUpdate(match.get().employeeId()).orElse(null);
         if (employee == null || employee.isDeleted() || employee.getStatus() != EmployeeStatus.ACTIVE) {
             log.debug("[SCAN] NOT_ALLOWED → empleado inactivo o eliminado (id={})",
                     employee != null ? employee.getId() : "null");
@@ -85,9 +87,15 @@ public class ScanService {
 
         log.debug("[SCAN] Empleado identificado: id={}, nombre='{}'", employee.getId(), employee.getFullName());
 
-        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Merienda)
-        LocalDate businessDate = when.toLocalDate();
-        MealSelection selection = resolveMealForScan(employee, when.toLocalTime(), businessDate);
+        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Merienda).
+        // Se convierte SIEMPRE a BUSINESS_ZONE antes de leer fecha/hora: `when` puede traer
+        // cualquier offset (dispositivo offline con reloj/zona distinta, backend con TZ de
+        // JVM distinta a Ecuador), y calcular la fecha/hora de negocio con el offset "tal
+        // cual venía" desalinea el tope diario y el chequeo de horario respecto al resto del
+        // sistema (dashboard, feed del kiosk), que sí usan BUSINESS_ZONE de forma consistente.
+        var whenBusiness = when.atZoneSameInstant(BUSINESS_ZONE);
+        LocalDate businessDate = whenBusiness.toLocalDate();
+        MealSelection selection = resolveMealForScan(employee, whenBusiness.toLocalTime(), businessDate);
         if (selection.status() != null && !"OK".equals(selection.status())) {
             log.debug("[SCAN] {} → empleado='{}', hora={}",
                     selection.failReason(), employee.getFullName(), when.toLocalTime());
@@ -147,25 +155,29 @@ public class ScanService {
      */
     private MealSelection resolveMealForScan(Employee employee, LocalTime now, LocalDate date) {
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-        if (sch == null || !sch.contains(now)) {
+        if (sch == null || !sch.isActive() || !sch.contains(now)) {
             return MealSelection.fail("OUT_OF_SCHEDULE", "FUERA DEL HORARIO PERMITIDO", "OUT_OF_SCHEDULE");
         }
-        
-        long count = consumptionRepository.countByEmployeeIdAndBusinessDate(employee.getId(), date);
-        if (count == 0) {
-            if (!employee.isAllowsLunch() && !employee.effectiveSnack()) {
-                return MealSelection.fail("NOT_ALLOWED", "CONSUMO NO PERMITIDO", "NOT_ALLOWED");
-            }
+
+        // Se decide por las comidas YA registradas hoy (no solo por el conteo), para que un
+        // empleado autorizado únicamente a merienda (allowsLunch=false, allowsSnack=true) no
+        // reciba "Desayuno" en su primer escaneo y luego otra "Merienda" en el segundo: su
+        // tope diario es 1 comida, no 2.
+        List<String> consumedToday = consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), date);
+        boolean hadBreakfast = consumedToday.contains("Desayuno");
+        boolean hadSnack = consumedToday.contains("Merienda");
+
+        if (!hadBreakfast && employee.isAllowsLunch()) {
             return MealSelection.ok("Desayuno");
-        } else if (count == 1) {
-            if (employee.effectiveSnack()) { // if allowsSnack is true, allow second scan (Merienda)
-                return MealSelection.ok("Merienda");
-            } else {
-                return MealSelection.fail("DUPLICATE", "CONSUMO YA REGISTRADO", "DUPLICATE");
-            }
-        } else {
-            return MealSelection.fail("DUPLICATE", "LÍMITE ALCANZADO", "DUPLICATE");
         }
+        if (!hadSnack && employee.effectiveSnack()) {
+            return MealSelection.ok("Merienda");
+        }
+        if (consumedToday.isEmpty()) {
+            return MealSelection.fail("NOT_ALLOWED", "CONSUMO NO PERMITIDO", "NOT_ALLOWED");
+        }
+        return MealSelection.fail("DUPLICATE",
+                consumedToday.size() >= 2 ? "LÍMITE ALCANZADO" : "CONSUMO YA REGISTRADO", "DUPLICATE");
     }
 
     private void registerFailed(Long restaurantId, Long deviceId, String reason, Long employeeId) {
@@ -179,11 +191,13 @@ public class ScanService {
      * Feed de consumos del día para el Kiosk. Valida la sesión y actúa como
      * heartbeat: al refrescarse periódicamente mantiene viva (lastSeen) la sesión
      * del dispositivo en uso, evitando que el TTL por inactividad la expire.
+     * También devuelve el nombre actualizado del restaurante para que el cliente
+     * pueda reflejar cambios sin necesidad de reconectar.
      */
     @Transactional
-    public List<TodayEntry> todayFeed(String sessionToken) {
+    public TodayFeedResponse todayFeed(String sessionToken) {
         Device device = deviceService.validateSession(sessionToken);
-        return consumptionRepository
+        List<TodayEntry> entries = consumptionRepository
                 .findByBusinessDateAndRestaurantId(LocalDate.now(BUSINESS_ZONE), device.getRestaurant().getId())
                 .stream()
                 .sorted(Comparator.comparing(Consumption::getConsumedAt).reversed())
@@ -192,6 +206,7 @@ public class ScanService {
                         c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))))
                 .collect(Collectors.toList());
+        return new TodayFeedResponse(device.getRestaurant().getName(), entries);
     }
 
     @Transactional
@@ -252,24 +267,30 @@ public class ScanService {
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
+        String mealName = mealNameForCode(req.mealTypeCode());
 
         Consumption consumption = Consumption.builder()
                 .employee(employee)
                 .restaurant(restaurant)
-                .consumedAt(OffsetDateTime.now())
+                .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
                 .businessDate(businessDate)
                 .observation(blankToNull(req.observation()))
                 .offline(false)
                 .syncStatus(SyncStatus.SYNCED)
-                .mealName("Manual")
+                .mealName(mealName)
                 .clientUuid(UUID.randomUUID())
                 .build();
         consumptionRepository.save(consumption);
 
-        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', restaurant='{}'",
-                employee.getFullName(), restaurant.getName());
+        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', restaurant='{}', comida='{}'",
+                employee.getFullName(), restaurant.getName(), mealName);
         return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), "Manual");
+                employee.getFullName(), mealName);
+    }
+
+    /** Traduce el código de tipo de comida (LUNCH/SNACK) al nombre usado en los reportes. */
+    private static String mealNameForCode(String mealTypeCode) {
+        return "SNACK".equalsIgnoreCase(mealTypeCode) ? "Merienda" : "Desayuno";
     }
 
     /**
@@ -305,23 +326,24 @@ public class ScanService {
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
+        String mealName = mealNameForCode(req.mealTypeCode());
         Consumption consumption = Consumption.builder()
                 .employee(employee)
                 .restaurant(restaurant)
-                .consumedAt(OffsetDateTime.now())
+                .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
                 .businessDate(businessDate)
                 .observation(blankToNull(req.observation()))
                 .offline(false)
                 .syncStatus(SyncStatus.SYNCED)
-                .mealName("Externo")
+                .mealName(mealName)
                 .clientUuid(UUID.randomUUID())
                 .build();
         consumptionRepository.save(consumption);
 
-        log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}'",
-                employee.getFullName(), restaurant.getName());
+        log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}', comida='{}'",
+                employee.getFullName(), restaurant.getName(), mealName);
         return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), "Externo");
+                employee.getFullName(), mealName);
     }
 
     private static String blankToNull(String v) {

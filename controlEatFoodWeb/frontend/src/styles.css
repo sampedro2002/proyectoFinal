@@ -173,7 +173,7 @@ button.password-toggle:hover {
 }
 .kiosk .title { font-size: 26px; color: var(--muted); letter-spacing: 2px; }
 .kiosk .waiting { font-size: 40px; margin: 24px 0; color: var(--accent-2); }
-.kiosk .fingerprint-icon { font-size: 120px; animation: pulse 1.6s infinite; }
+.kiosk .fingerprint-icon { height: 140px; width: auto; animation: pulse 1.6s infinite; }
 @keyframes pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
 .kiosk.success { background: #052e16; }
 .kiosk.error { background: #450a0a; }

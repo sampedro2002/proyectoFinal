@@ -29,7 +29,7 @@ interface ScanApiService {
 
     /** Consumos del día para el panel lateral del kiosco. */
     @GET("scan/today")
-    suspend fun todayFeed(@Query("sessionToken") sessionToken: String): List<TodayFeedEntry>
+    suspend fun todayFeed(@Query("sessionToken") sessionToken: String): TodayFeedResponse
 
     /** Exporta el reporte diario del Kiosk con conteo de platos. */
     @Streaming

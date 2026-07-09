@@ -251,6 +251,7 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
         byte[] tplBuf = new byte[2048];
         IntByReference tplLen = new IntByReference(2048);
         log.info("Esperando huella (modo {})...", continuous ? "continuous" : "scan");
+        long lastPresenceCheck = System.currentTimeMillis();
         while (!Thread.currentThread().isInterrupted() && session.isOpen()) {
             tplLen.setValue(2048);
             int rc = sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, tplBuf, tplLen);
@@ -258,6 +259,7 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
                 byte[] tpl = Arrays.copyOf(tplBuf, tplLen.getValue());
                 log.info("Huella capturada (longitud={}).", tpl.length);
                 sendCaptureResult(session, Base64.getEncoder().encodeToString(tpl));
+                lastPresenceCheck = System.currentTimeMillis();
 
                 if (continuous) {
                     waitForFingerLift(sdk, hDevice, imgBuf);
@@ -269,6 +271,20 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
             } else {
                 log.debug("AcquireFingerprint rc={} (esperando dedo...)", rc);
                 Thread.sleep(200);
+            }
+
+            // AcquireFingerprint no distingue "sin dedo" de "USB desconectado": ambos
+            // devuelven un rc != 0 y el bucle seguiría reintentando para siempre, dejando
+            // la sesión "activa" indefinidamente. Cada ~2s se verifica presencia real del
+            // dispositivo para poder cortar el bucle y avisar al cliente si se desconectó.
+            long now = System.currentTimeMillis();
+            if (continuous && now - lastPresenceCheck > 2000) {
+                lastPresenceCheck = now;
+                if (sdk.ZKFPM_GetDeviceCount() <= 0) {
+                    log.warn("Lector ZKTeco9500 ya no responde (0 dispositivos) — cortando captura continua.");
+                    sendMsg(session, "capture_interrupted");
+                    return;
+                }
             }
         }
     }

@@ -109,6 +109,8 @@ if (Test-Path $NssmExe) {
 # 3. Eliminar reglas de firewall
 Write-Log "Eliminando reglas de firewall..."
 $ruleNames = @(
+    "ControlEatFood (Port 8080)",
+    "ControlEatFood (Port $($config.production.backendPort))",
     "ControlEatFood Backend (Port 8080)",
     "ControlEatFood Backend (Port $($config.production.backendPort))",
     "ControlEatFood Frontend (Port 80)",
@@ -156,6 +158,13 @@ if ($cleanFiles -eq 's') {
     if (Test-Path $prodYmlInResources) {
         Remove-Item -Path $prodYmlInResources -Force
         Write-Log "Eliminado: application-prod.yml del backend" 'SUCCESS'
+    }
+
+    # Frontend integrado como recurso estatico del backend
+    $staticInResources = Join-Path $backendDir "src\main\resources\static"
+    if (Test-Path $staticInResources) {
+        Remove-Item -Path $staticInResources -Recurse -Force
+        Write-Log "Eliminado: static/ (frontend integrado) del backend" 'SUCCESS'
     }
 }
 

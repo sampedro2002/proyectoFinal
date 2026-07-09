@@ -459,58 +459,91 @@ fun SchedulesScreen() {
     val api = remember { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var meals by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
-    var schedules by remember { mutableStateOf<List<ScheduleResponse>>(emptyList()) }
-    var editing by remember { mutableStateOf<MealTypeResponse?>(null) }
+    var startTime by remember { mutableStateOf("12:00") }
+    var endTime by remember { mutableStateOf("13:00") }
+    var loaded by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
 
     suspend fun reload() {
-        schedules = runCatching { api.schedules() }.getOrDefault(emptyList())
-        meals = runCatching { api.mealTypes() }.getOrDefault(emptyList())
+        val schedules = runCatching { api.schedules() }.getOrDefault(emptyList())
+        if (schedules.isNotEmpty()) {
+            val first = schedules.first()
+            startTime = first.startTime?.take(5) ?: "12:00"
+            endTime = first.endTime?.take(5) ?: "13:00"
+        }
+        loaded = true
     }
     LaunchedEffect(Unit) { reload() }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
-        LazyColumn(Modifier.padding(padding).fillMaxSize()) {
-            items(meals) { m ->
-                val sc = schedules.firstOrNull { it.mealTypeId == m.id }
-                RowItem(
-                    title = m.name,
-                    subtitle = if (sc?.startTime != null) "Horario: ${sc.startTime.take(5)} – ${sc.endTime?.take(5)}" else "Sin horario",
-                    trailing = "Editar",
-                    onClick = { editing = m }
-                )
+        Column(
+            Modifier.padding(padding).fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text("Horario general", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(16.dp))
+
+            if (!loaded) {
+                CenterText("Cargando…")
+            } else {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            "Ventana de servicio",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Define el horario en que se permiten los registros de consumo (escaneo de huella).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = startTime,
+                            onValueChange = { startTime = it },
+                            label = { Text("Inicio (HH:mm)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = endTime,
+                            onValueChange = { endTime = it },
+                            label = { Text("Fin (HH:mm)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(16.dp))
+                        Button(
+                            enabled = !saving,
+                            onClick = {
+                                if (!isValidTime(startTime) || !isValidTime(endTime)) {
+                                    scope.launch { snackbar.showSnackbar("Formato de hora inválido. Use HH:mm (ej: 12:00)") }
+                                    return@Button
+                                }
+                                saving = true
+                                scope.launch {
+                                    runCatching {
+                                        api.saveGeneralSchedule(
+                                            GeneralScheduleRequest(startTime.trim(), endTime.trim(), true)
+                                        )
+                                    }.onSuccess {
+                                        snackbar.showSnackbar("Horario guardado correctamente")
+                                        reload()
+                                    }.onFailure {
+                                        snackbar.showSnackbar(it.apiMessage("Error al guardar horario"))
+                                    }
+                                    saving = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (saving) "Guardando…" else "Guardar") }
+                    }
+                }
             }
         }
-    }
-
-    editing?.let { m ->
-        val sc = schedules.firstOrNull { it.mealTypeId == m.id }
-        var start by remember { mutableStateOf(sc?.startTime?.take(5) ?: "12:00") }
-        var end by remember { mutableStateOf(sc?.endTime?.take(5) ?: "13:00") }
-        AlertDialog(
-            onDismissRequest = { editing = null },
-            title = { Text("Horario — ${m.name}") },
-            text = {
-                Column {
-                    OutlinedTextField(start, { start = it }, label = { Text("Inicio (HH:mm)") }, singleLine = true)
-                    OutlinedTextField(end, { end = it }, label = { Text("Fin (HH:mm)") }, singleLine = true)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (!isValidTime(start) || !isValidTime(end)) {
-                        scope.launch { snackbar.showSnackbar("Formato de hora inválido. Use HH:mm (ej: 12:00)") }
-                        return@TextButton
-                    }
-                    scope.launch {
-                        runCatching { api.saveSchedule(ScheduleRequest(m.id, start.trim(), end.trim(), true)) }
-                            .onSuccess { editing = null; reload() }
-                            .onFailure { snackbar.showSnackbar(it.apiMessage("Error al guardar")) }
-                    }
-                }) { Text("Guardar") }
-            },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }
-        )
     }
 }
 

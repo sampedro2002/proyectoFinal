@@ -60,6 +60,11 @@ public final class ScanDtos {
             String mealName,
             String time) {}
 
+    /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
+    public record TodayFeedResponse(
+            String restaurantName,
+            List<TodayEntry> entries) {}
+
     /** Registro manual de consumo (sin huella) — solo ADMIN. */
     public record ManualScanRequest(
             @NotNull Long employeeId,

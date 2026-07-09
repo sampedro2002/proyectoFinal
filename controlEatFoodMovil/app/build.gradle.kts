@@ -18,7 +18,7 @@ android {
 
         // URL del backend por defecto. 10.0.2.2 = host del PC visto desde el emulador.
         // En un teléfono real se cambia desde la pantalla de Ajustes de la app.
-        buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://10.0.2.2:8080\"")
+        buildConfigField("String", "DEFAULT_SERVER_URL", "\"http://10.0.2.2:3000\"")
 
         ndk {
             // Solo ARM: el SDK ZKTeco no distribuye .so para x86/x86_64.

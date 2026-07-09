@@ -15,10 +15,11 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    /** Nº de consumos que el empleado ya retiró en el día (para el tope según permisos). */
-    long countByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
-
     Optional<Consumption> findByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
+
+    /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Desayuno", "Merienda"). */
+    @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date")
+    List<String> findMealNamesByEmployeeIdAndBusinessDate(@Param("employeeId") Long employeeId, @Param("date") LocalDate date);
 
     Optional<Consumption> findByClientUuid(UUID clientUuid);
 

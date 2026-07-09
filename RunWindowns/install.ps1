@@ -406,7 +406,6 @@ function Step-ConfigureProduction {
         RateLimitAuth          = '10'
         RateLimitScan          = '60'
         BackendPort            = '8080'
-        FrontendPort           = '80'
         ServerIP               = (Get-ServerIP)
     }
 
@@ -464,11 +463,10 @@ function Step-ConfigureProduction {
     $rlChoice = Read-Choice "Seleccionar" -Max 2
     $prodConfig.RateLimitEnabled = if ($rlChoice -eq 1) { 'true' } else { 'false' }
 
-    # Puertos
+    # Puerto (unico: el backend sirve la API y el frontend juntos)
     Write-Host ""
-    Write-Host "  --- Puertos ---" -ForegroundColor Yellow
-    $prodConfig.BackendPort = Read-Default "Puerto backend (Spring Boot)" "8080"
-    $prodConfig.FrontendPort = Read-Default "Puerto frontend (reverse proxy)" "80"
+    Write-Host "  --- Puerto ---" -ForegroundColor Yellow
+    $prodConfig.BackendPort = Read-Default "Puerto de la aplicacion (API + frontend)" "8080"
 
     return $prodConfig
 }
@@ -598,19 +596,10 @@ logging:
     Set-Content -Path $ProdYmlPath -Value $ymlContent -Encoding UTF8
     Write-Log "application-prod.yml generado en: $ProdYmlPath" 'SUCCESS'
 
-    # 6b: Generar .env.production para frontend
-    Write-Log "Generando .env.production para frontend..."
-    $serverIP = $ProdConfig.ServerIP
-    $wsUrl = "ws://$serverIP`:$($ProdConfig.BackendPort)/zkfinger-ws"
-    $envContent = @"
-# Generado automaticamente por install.ps1
-VITE_API_BASE_URL=http://$serverIP`:$($ProdConfig.BackendPort)
-VITE_ZKFINGER_WS=$wsUrl
-"@
-    Set-Content -Path (Join-Path $FrontendDir ".env.production") -Value $envContent -Encoding UTF8
-    Write-Log ".env.production generado." 'SUCCESS'
-
-    # 6c: Build Frontend
+    # 6b: Build Frontend
+    # Nota: no se genera .env.production. El frontend usa baseURL '/api' (ruta relativa)
+    # y deriva el WebSocket de window.location.host, porque se sirve desde el mismo origen
+    # que el backend (ver paso 6d). No hace falta VITE_API_BASE_URL.
     Write-Log "Compilando frontend (npm run build)..."
     Push-Location $FrontendDir
     try {
@@ -621,7 +610,18 @@ VITE_ZKFINGER_WS=$wsUrl
         Pop-Location
     }
 
-    # 6d: Build Backend
+    # 6d: Integrar frontend compilado en el backend (mismo origen, mismo puerto)
+    Write-Log "Integrando frontend en el backend (se sirve junto con la API, sin puerto ni proxy aparte)..."
+    $staticDir = Join-Path $BackendDir "src\main\resources\static"
+    if (Test-Path $staticDir) {
+        Remove-Item -Path (Join-Path $staticDir "*") -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        New-Item -ItemType Directory -Path $staticDir -Force | Out-Null
+    }
+    Copy-Item -Path (Join-Path $FrontendDir "dist\*") -Destination $staticDir -Recurse -Force
+    Write-Log "Frontend copiado a $staticDir." 'SUCCESS'
+
+    # 6e: Build Backend
     Write-Log "Compilando backend (mvn clean package)..."
     Push-Location $BackendDir
     try {
@@ -680,6 +680,8 @@ function Step-RunBiometricSetup {
 function Step-ConfigureService {
     param($DbConfig, $ProdConfig)
     Write-Log "Configurando servicio de Windows..." 'STEP'
+
+    $zkNativePath = Join-Path $ScriptRoot "native"
 
     # Buscar el JAR
     $jarFile = Get-ChildItem (Join-Path $BackendDir "target") -Filter "*.jar" |
@@ -792,35 +794,18 @@ function Step-ConfigureFirewall {
     Write-Log "Configurando firewall de Windows..." 'STEP'
 
     $backendPort = $ProdConfig.BackendPort
-    $frontendPort = $ProdConfig.FrontendPort
 
-    # Regla para backend
-    $ruleNameBE = "ControlEatFood Backend (Port $backendPort)"
+    # Regla unica: el backend sirve API + frontend en el mismo puerto
+    $ruleNameBE = "ControlEatFood (Port $backendPort)"
     $existingRule = Get-NetFirewallRule -DisplayName $ruleNameBE -ErrorAction SilentlyContinue
     if ($existingRule) {
-        Write-Log "Regla de firewall para backend ya existe." 'SUCCESS'
+        Write-Log "Regla de firewall ya existe." 'SUCCESS'
     } else {
         try {
             New-NetFirewallRule -DisplayName $ruleNameBE -Direction Inbound -Protocol TCP -LocalPort $backendPort -Action Allow -Profile Any | Out-Null
             Write-Log "Regla de firewall creada: $ruleNameBE" 'SUCCESS'
         } catch {
-            Write-Log "No se pudo crear regla de firewall para backend." 'ERROR'
-        }
-    }
-
-    # Regla para frontend (si puerto diferente)
-    if ($frontendPort -ne $backendPort) {
-        $ruleNameFE = "ControlEatFood Frontend (Port $frontendPort)"
-        $existingRuleFE = Get-NetFirewallRule -DisplayName $ruleNameFE -ErrorAction SilentlyContinue
-        if ($existingRuleFE) {
-            Write-Log "Regla de firewall para frontend ya existe." 'SUCCESS'
-        } else {
-            try {
-                New-NetFirewallRule -DisplayName $ruleNameFE -Direction Inbound -Protocol TCP -LocalPort $frontendPort -Action Allow -Profile Any | Out-Null
-                Write-Log "Regla de firewall creada: $ruleNameFE" 'SUCCESS'
-            } catch {
-                Write-Log "No se pudo crear regla de firewall para frontend." 'ERROR'
-            }
+            Write-Log "No se pudo crear regla de firewall." 'ERROR'
         }
     }
 }
@@ -843,7 +828,6 @@ function Save-Config {
             biometricEncryptionKey = $ProdConfig.BiometricEncryptionKey
             rateLimitEnabled       = $ProdConfig.RateLimitEnabled
             backendPort            = $ProdConfig.BackendPort
-            frontendPort           = $ProdConfig.FrontendPort
         }
         service        = @{
             name   = $ServiceName
@@ -926,7 +910,7 @@ function Install-Full {
     } else {
         Write-Host "  Estado:       VERIFICAR (posible error)" -ForegroundColor Yellow
     }
-    Write-Host "  Backend:      http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)" -ForegroundColor Cyan
+    Write-Host "  Aplicacion:   http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)  (API + frontend, mismo puerto)" -ForegroundColor Cyan
     Write-Host "  Swagger:      http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)/swagger-ui.html" -ForegroundColor Cyan
     Write-Host "  DB:           $($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)" -ForegroundColor Cyan
     Write-Host ""
@@ -964,6 +948,15 @@ function Update-App {
     Push-Location $FrontendDir
     & npm run build 2>&1 | ForEach-Object { Write-Log $_ }
     Pop-Location
+
+    Write-Log "Integrando frontend en el backend..."
+    $staticDir = Join-Path $BackendDir "src\main\resources\static"
+    if (Test-Path $staticDir) {
+        Remove-Item -Path (Join-Path $staticDir "*") -Recurse -Force -ErrorAction SilentlyContinue
+    } else {
+        New-Item -ItemType Directory -Path $staticDir -Force | Out-Null
+    }
+    Copy-Item -Path (Join-Path $FrontendDir "dist\*") -Destination $staticDir -Recurse -Force
 
     Write-Log "Recompilando backend..."
     Push-Location $BackendDir
@@ -1030,7 +1023,6 @@ function Repair-App {
                     RateLimitEnabled = $config.production.rateLimitEnabled
                     RateLimitAuth = '10'; RateLimitScan = '60'
                     BackendPort = $config.production.backendPort
-                    FrontendPort = $config.production.frontendPort
                     ServerIP = $config.serverIP
                 }
                 Step-BuildProduction -DbConfig $dbCfg -ProdConfig $prodCfg
@@ -1053,7 +1045,6 @@ function Repair-App {
                     RateLimitEnabled = $config.production.rateLimitEnabled
                     RateLimitAuth = '10'; RateLimitScan = '60'
                     BackendPort = $config.production.backendPort
-                    FrontendPort = $config.production.frontendPort
                     ServerIP = $config.serverIP
                 }
                 Step-ConfigureService -DbConfig $dbCfg -ProdConfig $prodCfg
@@ -1065,7 +1056,6 @@ function Repair-App {
             if ($config) {
                 $prodCfg = [PSCustomObject]@{
                     BackendPort = $config.production.backendPort
-                    FrontendPort = $config.production.frontendPort
                 }
                 Step-ConfigureFirewall -ProdConfig $prodCfg
             } else {

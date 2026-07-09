@@ -66,6 +66,8 @@ interface ApiService {
     suspend fun schedules(): List<ScheduleResponse>
     @POST("schedules")
     suspend fun saveSchedule(@Body body: ScheduleRequest): ScheduleResponse
+    @POST("schedules")
+    suspend fun saveGeneralSchedule(@Body body: GeneralScheduleRequest): ScheduleResponse
 
     // ── Reportes ───────────────────────────────────────────────────────────────
     @GET("reports/dashboard")

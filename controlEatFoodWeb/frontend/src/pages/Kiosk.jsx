@@ -76,7 +76,16 @@ export default function Kiosk() {
       const { data } = await scanApi.get('/scan/today', {
         params: { sessionToken: session.sessionToken },
       });
-      setFeed(data);
+      // El backend ahora devuelve { restaurantName, entries }
+      const entries = Array.isArray(data) ? data : (data.entries || []);
+      const newName = Array.isArray(data) ? null : data.restaurantName;
+      setFeed(entries);
+      // Actualizar el nombre del restaurante si cambió
+      if (newName && newName !== session.restaurantName) {
+        const updated = { ...session, restaurantName: newName };
+        localStorage.setItem('kioskSession', JSON.stringify(updated));
+        setSession(updated);
+      }
     } catch (err) {
       if (err.response?.data?.code === 'INVALID_SESSION') {
         localStorage.removeItem('kioskSession');
@@ -199,7 +208,7 @@ export default function Kiosk() {
     const clientUuid = newUuid();
     const consumedAt = new Date().toISOString();
 
-    console.log('[SCAN] processCapture llamado', { clientUuid, consumedAt, online: navigator.onLine });
+    if (import.meta.env.DEV) console.log('[SCAN] processCapture llamado', { clientUuid, consumedAt, online: navigator.onLine });
 
     if (navigator.onLine) {
       try {
@@ -210,12 +219,14 @@ export default function Kiosk() {
           offline: false,
           consumedAt,
         });
-        console.log('[SCAN] Respuesta del servidor:', JSON.stringify(data));
+        // No loguear `data` en producción: incluye employeeName/mealName del empleado
+        // escaneado, y el Kiosk es una pantalla de acceso físico público (F12 lo expondría).
+        if (import.meta.env.DEV) console.log('[SCAN] Respuesta del servidor:', JSON.stringify(data));
         showResult(data);
         if (data.status === 'SUCCESS') fetchFeed();
         return;
       } catch (err) {
-        console.error('[SCAN] Error de red en /scan:', err.response?.status, err.response?.data || err.message);
+        if (import.meta.env.DEV) console.error('[SCAN] Error de red en /scan:', err.response?.status, err.response?.data || err.message);
         if (err.response?.data?.code === 'INVALID_SESSION') {
           // Sesión expirada o invalidada (ej. reinicio del backend con sesión antigua)
           localStorage.removeItem('kioskSession');
@@ -361,7 +372,7 @@ export default function Kiosk() {
               <span style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>
                 Déjalo vacío para usar el agente integrado del servidor (recomendado).
                 Solo cambia esto si el lector está conectado a OTRO PC de la red; en ese
-                caso ingresa su IP, por ejemplo: <code>ws://192.168.1.50:8080/zkfinger-ws</code>
+                caso ingresa su IP, por ejemplo: <code>ws://192.168.1.50:3000/zkfinger-ws</code>
               </span>
             </div>
           </details>
@@ -425,10 +436,10 @@ export default function Kiosk() {
       {/* Elementos Estáticos Principales */}
       <div className="title" style={{ marginTop: '20px' }}>{session.restaurantName?.toUpperCase()}</div>
       
-      <div className="fingerprint-icon" style={{
+      <img src="/logo.png" alt="EatFood" className="fingerprint-icon" style={{
         opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25,
         margin: '20px 0'
-      }}>🖐️</div>
+      }} />
       
       <div className="waiting" style={{ fontSize: '32px', margin: '0 0 8px 0', color: '#38bdf8' }}>
         Coloque su mano en el lector...

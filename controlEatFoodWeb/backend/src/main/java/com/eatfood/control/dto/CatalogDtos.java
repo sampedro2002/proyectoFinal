@@ -26,4 +26,7 @@ public final class CatalogDtos {
 
     public record ScheduleResponse(
             Long id, LocalTime startTime, LocalTime endTime, boolean active) {}
+
+    public record MealTypeResponse(
+            String code, String name, String description) {}
 }

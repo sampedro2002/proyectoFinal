@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 import api from '../api/client.js';
 
-// Estimación inicial: mismo host que el panel, puerto 8080. Suele ser 'localhost'
+// Estimación inicial: mismo host que el panel, puerto 3000. Suele ser 'localhost'
 // en desarrollo, por eso al montar se consulta al backend su IP real de LAN.
 function guessServerUrl() {
   const { protocol, hostname } = window.location;
-  return `${protocol}//${hostname}:8080`;
+  return `${protocol}//${hostname}:3000`;
 }
 
 export default function ServerQr() {
-  const [url, setUrl]                 = useState(guessServerUrl());
+  const initialUrl = guessServerUrl();
+  const [url, setUrl]                 = useState(initialUrl);
   const [suggestions, setSuggestions] = useState([]);
   const [dataUrl, setDataUrl]         = useState('');
   const [error, setError]             = useState('');
+  const [touched, setTouched]         = useState(false);
 
   const trimmed = url.trim();
   const isLocalhost = /localhost|127\.0\.0\.1|10\.0\.2\.2/.test(trimmed);
@@ -38,10 +40,17 @@ export default function ServerQr() {
           || lan[0]
           || request
           || null;
-        if (best) setUrl(best);
+        // No pisar lo que el admin ya haya escrito a mano mientras la petición estaba en vuelo.
+        setUrl((current) => (touched && current !== initialUrl) ? current : (best || current));
       })
       .catch(() => { /* si falla, el admin escribe la URL a mano */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function handleUrlChange(e) {
+    setTouched(true);
+    setUrl(e.target.value);
+  }
 
   // Regenerar el QR cada vez que cambia la dirección.
   useEffect(() => {
@@ -73,7 +82,7 @@ export default function ServerQr() {
             <div className="field">
               <label>Direcciones detectadas (pública / dominio / LAN)</label>
               <select value={suggestions.includes(trimmed) ? trimmed : ''}
-                      onChange={(e) => e.target.value && setUrl(e.target.value)}>
+                      onChange={(e) => e.target.value && handleUrlChange(e)}>
                 <option value="">— Elegir una dirección detectada —</option>
                 {suggestions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
@@ -82,8 +91,8 @@ export default function ServerQr() {
 
           <div className="field">
             <label>Dirección del servidor (backend)</label>
-            <input value={url} onChange={(e) => setUrl(e.target.value)}
-                   placeholder="http://192.168.1.50:8080" />
+            <input value={url} onChange={handleUrlChange}
+                   placeholder="http://192.168.1.50:3000" />
           </div>
 
           {isLocalhost && (
@@ -109,7 +118,7 @@ export default function ServerQr() {
 
           <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 16 }}>
             ¿No conecta con la IP correcta? Verifique que el teléfono esté en la misma red y que
-            el firewall del servidor permita el puerto {trimmed.match(/:(\d+)/)?.[1] || '8080'} entrante.
+            el firewall del servidor permita el puerto {trimmed.match(/:(\d+)/)?.[1] || '3000'} entrante.
           </p>
         </div>
 

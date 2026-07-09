@@ -31,6 +31,10 @@ Thumbs.db
 RunLinux/lib-x64/
 RunLinux/lib-x86/
 
+# Frontend compilado e integrado en el backend por el instalador (generado, no versionar)
+controlEatFoodWeb/backend/src/main/resources/static/
+controlEatFoodWeb/backend/src/main/resources/application-prod.yml
+
 # Artefactos temporales / de trabajo
 *.patch
 controlEatFoodWeb/TestNet*.java

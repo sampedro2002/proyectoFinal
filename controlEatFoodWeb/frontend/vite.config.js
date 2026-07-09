@@ -34,10 +34,10 @@ export default defineConfig({
     })
   ],
   server: {
-    port: 5173,
+    port: 4173,
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: true },
-      '/zkfinger-ws': { target: 'ws://localhost:8080', ws: true }
+      '/api': { target: 'http://localhost:3000', changeOrigin: true },
+      '/zkfinger-ws': { target: 'ws://localhost:3000', ws: true }
     }
   }
 });

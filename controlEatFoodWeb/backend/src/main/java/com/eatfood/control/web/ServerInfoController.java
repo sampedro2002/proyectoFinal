@@ -36,7 +36,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class ServerInfoController {
 
-    @Value("${server.port:8080}")
+    @Value("${server.port:3000}")
     private int port;
 
     private final AppProperties props;

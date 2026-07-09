@@ -1,9 +1,11 @@
 package com.eatfood.control.repository;
 
 import com.eatfood.control.domain.Employee;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -13,6 +15,16 @@ import java.util.Optional;
 public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     Optional<Employee> findByIdentityCardAndDeletedFalse(String identityCard);
+
+    /**
+     * Igual que {@link #findById}, pero toma un bloqueo pesimista de escritura sobre la fila.
+     * Se usa en el escaneo para serializar los escaneos concurrentes del mismo empleado y
+     * evitar que dos transacciones lean el mismo conteo de consumos del día antes de que
+     * ninguna haga commit (check-then-act), lo que permitiría superar el tope diario.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM Employee e WHERE e.id = :id")
+    Optional<Employee> findByIdForUpdate(@Param("id") Long id);
 
     boolean existsByIdentityCardAndDeletedFalse(String identityCard);
 

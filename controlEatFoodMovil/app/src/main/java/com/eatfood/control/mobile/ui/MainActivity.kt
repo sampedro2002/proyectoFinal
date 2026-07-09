@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
 
 /** Pantallas del panel (equivale a las rutas del frontend web). */
 enum class Screen(val title: String, val roles: List<String>) {
+    MY_RESTAURANT("Mi Restaurante", listOf("CATERING")),
     DASHBOARD("Dashboard", listOf("ADMIN")),
     EMPLOYEES("Empleados", listOf("ADMIN")),
     RESTAURANTS("Restaurantes", listOf("ADMIN")),
@@ -190,6 +191,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
         ) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (current) {
+                    Screen.MY_RESTAURANT -> MyRestaurantScreen()
                     Screen.DASHBOARD -> DashboardScreen()
                     Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
                     Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
@@ -342,6 +344,58 @@ fun SettingsScreen(onClose: () -> Unit) {
             )
             Spacer(Modifier.height(28.dp))
             Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text("Cerrar") }
+        }
+    }
+}
+
+@Composable
+fun MyRestaurantScreen() {
+    val context = LocalContext.current
+    val activity = context as? ComponentActivity
+    val store = remember { SessionStore.get(context) }
+    val user = store.user
+
+    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+        Card(Modifier.fillMaxWidth().widthIn(max = 440.dp)) {
+            Column(
+                Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    Icons.Default.Restaurant,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Mi Restaurante", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Bienvenido, ${user?.fullName ?: user?.username ?: ""}",
+                    style = MaterialTheme.typography.bodyLarge,
+                    textAlign = TextAlign.Center
+                )
+                Spacer(Modifier.height(24.dp))
+                Text(
+                    "Para registrar consumos, abre el modo kiosco y conecta el lector biométrico.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(24.dp))
+                Button(
+                    onClick = {
+                        activity?.let {
+                            it.startActivity(Intent(it, com.eatfood.control.mobile.ui.kiosk.KioskActivity::class.java))
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PointOfSale, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Abrir Modo Kiosco")
+                }
+            }
         }
     }
 }

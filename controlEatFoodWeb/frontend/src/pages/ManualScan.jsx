@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
@@ -33,19 +33,25 @@ export default function ManualScan() {
   }, []);
 
   // Autocompletar: busca empleados por término (debounce ~300ms).
+  const suggestSeq = useRef(0);
   useEffect(() => {
     if (mode !== 'employee' || !term || term.trim().length < 2) {
       setSuggestions([]);
       return;
     }
     const t = setTimeout(() => {
+      // Descarta la respuesta si ya se disparó una búsqueda más nueva mientras esta
+      // seguía en vuelo: evita que una respuesta lenta de un término viejo sobrescriba
+      // las sugerencias del término que el admin ve actualmente en el input.
+      const seq = ++suggestSeq.current;
       api.get('/employees', { params: { term: term.trim(), size: 8 } })
         .then((r) => {
+          if (seq !== suggestSeq.current) return;
           const list = r.data.content || r.data || [];
           setSuggestions(list);
           setShowSuggest(true);
         })
-        .catch(() => setSuggestions([]));
+        .catch(() => { if (seq === suggestSeq.current) setSuggestions([]); });
     }, 300);
     return () => clearTimeout(t);
   }, [term, mode]);

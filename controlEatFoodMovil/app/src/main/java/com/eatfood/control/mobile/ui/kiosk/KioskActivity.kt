@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.util.Log
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -26,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,6 +37,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -64,6 +67,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.time.LocalDate
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
@@ -88,7 +92,7 @@ private fun KioskRoot() {
     if (session == null) {
         ConnectPanel(onConnected = { session = store.kioskSession })
     } else {
-        KioskPanel(session!!, onDisconnect = { session = null })
+        KioskPanel(initialSession = session!!, onDisconnect = { session = null })
     }
 }
 
@@ -175,13 +179,14 @@ private fun ConnectPanel(onConnected: () -> Unit) {
 }
 
 @Composable
-private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit) {
+private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
     val scanApi = remember { ApiClient.scanApi(context) }
     val dao = remember { AppDatabase.get(context).pendingScanDao() }
     val scope = rememberCoroutineScope()
 
+    var session by remember { mutableStateOf(initialSession) }
     var online by remember { mutableStateOf(isOnline(context)) }
     var queued by remember { mutableStateOf(0) }
     var readerStatus by remember { mutableStateOf(ReaderStatus.CONNECTING) }
@@ -194,26 +199,51 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
     var reportFormat by remember { mutableStateOf("pdf") }
     var downloading by remember { mutableStateOf(false) }
 
+    var apiError by remember { mutableStateOf(false) }
+
     suspend fun refreshQueued() { queued = runCatching { dao.count() }.getOrDefault(0) }
 
     suspend fun refreshFeed() {
         runCatching {
-            val data = scanApi.todayFeed(session.sessionToken)
-            feed = data
+            val response = scanApi.todayFeed(session.sessionToken)
+            feed = response.entries ?: emptyList()
+            apiError = false
+            // Actualizar el nombre del restaurante si cambió
+            val newName = response.restaurantName
+            if (newName != null && newName != session.restaurantName) {
+                val updatedSession = session.copy(restaurantName = newName)
+                store.kioskSession = updatedSession
+                session = updatedSession
+            }
+        }.onFailure {
+            apiError = true
         }
     }
 
+    // El ciclo de sincronización (LaunchedEffect(online) más abajo) se relanza cada vez que
+    // cambia `online`, lo que puede solapar una syncQueue() nueva con una anterior que sigue
+    // en vuelo (p. ej. WiFi inestable) y reenviar el mismo lote dos veces. Este guard evita
+    // que dos ejecuciones se solapen.
+    val syncing = remember { AtomicBoolean(false) }
     suspend fun syncQueue() {
-        val items = dao.pending()
-        if (items.isEmpty()) return
-        runCatching {
-            val records = items.map { ScanRequest(templateB64 = it.templateB64, mealTypeCode = it.mealTypeCode,
-                clientUuid = it.clientUuid, offline = true, consumedAt = it.consumedAt) }
-            val res = scanApi.sync(SyncBatchRequest(session.sessionToken, records))
-            res.results?.forEach { r -> if (r.status != "ERROR" && r.clientUuid != null) dao.remove(r.clientUuid) }
+        if (!syncing.compareAndSet(false, true)) return
+        try {
+            val items = dao.pending()
+            if (items.isNotEmpty()) {
+                try {
+                    val records = items.map { ScanRequest(templateB64 = it.templateB64, mealTypeCode = it.mealTypeCode,
+                        clientUuid = it.clientUuid, offline = true, consumedAt = it.consumedAt) }
+                    val res = scanApi.sync(SyncBatchRequest(session.sessionToken, records))
+                    res.results?.forEach { r -> if (r.status != "ERROR" && r.clientUuid != null) dao.remove(r.clientUuid) }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                }
+            }
+            refreshQueued()
+            refreshFeed()
+        } finally {
+            syncing.set(false)
         }
-        refreshQueued()
-        refreshFeed()
     }
 
     suspend fun downloadReport() {
@@ -234,16 +264,57 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
                     }
                     "reporte-diario-${LocalDate.now()}.$ext"
                 }
-                val bytes = body.bytes()
-                saveFileToDownloads(context, filename, bytes)
-                Toast.makeText(context, "Reporte guardado: $filename", Toast.LENGTH_LONG).show()
+                // body.bytes() hace una lectura de red bloqueante (la respuesta es @Streaming,
+                // Retrofit no la buffer-iza de antemano): debe ir en IO o dispara
+                // NetworkOnMainThreadException en el hilo de la corrutina (Main).
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { body.bytes() }
+                if (bytes.isEmpty()) {
+                    Toast.makeText(context, "El reporte está vacío", Toast.LENGTH_LONG).show()
+                    return
+                }
+
+                val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        saveFileToDownloads(context, filename, bytes)
+                    } catch (e: Exception) {
+                        Log.e("DownloadReport", "Error guardando en Descargas", e)
+                        // Fallback a caché local si falla MediaStore
+                        val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+                        java.io.File(dir, filename).also { f ->
+                            f.outputStream().use { out -> out.write(bytes) }
+                        }
+                    }
+                }
+
+                Toast.makeText(context, "Reporte guardado exitosamente: $filename", Toast.LENGTH_LONG).show()
+
+                // Intentar abrir el archivo si hay un visor disponible
+                runCatching {
+                    val uri = if (file is java.io.File && file.exists()) {
+                        androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                    } else null
+                    
+                    if (uri != null) {
+                        val mime = when (reportFormat) {
+                            "csv" -> "text/csv"
+                            "excel" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            else -> "application/pdf"
+                        }
+                        val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                            setDataAndType(uri, mime)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(viewIntent, "Abrir reporte"))
+                    }
+                }
             } else {
+                val errorBody = response.errorBody()?.string() ?: ""
                 val errorMsg = when (response.code()) {
                     401 -> "Sesión inválida. Reconecte el dispositivo."
                     403 -> "No tiene permisos para generar reportes."
                     404 -> "No se encontraron registros para hoy."
                     in 500..599 -> "Error del servidor (${response.code()}). Intente más tarde."
-                    else -> "Error al generar reporte (${response.code()})"
+                    else -> "Error al generar reporte (${response.code()})${if (errorBody.isNotEmpty()) ": $errorBody" else ""}"
                 }
                 Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
             }
@@ -252,7 +323,8 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
         } catch (e: java.net.SocketTimeoutException) {
             Toast.makeText(context, "Tiempo de espera agotado", Toast.LENGTH_SHORT).show()
         } catch (e: Exception) {
-            Toast.makeText(context, "Error: ${e.message ?: "desconocido"}", Toast.LENGTH_SHORT).show()
+            Log.e("DownloadReport", "Error al descargar reporte", e)
+            Toast.makeText(context, "Error: ${e.message ?: "desconocido"}", Toast.LENGTH_LONG).show()
         } finally {
             downloading = false
         }
@@ -260,7 +332,12 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 
     suspend fun processCapture(template: String) {
         val clientUuid = UUID.randomUUID().toString()
-        val consumedAt = OffsetDateTime.now().toString()
+        // Se normaliza a UTC antes de guardar: la cola offline (PendingScan.pending())
+        // ordena por este string con SQL "ORDER BY consumedAt ASC" (orden léxico), que solo
+        // coincide con el orden cronológico real si todos los registros comparten el mismo
+        // offset. Fijar UTC evita que un cambio de huso/horario de verano del dispositivo
+        // reordene los registros pendientes al sincronizar.
+        val consumedAt = OffsetDateTime.now(java.time.ZoneOffset.UTC).toString()
         if (online) {
             try {
                 result = scanApi.scan(ScanRequest(session.sessionToken, template, null, clientUuid, false, consumedAt))
@@ -293,6 +370,11 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             } catch (_: java.net.UnknownHostException) { /* sin red → offline */ }
               catch (_: java.net.ConnectException) { /* servidor caído → offline */ }
               catch (_: java.net.SocketTimeoutException) { /* timeout → offline */ }
+              // IOException genérica: cubre SocketException ("Connection reset"), SSLException,
+              // EOFException y otros cortes de red transitorios típicos de WiFi inestable en un
+              // kiosco. Antes cualquiera de estos caía en el catch(Exception) de abajo y el
+              // escaneo se perdía en vez de encolarse para reintento.
+              catch (_: java.io.IOException) { /* red inestable → offline */ }
               catch (e: Exception) {
                 // Cualquier otro fallo inesperado: mostrarlo en lugar de encolar a
                 // ciegas, para no esconder bugs reales detrás de un "REGISTRO EN COLA".
@@ -373,47 +455,56 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
             
             val reader = BiometricReader.create(context)
             currentReader = reader
+            // try/finally alrededor de TODO el ciclo de vida del reader: si la corrutina se
+            // cancela (Activity destruida, "Cerrar Sesión de Restaurante") mientras está
+            // suspendida dentro de reader.open()/capture(), CancellationException se propaga
+            // sin pasar por los catch(Exception) de abajo — solo el finally garantiza que el
+            // handle USB del ZK9500 se libere siempre, evitando que quede "abierto" para el
+            // próximo intento de conexión.
             try {
-                reader.open { st ->
-                    if (!usbDisconnected.get()) readerStatus = st
-                }
-            } catch (e: Exception) {
-                currentReader = null
-                lastError = e.message ?: "Error desconocido"
-                if (readerStatus == ReaderStatus.CONNECTING) {
-                    readerStatus = ReaderStatus.NO_DEVICE
-                }
-                delay(5_000); continue
-            }
-            
-            while (isActive && !usbDisconnected.get()) {
                 try {
-                    result = null
-                    val template = reader.capture(20_000)
-                    if (!usbDisconnected.get()) {
-                        processCapture(template)
-                        consecutiveCaptureFailures = 0
+                    reader.open { st ->
+                        if (!usbDisconnected.get()) readerStatus = st
                     }
-                    delay(1_000)
-                    result = null
                 } catch (e: Exception) {
-                    if (usbDisconnected.get()) break
-                    
-                    consecutiveCaptureFailures++
-                    lastError = e.message ?: "Error de captura"
-                    
-                    if (consecutiveCaptureFailures >= maxFailuresBeforeNoDevice) {
+                    currentReader = null
+                    lastError = e.message ?: "Error desconocido"
+                    if (readerStatus == ReaderStatus.CONNECTING) {
                         readerStatus = ReaderStatus.NO_DEVICE
-                        lastError = "El dispositivo no responde como lector ZK9500"
-                        break
                     }
-                    
-                    delay(800)
-                    if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
+                    delay(5_000); continue
                 }
+
+                while (isActive && !usbDisconnected.get()) {
+                    try {
+                        result = null
+                        val template = reader.capture(20_000)
+                        if (!usbDisconnected.get()) {
+                            processCapture(template)
+                            consecutiveCaptureFailures = 0
+                        }
+                        delay(1_000)
+                        result = null
+                    } catch (e: Exception) {
+                        if (usbDisconnected.get()) break
+
+                        consecutiveCaptureFailures++
+                        lastError = e.message ?: "Error de captura"
+
+                        if (consecutiveCaptureFailures >= maxFailuresBeforeNoDevice) {
+                            readerStatus = ReaderStatus.NO_DEVICE
+                            lastError = "El dispositivo no responde como lector ZK9500"
+                            break
+                        }
+
+                        delay(800)
+                        if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.ERROR
+                    }
+                }
+            } finally {
+                runCatching { reader.close() }
+                currentReader = null
             }
-            runCatching { reader.close() }
-            currentReader = null
         }
     }
 
@@ -451,7 +542,14 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
                     
                     Spacer(Modifier.height(30.dp))
                     
-                    Text("🖐️", fontSize = 120.sp, modifier = Modifier.padding(vertical = 20.dp))
+                    Image(
+                        painter = painterResource(com.eatfood.control.mobile.R.drawable.ic_logo),
+                        contentDescription = "EatFood",
+                        modifier = Modifier
+                            .size(140.dp)
+                            .padding(vertical = 20.dp)
+                            .alpha(if (readerStatus == ReaderStatus.READY) 1f else 0.25f)
+                    )
                     
                     Text(
                         when (readerStatus) {
@@ -500,7 +598,7 @@ private fun KioskPanel(session: DeviceConnectResponse, onDisconnect: () -> Unit)
 
             // ── Panel de registros de hoy (Diseño Tabla) ─────────────────────────
             TodayFeedPanel(
-                feed = feed, online = online, queued = queued,
+                feed = feed, online = online, apiError = apiError, queued = queued,
                 showTable = showTable, onToggle = { showTable = !showTable },
                 reportFormat = reportFormat,
                 onFormatChange = { reportFormat = it },
@@ -557,6 +655,7 @@ private fun ReaderPill(status: ReaderStatus, modifier: Modifier) {
 private fun TodayFeedPanel(
     feed: List<TodayFeedEntry>,
     online: Boolean,
+    apiError: Boolean,
     queued: Int,
     showTable: Boolean,
     onToggle: () -> Unit,
@@ -607,12 +706,12 @@ private fun TodayFeedPanel(
                         }
                     } else {
                         LazyColumn(Modifier.heightIn(max = 180.dp)) {
-                            items(feed.reversed()) { e ->
+                            itemsIndexed(feed) { index, e ->
                                 Row(
                                     Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("${feed.indexOf(e) + 1}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
+                                    Text("${feed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
                                     Text(e.employeeName ?: "—", Modifier.weight(1f), color = OnSurface, fontSize = 13.sp, maxLines = 1)
                                     Text(
                                         e.time?.substringAfter('T')?.take(5) ?: "--:--",
@@ -635,7 +734,10 @@ private fun TodayFeedPanel(
                         if (queued > 0) {
                             Text("Pendientes: $queued", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                        Text(if (online) "● En línea" else "○ Offline", color = if (online) Success else Warning, fontSize = 12.sp)
+                        
+                        val statusText = if (apiError) "○ Error servidor" else if (online) "● En línea" else "○ Offline"
+                        val statusColor = if (apiError) ErrorRed else if (online) Success else Warning
+                        Text(statusText, color = statusColor, fontSize = 12.sp)
                     }
 
                     HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
@@ -710,29 +812,33 @@ private fun isOnline(context: Context): Boolean {
 }
 
 private fun saveFileToDownloads(context: Context, filename: String, bytes: ByteArray) {
-    try {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.Downloads.DISPLAY_NAME, filename)
-                put(MediaStore.Downloads.MIME_TYPE, getMimeType(filename))
-                put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
-            val resolver = context.contentResolver
-            val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-            uri?.let {
-                resolver.openOutputStream(it)?.use { outputStream ->
-                    outputStream.write(bytes)
-                }
-            }
-        } else {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadsDir, filename)
-            FileOutputStream(file).use { outputStream ->
-                outputStream.write(bytes)
-            }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Downloads.DISPLAY_NAME, filename)
+            put(MediaStore.Downloads.MIME_TYPE, getMimeType(filename))
+            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+            put(MediaStore.Downloads.IS_PENDING, 1)
         }
-    } catch (e: Exception) {
-        e.printStackTrace()
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+            ?: throw IOException("No se pudo crear el archivo en Descargas")
+        
+        resolver.openOutputStream(uri)?.use { outputStream ->
+            outputStream.write(bytes)
+        } ?: throw IOException("No se pudo abrir el archivo para escritura")
+        
+        contentValues.clear()
+        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+        resolver.update(uri, contentValues, null, null)
+    } else {
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        if (!downloadsDir.exists()) {
+            downloadsDir.mkdirs()
+        }
+        val file = File(downloadsDir, filename)
+        FileOutputStream(file).use { outputStream ->
+            outputStream.write(bytes)
+        }
     }
 }
 

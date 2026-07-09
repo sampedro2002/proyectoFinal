@@ -58,7 +58,7 @@ public class ScanController {
 
     @Operation(summary = "Feed de consumos del día para el Kiosk (polling)")
     @GetMapping("/today")
-    public List<TodayEntry> today(@RequestParam String sessionToken) {
+    public TodayFeedResponse today(@RequestParam String sessionToken) {
         return scanService.todayFeed(sessionToken);
     }
 

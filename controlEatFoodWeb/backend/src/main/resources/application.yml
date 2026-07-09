@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 3000
   servlet:
     context-path: /
   compression:
@@ -67,7 +67,7 @@ app:
     # Ruta donde se encuentran las librerías nativas del SDK ZKFinger (libzkfp.dll / .so)
     native-lib-path: ${ZK_NATIVE_PATH:./native}
   cors:
-    allowed-origins: ${CORS_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:4173}
+    allowed-origins: ${CORS_ORIGINS:http://localhost:4173,http://localhost:5173,http://localhost:5174}
   rate-limit:
     # Límite por IP y por minuto para endpoints sensibles. Deshabilitable con RATE_LIMIT_ENABLED=false.
     enabled: ${RATE_LIMIT_ENABLED:true}

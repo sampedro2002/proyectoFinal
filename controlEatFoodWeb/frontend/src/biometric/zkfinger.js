@@ -19,7 +19,7 @@
  *   1. localStorage('zkfingerWsUrl') — override manual desde el Kiosk (p. ej. lector en otro PC).
  *   2. VITE_ZKFINGER_WS — override por entorno (normalmente vacío).
  *   3. Agente embebido del backend, derivado del origen de la página: funciona igual en
- *      desarrollo (proxy de Vite hacia :8080) y en producción (mismo host / reverse proxy).
+ *      desarrollo (proxy de Vite hacia :3000) y en producción (mismo host / reverse proxy).
  */
 
 /**
@@ -28,7 +28,7 @@
  */
 function embeddedAgentUrl() {
   if (typeof window === 'undefined' || !window.location) {
-    return 'ws://localhost:8080/zkfinger-ws';
+    return 'ws://localhost:3000/zkfinger-ws';
   }
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   return `${proto}//${window.location.host}/zkfinger-ws`;
