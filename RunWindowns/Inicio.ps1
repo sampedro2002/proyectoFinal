@@ -689,10 +689,9 @@ function Start-TestSetup {
 
     Show-Menu "Que deseas hacer?" @(
         "Iniciar backend y frontend en ventanas separadas",
-        "Volver a configurar base de datos",
         "Volver al menu principal"
     )
-    $action = Read-Choice "Seleccionar" -Max 3
+    $action = Read-Choice "Seleccionar" -Max 2
 
     switch ($action) {
         1 {
@@ -709,13 +708,30 @@ function Start-TestSetup {
             Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
             Write-Log "Backend y frontend lanzados en ventanas nuevas." 'SUCCESS'
             Write-Host ""
-            Read-Host "  Presione ENTER para volver al menu"
+
+            do {
+                Show-Menu "Backend y frontend en ejecucion. Que deseas hacer?" @(
+                    "Relanzar backend y frontend (con datos actuales)",
+                    "Volver al menu principal"
+                )
+                $postAction = Read-Choice "Seleccionar" -Max 2
+
+                switch ($postAction) {
+                    1 {
+                        Stop-ExistingProcesses
+                        Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
+                        Start-Sleep -Seconds 2
+                        Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
+                        Write-Log "Backend y frontend relanzados." 'SUCCESS'
+                        Write-Host ""
+                    }
+                    2 {
+                        return
+                    }
+                }
+            } while ($true)
         }
         2 {
-            Start-TestSetup
-        }
-        3 {
-            # Volver al menú principal
             return
         }
     }
@@ -1267,62 +1283,25 @@ function Show-ProductionMenu {
 # ═══════════════════════════════════════════════════════════════════
 # MENU PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════
-function Start-DevRelaunch {
-    if (-not $script:lastDbConfig) {
-        Write-Log "No hay configuración previa. Ejecuta 'Pruebas' primero." 'ERROR'
-        Read-Host "  Presione ENTER para continuar"
-        return
-    }
-    
-    Stop-ExistingProcesses
-    
-    $dbConfig = $script:lastDbConfig
-    $devJwtSecret = $script:lastDevJwtSecret
-    
-    Write-Log "Re-lanzando con configuración anterior..." 'STEP'
-    Write-Host "  BD: $($dbConfig.Url)" -ForegroundColor Cyan
-    Write-Host "  Usuario: $($dbConfig.User)" -ForegroundColor Cyan
-    
-    $beCmd = "cd `"$BackendDir`"; " +
-        "`$env:DB_URL='$($dbConfig.Url)'; `$env:DB_USER='$($dbConfig.User)'; `$env:DB_PASSWORD='$($dbConfig.Password)'; " +
-        "`$env:JWT_SECRET='$devJwtSecret'; " +
-        "`$env:CORS_ORIGINS='http://localhost:5173,http://localhost:5174,http://localhost:4173'; " +
-        "`$env:RATE_LIMIT_ENABLED='true'; `$env:RATE_LIMIT_AUTH='10'; `$env:RATE_LIMIT_SCAN='60'; " +
-        "`$env:ZK_NATIVE_PATH='./native'; " +
-        "mvn spring-boot:run"
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
-    Start-Sleep -Seconds 2
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
-    
-    Write-Log "Backend y frontend re-lanzados en ventanas nuevas." 'SUCCESS'
-    Write-Host ""
-    Read-Host "  Presione ENTER para volver al menu"
-}
-
 function Show-MainMenu {
     while ($true) {
         Clear-Host
         Write-Banner
         
-        $options = @("Pruebas (entorno de desarrollo local)")
-        if ($script:lastDbConfig) {
-            $options += "Re-lanzar con configuración anterior (BD: $($script:lastDbConfig.Host))"
-        }
-        $options += "Produccion (compilar, servicio de Windows, firewall)"
-        $options += "Salir"
+        $options = @(
+            "Pruebas (entorno de desarrollo local)",
+            "Produccion (compilar, servicio de Windows, firewall)",
+            "Salir"
+        )
         
         Show-Menu "Que deseas hacer?" $options
         
-        $maxOption = $options.Count
-        $selection = Read-Choice "Seleccionar opcion" -Max $maxOption
+        $selection = Read-Choice "Seleccionar opcion" -Max 3
         
         if ($selection -eq 1) {
             Start-TestSetup
         }
-        elseif ($selection -eq 2 -and $script:lastDbConfig) {
-            Start-DevRelaunch
-        }
-        elseif ($selection -eq 2 -and -not $script:lastDbConfig) {
+        elseif ($selection -eq 2) {
             if (Test-IsAdmin) {
                 Show-ProductionMenu
             } else {
@@ -1331,16 +1310,7 @@ function Show-MainMenu {
                 return
             }
         }
-        elseif ($selection -eq 3 -and $script:lastDbConfig) {
-            if (Test-IsAdmin) {
-                Show-ProductionMenu
-            } else {
-                Write-Log "Se requieren permisos de Administrador para Produccion." 'WARN'
-                Start-Process powershell -Verb RunAs -ArgumentList "-NoExit", "-File", "`"$PSCommandPath`""
-                return
-            }
-        }
-        elseif ($selection -eq 3 -or ($selection -eq 4 -and $script:lastDbConfig)) {
+        elseif ($selection -eq 3) {
             Write-Host "  Saliendo..." -ForegroundColor Yellow
             break
         }
