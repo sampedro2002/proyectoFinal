@@ -1,0 +1,38 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        format_sql: false
+    open-in-view: false
+  # Los tests generan el esquema directamente desde las entidades (ddl-auto: create-drop)
+  # en H2; las migraciones Flyway son especificas de MySQL y no se ejecutan aqui.
+  flyway:
+    enabled: false
+
+app:
+  security:
+    jwt:
+      secret: MI5umQZX2l4yOSn7zAUTSy/VeBt4cdR8Mdg6PD4o9BQ=
+      access-token-minutes: 30
+      refresh-token-days: 7
+    brute-force:
+      max-attempts: 3
+      lock-minutes: 15
+  biometric:
+    encryption-key: lu3Yr4OzMxXWR5lLDkz/AUVFT2kMcxxniYAooLSRhz0=
+  cors:
+    allowed-origins: http://localhost:4173
+  rate-limit:
+    enabled: false
+
+logging:
+  level:
+    com.eatfood: WARN
+    org.springframework.security: WARN

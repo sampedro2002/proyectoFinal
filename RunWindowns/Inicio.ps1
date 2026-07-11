@@ -46,6 +46,15 @@ $SetupExe     = Join-Path $ScriptRoot "setup.exe"
 $LockFile     = Join-Path $ScriptRoot ".setup_completado.lock"
 $ZkNativePath = Join-Path $ScriptRoot "native"
 
+# Reverse proxy HTTPS (Caddy) -- ver Step-ConfigureCaddyProxy
+$CaddyServiceName = "ControlEatFoodProxy"
+$CaddyDir         = Join-Path $NssmDir "caddy"
+$CaddyExe         = Join-Path $CaddyDir "caddy.exe"
+$CaddyDataDir     = Join-Path $CaddyDir "data"
+$CaddyfilePath    = Join-Path $ConfigDir "Caddyfile"
+$CaddyRootCaExport = Join-Path $ConfigDir "caddy-root-ca.crt"
+$CaddyVersion     = "2.11.4"
+
 @($ConfigDir, $LogsDir, $NssmDir) | ForEach-Object {
     if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
 }
@@ -105,6 +114,22 @@ function Read-Default {
     $val = Read-Host "  $Prompt [$Default]"
     if ([string]::IsNullOrWhiteSpace($val)) { return $Default }
     return $val.Trim()
+}
+
+function Read-Port {
+    # Como Read-Default, pero repite el prompt hasta recibir un numero de
+    # puerto valido (1-65535). Sin esto, un typo (ej. "erfre") llega intacto
+    # hasta el cast "[int]$dbConfig.Port" mas adelante, que lanza una excepcion
+    # no controlada y tumba el instalador completo (visto en logs de produccion).
+    param([string]$Prompt, [string]$Default)
+    do {
+        $val = Read-Host "  $Prompt [$Default]"
+        if ([string]::IsNullOrWhiteSpace($val)) { return $Default }
+        $val = $val.Trim()
+        $parsed = 0
+        if ([int]::TryParse($val, [ref]$parsed) -and $parsed -ge 1 -and $parsed -le 65535) { return $val }
+        Write-Host "    Puerto invalido. Ingrese un numero entre 1 y 65535." -ForegroundColor Red
+    } while ($true)
 }
 
 function Read-SecureInput {
@@ -385,7 +410,7 @@ function Step-ConfigureDatabase {
 
     $dbConfig = @{
         Type = ''; Host = 'localhost'; Port = '3306'
-        Name = 'control_almuerzos'; User = 'admin'; Password = ''; Url = ''
+        Name = 'control_almuerzos'; User = 'admin'; Password = ''; Url = ''; SslMode = 'PREFERRED'
     }
 
     $choice = 2
@@ -489,7 +514,7 @@ function Step-ConfigureDatabase {
         $connSuccess = $false
         do {
             $dbConfig.Host = if ($dbConfig.Host) { Read-Default "IP/Host del servidor MySQL" $dbConfig.Host } else { Read-RequiredInput "IP/Host del servidor MySQL" }
-            $dbConfig.Port = Read-Default "Puerto" $dbConfig.Port
+            $dbConfig.Port = Read-Port "Puerto" $dbConfig.Port
             $dbConfig.Name = if ($dbConfig.Name) { Read-Default "Nombre de base de datos" $dbConfig.Name } else { Read-RequiredInput "Nombre de base de datos" }
             $dbConfig.User = if ($dbConfig.User) { Read-Default "Usuario" $dbConfig.User } else { Read-RequiredInput "Usuario" }
             
@@ -531,7 +556,22 @@ function Step-ConfigureDatabase {
             }
         } until ($connSuccess)
 
-        $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?useSSL=false&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
+        if ($Mode -eq 'Prod') {
+            Write-Host ""
+            Write-Host "  --- Cifrado de la conexion a MySQL ---" -ForegroundColor Yellow
+            $useSsl = Read-Host "  El servidor MySQL soporta conexion SSL/TLS? (s/n, ENTER para 's')"
+            if ($useSsl -ne 'n') {
+                # REQUIRED cifra la conexion pero no valida el certificado contra una CA
+                # (apropiado para un MySQL con certificado autofirmado/por defecto, sin CA propia).
+                $dbConfig.SslMode = 'REQUIRED'
+                Write-Log "Conexion a MySQL: sslMode=REQUIRED (cifrada, sin verificar CA)." 'SUCCESS'
+            } else {
+                $dbConfig.SslMode = 'DISABLED'
+                Write-Log "Conexion a MySQL SIN cifrar (sslMode=DISABLED). No recomendado en produccion." 'WARN'
+            }
+        }
+
+        $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?sslMode=$($dbConfig.SslMode)&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
     }
 
     Write-Log "DB_URL = $($dbConfig.Url)" 'SUCCESS'
@@ -635,12 +675,12 @@ function Stop-ExistingProcesses {
         }
     }
     
-    # Matar procesos de Node (frontend) que estén usando el puerto 5173
+    # Matar procesos de Node (frontend) que estén usando el puerto 4173 (vite.config.js)
     $nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue
     if ($nodeProcesses) {
         foreach ($proc in $nodeProcesses) {
             try {
-                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 5173 }
+                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 4173 }
                 if ($connections) {
                     $proc | Stop-Process -Force -ErrorAction SilentlyContinue
                     Write-Log "Proceso frontend cerrado (PID: $($proc.Id))." 'SUCCESS'
@@ -744,7 +784,7 @@ function Step-ConfigureProduction {
     $prodConfig = @{
         JwtSecret = ''; CorsOrigins = ''; PublicUrl = ''; BiometricEncryptionKey = ''
         RateLimitEnabled = 'true'; RateLimitAuth = '10'; RateLimitScan = '60'
-        BackendPort = '8080'; ServerIP = (Get-ServerIP)
+        BackendPort = '3000'; ServerIP = (Get-ServerIP)
     }
 
     Write-Host ""
@@ -758,7 +798,9 @@ function Step-ConfigureProduction {
 
     Write-Host ""
     Write-Host "  --- CORS Origins ---" -ForegroundColor Yellow
-    $defaultCors = "http://$($prodConfig.ServerIP),http://localhost"
+    # Se incluyen variantes http y https porque en este punto todavia no se sabe si se
+    # configurara el reverse proxy Caddy (esa pregunta viene despues, en Step-ConfigureCaddyProxy).
+    $defaultCors = "https://$($prodConfig.ServerIP),http://$($prodConfig.ServerIP),http://localhost"
     Write-Host "    IP detectada del servidor: $($prodConfig.ServerIP)"
     $prodConfig.CorsOrigins = Read-Default "Origenes CORS (separar por coma)" $defaultCors
 
@@ -771,14 +813,13 @@ function Step-ConfigureProduction {
     }
 
     Write-Host ""
-    Write-Host "  --- Biometric Encryption Key (AES) ---" -ForegroundColor Yellow
+    Write-Host "  --- Biometric Encryption Key (AES-256) ---" -ForegroundColor Yellow
     Write-Host "    [1] Generar automaticamente (recomendado)"
     Write-Host "    [2] Ingresar manualmente"
-    Write-Host "    [3] Dejar vacio (no cifrar plantillas)"
-    switch (Read-Choice "Seleccionar" -Max 3) {
-        1 { $prodConfig.BiometricEncryptionKey = Generate-RandomBase64 -Bytes 16; Write-Log "Biometric Encryption Key generada." 'SUCCESS' }
-        2 { $prodConfig.BiometricEncryptionKey = Read-Host "  Ingrese clave AES (min 16 bytes Base64)" }
-        3 { $prodConfig.BiometricEncryptionKey = '' }
+    Write-Host "    (Obligatoria en produccion: el backend no arranca sin ella. No hay opcion de dejarla vacia.)" -ForegroundColor DarkGray
+    switch (Read-Choice "Seleccionar" -Max 2) {
+        1 { $prodConfig.BiometricEncryptionKey = Generate-RandomBase64 -Bytes 32; Write-Log "Biometric Encryption Key generada." 'SUCCESS' }
+        2 { $prodConfig.BiometricEncryptionKey = Read-RequiredInput "Ingrese clave AES-256 (Base64, 32 bytes)" }
     }
 
     Write-Host ""
@@ -789,7 +830,7 @@ function Step-ConfigureProduction {
 
     Write-Host ""
     Write-Host "  --- Puerto ---" -ForegroundColor Yellow
-    $prodConfig.BackendPort = Read-Default "Puerto de la aplicacion (API + frontend)" "8080"
+    $prodConfig.BackendPort = Read-Port "Puerto de la aplicacion (API + frontend)" "3000"
 
     return $prodConfig
 }
@@ -983,9 +1024,165 @@ function Step-ConfigureService {
     return $true
 }
 
-function Step-ConfigureFirewall {
+# ═══════════════════════════════════════════════════════════════════
+# REVERSE PROXY HTTPS (Caddy) -- evita exponer el backend en HTTP plano
+# ═══════════════════════════════════════════════════════════════════
+function Install-Caddy {
+    # Descarga el ZIP binario oficial de Caddy (GitHub Releases) y lo instala de
+    # forma portable en RunWindowns\tools\caddy, siguiendo el mismo patron que
+    # Install-MavenPortable: sin depender de winget ni de gestores de paquetes.
+    if (Test-Path $CaddyExe) {
+        Write-Log "Caddy ya esta instalado en $CaddyExe." 'SUCCESS'
+        return $true
+    }
+    $zipUrl = "https://github.com/caddyserver/caddy/releases/download/v$CaddyVersion/caddy_${CaddyVersion}_windows_amd64.zip"
+    $zipPath = Join-Path $CaddyDir "caddy.zip"
+    try {
+        New-Item -ItemType Directory -Force -Path $CaddyDir | Out-Null
+        Write-Log "Descargando Caddy $CaddyVersion desde $zipUrl ..."
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+        Write-Log "Descomprimiendo Caddy..."
+        Expand-Archive -Path $zipPath -DestinationPath $CaddyDir -Force -ErrorAction Stop
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        if (Test-Path $CaddyExe) {
+            Write-Log "Caddy $CaddyVersion instalado en $CaddyDir." 'SUCCESS'
+            return $true
+        }
+        Write-Log "Se descomprimio el ZIP pero no se encontro caddy.exe dentro." 'ERROR'
+        return $false
+    } catch {
+        Write-Log "No se pudo descargar/instalar Caddy: $_" 'ERROR'
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+}
+
+function Step-ConfigureCaddyProxy {
+    # Registra Caddy como reverse proxy HTTPS delante del backend (que se queda
+    # escuchando solo en localhost:BackendPort, sin exponerse directo al firewall).
+    # Como este despliegue es de red interna (LAN, sin dominio publico), Caddy usa
+    # su CA interna ("tls internal") en vez de Let's Encrypt: cada dispositivo que
+    # se conecte (kioscos, PCs del panel) debe confiar una vez en esa CA -- el
+    # certificado se exporta a $CaddyRootCaExport para distribuirlo.
     param($ProdConfig)
+
+    Write-Host ""
+    Write-Host "  --- HTTPS (reverse proxy Caddy) ---" -ForegroundColor Yellow
+    Write-Host "    Recomendado: sin esto, el backend queda expuesto en HTTP plano." -ForegroundColor DarkGray
+    $enable = Read-Host "  Configurar HTTPS con Caddy delante del backend? (s/n, ENTER para 's')"
+    if ($enable -eq 'n') {
+        Write-Log "HTTPS con Caddy omitido. El backend quedara expuesto en HTTP." 'WARN'
+        return $false
+    }
+
+    Write-Log "Configurando reverse proxy HTTPS (Caddy)..." 'STEP'
+    if (-not (Install-Caddy)) {
+        Write-Log "No se pudo instalar Caddy. Continuando sin HTTPS." 'ERROR'
+        return $false
+    }
+
+    $caddyfileContent = @"
+{
+	storage file_system {
+		root "$CaddyDataDir"
+	}
+	local_certs
+}
+
+:443 {
+	tls internal
+	reverse_proxy localhost:$($ProdConfig.BackendPort)
+}
+
+:80 {
+	redir https://{host}{uri} permanent
+}
+"@
+    Set-Content -Path $CaddyfilePath -Value $caddyfileContent -Encoding UTF8
+    Write-Log "Caddyfile generado en: $CaddyfilePath" 'SUCCESS'
+
+    $existingService = Get-Service -Name $CaddyServiceName -ErrorAction SilentlyContinue
+    if ($existingService) {
+        Write-Log "Servicio '$CaddyServiceName' ya existe. Deteniendo y eliminando..."
+        & $NssmExe stop $CaddyServiceName confirm 2>&1 | Out-Null
+        & $NssmExe remove $CaddyServiceName confirm 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
+    }
+
+    Write-Log "Registrando servicio '$CaddyServiceName'..."
+    & $NssmExe install $CaddyServiceName $CaddyExe "run --config `"$CaddyfilePath`"" | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Log "Error al registrar el servicio de Caddy." 'ERROR'; return $false }
+
+    & $NssmExe set $CaddyServiceName AppDirectory $CaddyDir | Out-Null
+    & $NssmExe set $CaddyServiceName AppExit Default Restart | Out-Null
+    & $NssmExe set $CaddyServiceName AppRestartDelay 10000 | Out-Null
+    & $NssmExe set $CaddyServiceName Description "ControlEatFood - Reverse proxy HTTPS (Caddy)" | Out-Null
+    & $NssmExe set $CaddyServiceName DisplayName "Control Eat Food - Proxy HTTPS" | Out-Null
+    & $NssmExe set $CaddyServiceName Start SERVICE_AUTO_START | Out-Null
+
+    $serviceLogsDir = Join-Path $LogsDir "service"
+    if (-not (Test-Path $serviceLogsDir)) { New-Item -ItemType Directory -Path $serviceLogsDir -Force | Out-Null }
+    & $NssmExe set $CaddyServiceName AppStdout (Join-Path $serviceLogsDir "caddy-stdout.log") | Out-Null
+    & $NssmExe set $CaddyServiceName AppStderr (Join-Path $serviceLogsDir "caddy-stderr.log") | Out-Null
+    & $NssmExe set $CaddyServiceName AppStderrCreationDisposition 4 | Out-Null
+    & $NssmExe set $CaddyServiceName AppStdoutCreationDisposition 4 | Out-Null
+
+    Write-Log "Iniciando servicio '$CaddyServiceName'..."
+    & $NssmExe start $CaddyServiceName | Out-Null
+    Start-Sleep -Seconds 5
+
+    $status = & $NssmExe status $CaddyServiceName 2>&1
+    if ($status -match 'SERVICE_RUNNING') { Write-Log "Servicio '$CaddyServiceName' iniciado correctamente." 'SUCCESS' }
+    else { Write-Log "El servicio de Caddy podria no haber iniciado. Estado: $status" 'WARN'; Write-Log "Revisar logs en: $serviceLogsDir" 'WARN' }
+
+    # Caddy genera su CA interna (root + hoja del sitio) al arrancar con "tls internal".
+    # Se espera un momento y se exporta el certificado raiz para distribuirlo a otros equipos.
+    $rootCaPath = Join-Path $CaddyDataDir "pki\authorities\local\root.crt"
+    $waited = 0
+    while (-not (Test-Path $rootCaPath) -and $waited -lt 20) { Start-Sleep -Seconds 1; $waited++ }
+    if (Test-Path $rootCaPath) {
+        Copy-Item $rootCaPath $CaddyRootCaExport -Force
+        Write-Log "Certificado raiz de Caddy exportado a: $CaddyRootCaExport" 'SUCCESS'
+        try {
+            & certutil -addstore -f "Root" $CaddyRootCaExport | Out-Null
+            Write-Log "Certificado raiz instalado en el almacen de confianza de este servidor." 'SUCCESS'
+        } catch { Write-Log "No se pudo instalar el certificado raiz en este equipo (hacerlo manualmente si es necesario)." 'WARN' }
+        Write-Host ""
+        Write-Host "  IMPORTANTE: cada PC/kiosco que se conecte por HTTPS debe confiar en" -ForegroundColor Yellow
+        Write-Host "  este certificado (autofirmado por la CA interna de Caddy, no publica)." -ForegroundColor Yellow
+        Write-Host "  Copia y ejecuta en cada equipo cliente:" -ForegroundColor Yellow
+        Write-Host "    certutil -addstore -f Root `"$CaddyRootCaExport`"" -ForegroundColor Cyan
+        Write-Host "  (o hazlo por GUI: doble clic al .crt -> Instalar certificado -> Equipo local -> Entidades de certificacion raiz de confianza)" -ForegroundColor DarkGray
+    } else {
+        Write-Log "No se encontro el certificado raiz de Caddy tras esperar. Verifica manualmente el servicio." 'WARN'
+    }
+
+    return $true
+}
+
+function Step-ConfigureFirewall {
+    param($ProdConfig, [bool]$CaddyEnabled = $false)
     Write-Log "Configurando firewall de Windows..." 'STEP'
+
+    if ($CaddyEnabled) {
+        # Con Caddy delante, solo se exponen 443/80; el puerto del backend
+        # queda accesible unicamente por localhost (sin regla de firewall).
+        foreach ($p in @(443, 80)) {
+            $ruleName = "ControlEatFood (Port $p)"
+            if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
+                Write-Log "Regla de firewall ya existe: $ruleName" 'SUCCESS'
+            } else {
+                try {
+                    New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort $p -Action Allow -Profile Any -ErrorAction Stop | Out-Null
+                    Write-Log "Regla de firewall creada: $ruleName" 'SUCCESS'
+                } catch { Write-Log "No se pudo crear regla de firewall para el puerto $p." 'ERROR' }
+            }
+        }
+        Write-Log "Puerto $($ProdConfig.BackendPort) del backend NO expuesto al firewall (solo accesible via Caddy)." 'SUCCESS'
+        return
+    }
+
     $ruleName = "ControlEatFood (Port $($ProdConfig.BackendPort))"
     if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
         Write-Log "Regla de firewall ya existe." 'SUCCESS'
@@ -998,7 +1195,7 @@ function Step-ConfigureFirewall {
 }
 
 function Save-InstallConfig {
-    param($DbConfig, $ProdConfig)
+    param($DbConfig, $ProdConfig, [bool]$CaddyEnabled = $false)
     Write-Log "Guardando configuracion..." 'STEP'
     $config = @{
         installDate = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
@@ -1010,6 +1207,7 @@ function Save-InstallConfig {
             rateLimitEnabled = $ProdConfig.RateLimitEnabled; backendPort = $ProdConfig.BackendPort
         }
         service     = @{ name = $ServiceName; status = "installed" }
+        proxy       = @{ enabled = $CaddyEnabled; serviceName = $CaddyServiceName }
         paths       = @{ projectRoot = $ProjectRoot; backendDir = $BackendDir; frontendDir = $FrontendDir; prodYml = $ProdYmlPath; nssmExe = $NssmExe }
     }
     $config | ConvertTo-Json -Depth 5 | Set-Content -Path $ConfigFile -Encoding UTF8
@@ -1042,8 +1240,9 @@ function Install-Full {
     Step-BuildProduction -DbConfig $dbConfig -ProdConfig $prodConfig
     Invoke-BiometricSetup
     $serviceOk = Step-ConfigureService -DbConfig $dbConfig -ProdConfig $prodConfig
-    Step-ConfigureFirewall -ProdConfig $prodConfig
-    Save-InstallConfig -DbConfig $dbConfig -ProdConfig $prodConfig
+    $caddyOk = Step-ConfigureCaddyProxy -ProdConfig $prodConfig
+    Step-ConfigureFirewall -ProdConfig $prodConfig -CaddyEnabled $caddyOk
+    Save-InstallConfig -DbConfig $dbConfig -ProdConfig $prodConfig -CaddyEnabled $caddyOk
 
     Write-Host ""
     Write-Host "  ============================================================" -ForegroundColor Green
@@ -1051,8 +1250,14 @@ function Install-Full {
     Write-Host "  ============================================================" -ForegroundColor Green
     Write-Host "  Servicio:     $ServiceName" -ForegroundColor Cyan
     Write-Host "  Estado:       $(if($serviceOk){'CORRIENDO'}else{'VERIFICAR (posible error)'})" -ForegroundColor $(if($serviceOk){'Green'}else{'Yellow'})
-    Write-Host "  Aplicacion:   http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)" -ForegroundColor Cyan
-    Write-Host "  Swagger:      http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)/swagger-ui.html" -ForegroundColor Cyan
+    if ($caddyOk) {
+        Write-Host "  Aplicacion:   https://$($prodConfig.ServerIP)" -ForegroundColor Cyan
+        Write-Host "  Swagger:      https://$($prodConfig.ServerIP)/swagger-ui.html" -ForegroundColor Cyan
+        Write-Host "  Certificado:  $CaddyRootCaExport (distribuir e instalar en cada equipo cliente)" -ForegroundColor Yellow
+    } else {
+        Write-Host "  Aplicacion:   http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)  (SIN HTTPS)" -ForegroundColor Yellow
+        Write-Host "  Swagger:      http://$($prodConfig.ServerIP):$($prodConfig.BackendPort)/swagger-ui.html" -ForegroundColor Yellow
+    }
     Write-Host "  Base de Datos:  $($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)" -ForegroundColor Cyan
     Write-Host "  Config:       $ConfigFile" -ForegroundColor DarkGray
     Write-Host "  Log:          $LogFile" -ForegroundColor DarkGray
@@ -1107,10 +1312,11 @@ function Update-App {
 function Repair-App {
     Show-Menu "Que deseas reparar?" @(
         "Reconectar base de datos", "Regenerar application-prod.yml",
-        "Reinstalar servicio Windows", "Reconfigurar firewall", "Volver al menu"
+        "Reinstalar servicio Windows", "Reconfigurar firewall",
+        "Reconfigurar HTTPS (Caddy)", "Volver al menu"
     )
-    $choice = Read-Choice "Seleccionar" -Max 5
-    if ($choice -eq 5) { return }
+    $choice = Read-Choice "Seleccionar" -Max 6
+    if ($choice -eq 6) { return }
 
     $config = $null
     if (Test-Path $ConfigFile) { $config = Get-Content $ConfigFile | ConvertFrom-Json }
@@ -1135,7 +1341,19 @@ function Repair-App {
         }
         4 {
             if (-not $config) { Write-Log "No hay config previa. Ejecutar instalacion nueva." 'ERROR'; return }
-            Step-ConfigureFirewall -ProdConfig @{ BackendPort = $config.production.backendPort }
+            $caddyEnabled = if ($config.proxy) { [bool]$config.proxy.enabled } else { $false }
+            Step-ConfigureFirewall -ProdConfig @{ BackendPort = $config.production.backendPort } -CaddyEnabled $caddyEnabled
+        }
+        5 {
+            if (-not $config) { Write-Log "No hay config previa. Ejecutar instalacion nueva." 'ERROR'; return }
+            $prodCfg = @{ BackendPort = $config.production.backendPort; ServerIP = $config.serverIP }
+            $caddyOk = Step-ConfigureCaddyProxy -ProdConfig $prodCfg
+            # Add-Member -Force: $config viene de ConvertFrom-Json (PSCustomObject). Si es una
+            # instalacion previa a la funcion de Caddy, la propiedad "proxy" no existe todavia y
+            # una asignacion directa ($config.proxy = ...) falla con "property cannot be found".
+            $config | Add-Member -NotePropertyName proxy -NotePropertyValue @{ enabled = $caddyOk; serviceName = $CaddyServiceName } -Force
+            $config | ConvertTo-Json -Depth 5 | Set-Content -Path $ConfigFile -Encoding UTF8
+            Step-ConfigureFirewall -ProdConfig $prodCfg -CaddyEnabled $caddyOk
         }
     }
 }
@@ -1156,7 +1374,7 @@ function Uninstall-App {
 
     Write-Host ""
     Write-Host "  Se realizaran las siguientes acciones:" -ForegroundColor Yellow
-    Write-Host "    1. Detener y eliminar el servicio '$ServiceName'"
+    Write-Host "    1. Detener y eliminar el servicio '$ServiceName' (y '$CaddyServiceName' si existe)"
     Write-Host "    2. Eliminar reglas de firewall"
     Write-Host "    3. Opcionalmente: eliminar archivos compilados"
     Write-Host "    4. Opcionalmente: eliminar base de datos (si es local)"
@@ -1175,8 +1393,21 @@ function Uninstall-App {
         Write-Log "Servicio eliminado via sc.exe." 'SUCCESS'
     }
 
+    if (Get-Service -Name $CaddyServiceName -ErrorAction SilentlyContinue) {
+        Write-Log "Deteniendo servicio '$CaddyServiceName'..."
+        if (Test-Path $NssmExe) {
+            & $NssmExe stop $CaddyServiceName confirm 2>&1 | Out-Null
+            Start-Sleep -Seconds 2
+            & $NssmExe remove $CaddyServiceName confirm 2>&1 | Out-Null
+        } else {
+            & sc.exe stop $CaddyServiceName 2>&1 | Out-Null
+            & sc.exe delete $CaddyServiceName 2>&1 | Out-Null
+        }
+        Write-Log "Servicio de proxy HTTPS detenido y eliminado." 'SUCCESS'
+    }
+
     Write-Log "Eliminando reglas de firewall..."
-    $ruleNames = @("ControlEatFood (Port 8080)")
+    $ruleNames = @("ControlEatFood (Port 3000)", "ControlEatFood (Port 8080)", "ControlEatFood (Port 443)", "ControlEatFood (Port 80)")
     if ($config) { $ruleNames += "ControlEatFood (Port $($config.production.backendPort))" }
     foreach ($ruleName in ($ruleNames | Select-Object -Unique)) {
         if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
@@ -1248,7 +1479,7 @@ function Show-Diagnostics {
 
     Write-Host ""
     Write-Host "  --- Puertos en escucha ---" -ForegroundColor Yellow
-    foreach ($port in @(8080, 80, 3306, 443)) {
+    foreach ($port in @(3000, 8080, 80, 3306, 443)) {
         if (Test-TcpPort -HostName 'localhost' -Port $port) { Write-Host "    Puerto $port :  ABIERTO" -ForegroundColor Green }
         else { Write-Host "    Puerto $port :  CERRADO" -ForegroundColor DarkGray }
     }

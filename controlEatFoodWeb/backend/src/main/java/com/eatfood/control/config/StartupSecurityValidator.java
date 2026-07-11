@@ -8,6 +8,8 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
 
+import java.util.Base64;
+
 /**
  * Valida, al arrancar, que los secretos críticos de seguridad estén definidos
  * de forma segura cuando la aplicación corre en producción (perfil {@code prod}).
@@ -44,7 +46,8 @@ public class StartupSecurityValidator implements ApplicationRunner {
 
         String jwtSecret = props.getSecurity().getJwt().getSecret();
         boolean jwtInsecure = jwtSecret == null || jwtSecret.isBlank()
-                || INSECURE_JWT_DEFAULT.equals(jwtSecret.trim());
+                || INSECURE_JWT_DEFAULT.equals(jwtSecret.trim())
+                || !hasSufficientKeyLength(jwtSecret);
 
         String bioKey = props.getBiometric().getEncryptionKey();
         boolean bioInsecure = bioKey == null || bioKey.isBlank();
@@ -56,8 +59,10 @@ public class StartupSecurityValidator implements ApplicationRunner {
         if (production) {
             if (jwtInsecure) {
                 throw new IllegalStateException(
-                        "JWT_SECRET no está definido o usa el valor por defecto inseguro. " +
-                        "Defina la variable de entorno JWT_SECRET con una clave Base64 aleatoria de al menos 256 bits.");
+                        "JWT_SECRET no está definido, usa el valor por defecto inseguro, no es Base64 válido, " +
+                        "o decodifica a menos de 256 bits. Defina la variable de entorno JWT_SECRET con una " +
+                        "clave Base64 aleatoria de al menos 32 bytes (256 bits) — el mínimo que exige HMAC-SHA " +
+                        "para las firmas JWT.");
             }
             if (bioInsecure) {
                 throw new IllegalStateException(
@@ -72,7 +77,8 @@ public class StartupSecurityValidator implements ApplicationRunner {
             log.info("[SECURITY] Validación de secretos de producción superada.");
         } else {
             if (jwtInsecure) {
-                log.warn("[SECURITY] JWT_SECRET usa el valor por defecto. NO usar así en producción.");
+                log.warn("[SECURITY] JWT_SECRET usa el valor por defecto, no es Base64 valido, o es mas corto " +
+                        "de 256 bits. NO usar asi en produccion.");
             }
             if (bioInsecure) {
                 log.warn("[SECURITY] BIOMETRIC_ENCRYPTION_KEY vacía: se usará la clave por defecto. NO usar así en producción.");
@@ -80,6 +86,20 @@ public class StartupSecurityValidator implements ApplicationRunner {
             if (dbPasswordInsecure) {
                 log.warn("[SECURITY] DB_PASSWORD usa el placeholder por defecto. NO usar así en producción.");
             }
+        }
+    }
+
+    /**
+     * {@code JwtService} usa {@code Keys.hmacShaKeyFor(secret)}, que exige una clave de al
+     * menos 256 bits (32 bytes decodificados) y lanza {@code WeakKeyException} en el primer
+     * login si no la tiene. Se valida aquí para fallar al arrancar con un mensaje claro, en
+     * vez de en el primer intento de inicio de sesión.
+     */
+    private static boolean hasSufficientKeyLength(String base64Secret) {
+        try {
+            return Base64.getDecoder().decode(base64Secret.trim()).length >= 32;
+        } catch (IllegalArgumentException e) {
+            return false;
         }
     }
 }

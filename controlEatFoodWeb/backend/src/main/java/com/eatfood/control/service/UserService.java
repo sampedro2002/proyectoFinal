@@ -55,6 +55,7 @@ public class UserService {
         if (req.password() == null || req.password().isBlank()) {
             throw new BusinessException("PASSWORD_REQUIRED", "La contraseña es obligatoria al crear un usuario.");
         }
+        validatePasswordStrength(req.password());
         AppUser user = new AppUser();
         user.setUsername(username);
         user.setFullName(req.fullName());
@@ -86,6 +87,7 @@ public class UserService {
         user.setRestaurant(resolveRestaurant(req.restaurantId()));
         // Si viene una contraseña no vacía, se actualiza; si viene vacía, no se cambia.
         if (req.password() != null && !req.password().isBlank()) {
+            validatePasswordStrength(req.password());
             user.setPasswordHash(passwordEncoder.encode(req.password()));
         }
         user = userRepository.save(user);
@@ -146,6 +148,15 @@ public class UserService {
     private boolean isCurrentUser(AppUser user) {
         var auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && user.getUsername().equals(auth.getName());
+    }
+
+    /** Misma longitud mínima que {@code PasswordResetRequest} (UserDtos), aplicada aquí porque
+     *  en creación/edición la contraseña es opcional (vacía = no cambiar) y no puede validarse
+     *  con una anotación simple en el DTO. */
+    private static void validatePasswordStrength(String password) {
+        if (password.length() < 6) {
+            throw new BusinessException("WEAK_PASSWORD", "La contraseña debe tener al menos 6 caracteres.");
+        }
     }
 
     private static String blankToNull(String v) {

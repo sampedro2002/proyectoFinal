@@ -41,7 +41,7 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
                 if (deviceToken != null && !deviceToken.isBlank()) {
                     attributes.put("deviceToken", deviceToken);
                     log.info("[WS AUTH] JWT válido — usuario='{}', dispositivo='{}'",
-                            claims.getSubject(), deviceToken);
+                            claims.getSubject(), mask(deviceToken));
                 } else {
                     log.info("[WS AUTH] JWT válido — usuario='{}'", claims.getSubject());
                 }
@@ -60,11 +60,11 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
                     .orElse(false);
             if (validDevice) {
                 attributes.put("deviceToken", deviceToken);
-                log.info("[WS AUTH] Kiosk autenticado — deviceToken='{}'", deviceToken);
+                log.info("[WS AUTH] Kiosk autenticado — deviceToken='{}'", mask(deviceToken));
                 return true;
             }
             log.warn("[WS AUTH] Conexión rechazada: deviceToken='{}' no corresponde a un dispositivo conectado.",
-                    deviceToken);
+                    mask(deviceToken));
             response.setStatusCode(HttpStatus.UNAUTHORIZED);
             return false;
         }
@@ -85,5 +85,11 @@ public class JwtWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         if (values == null || values.isEmpty()) return null;
         String v = values.get(0);
         return v == null ? null : v;
+    }
+
+    /** Enmascara un token de sesión para que no quede expuesto en texto plano en los logs. */
+    private static String mask(String token) {
+        if (token == null || token.length() <= 6) return "***";
+        return token.substring(0, 6) + "…";
     }
 }
