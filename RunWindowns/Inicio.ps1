@@ -900,7 +900,7 @@ logging:
         $targetResources = Join-Path $BackendDir "src\main\resources"
         Copy-Item $ProdYmlPath (Join-Path $targetResources "application-prod.yml") -Force
 
-        & mvn clean package -DskipTests -Dspring.profiles.active=prod 2>&1 | ForEach-Object {
+        & mvn clean package -DskipTests "-Dspring.profiles.active=prod" 2>&1 | ForEach-Object {
             if ($_ -match 'BUILD SUCCESS') { Write-Log $_ 'SUCCESS' }
             elseif ($_ -match 'BUILD FAILURE|ERROR') { Write-Log $_ 'ERROR' }
         }
