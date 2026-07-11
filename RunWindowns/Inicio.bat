@@ -1,11 +1,4 @@
 @echo off
-setlocal
-title ControlEatFood
-
-:: Correccion: establecer la politica de ejecucion para el usuario actual
-powershell -Command "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force"
-
-:: Lanzador delgado: toda la logica vive en Inicio.ps1 (Pruebas/Produccion).
-:: Se usa -ExecutionPolicy Bypass para evitar el bloqueo de scripts al
-:: hacer doble clic; Inicio.ps1 se auto-eleva solo si eliges Produccion.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Inicio.ps1"
+:: Elevar directamente como Administrador al hacer doble clic
+:: Esto evita que el script se relance (y duplique ventanas) cuando se elige Produccion
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%~dp0Inicio.ps1\"' -Wait"

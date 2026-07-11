@@ -2,22 +2,36 @@
 .SYNOPSIS
     ControlEatFood - Punto de entrada unico (Pruebas / Produccion) para Windows
 .DESCRIPTION
-    Reemplaza a setup_env.bat + install.ps1 + uninstall.ps1. Un solo menu con
-    dos caminos:
+    Script unico para todo: reemplaza a setup_env.bat + install.ps1 + uninstall.ps1.
+    Un solo menu con dos caminos:
       [1] Pruebas     -> entorno de desarrollo local (no requiere Administrador)
       [2] Produccion  -> build + servicio de Windows (requiere Administrador,
                           se auto-eleva solo)
 .NOTES
-    Lanzar via Inicio.bat (evita el problema de politica de ejecucion al
-    hacer doble clic), o directamente:
+    Ejecutar directamente:
       powershell -NoProfile -ExecutionPolicy Bypass -File Inicio.ps1
+    
+    O configurar la politica de ejecucion una sola vez:
+      Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+    
+    Despues de eso, se puede hacer doble clic o ejecutar directamente.
 #>
 
 [CmdletBinding()]
-param(
-    [ValidateSet('', 'Production')]
-    [string]$Mode = ''
-)
+param()
+
+# ═══════════════════════════════════════════════════════════════════
+# AUTO-CONFIGURACION INICIAL (reemplaza la funcionalidad de Inicio.bat)
+# ═══════════════════════════════════════════════════════════════════
+try {
+    $currentPolicy = Get-ExecutionPolicy -Scope Process
+    if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'Undefined') {
+        Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction SilentlyContinue
+    }
+} catch {
+    # Si no se puede cambiar la politica, continuar de todos modos
+    # (el usuario puede haber ejecutado el script con -ExecutionPolicy Bypass)
+}
 
 Set-StrictMode -Version Latest
 # 'Continue' (no 'Stop'): con 'Stop', PowerShell 5.1 convierte cualquier linea
@@ -680,7 +694,7 @@ function Stop-ExistingProcesses {
     if ($nodeProcesses) {
         foreach ($proc in $nodeProcesses) {
             try {
-                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 4173 }
+                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -in @(4173, 5173) }
                 if ($connections) {
                     $proc | Stop-Process -Force -ErrorAction SilentlyContinue
                     Write-Log "Proceso frontend cerrado (PID: $($proc.Id))." 'SUCCESS'
@@ -741,7 +755,7 @@ function Start-TestSetup {
                 "`$env:JWT_SECRET='$devJwtSecret'; " +
                 "`$env:CORS_ORIGINS='http://localhost:5173,http://localhost:5174,http://localhost:4173'; " +
                 "`$env:RATE_LIMIT_ENABLED='true'; `$env:RATE_LIMIT_AUTH='10'; `$env:RATE_LIMIT_SCAN='60'; " +
-                "`$env:ZK_NATIVE_PATH='./native'; " +
+                "`$env:ZK_NATIVE_PATH='$ZkNativePath'; " +
                 "mvn spring-boot:run"
             Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
             Start-Sleep -Seconds 2
@@ -1082,10 +1096,11 @@ function Step-ConfigureCaddyProxy {
         return $false
     }
 
+    $caddyDataDirForwardSlash = $CaddyDataDir -replace '\\', '/'
     $caddyfileContent = @"
 {
 	storage file_system {
-		root "$CaddyDataDir"
+		root "$caddyDataDirForwardSlash"
 	}
 	local_certs
 }
@@ -1301,6 +1316,11 @@ function Update-App {
     }
 
     if (Test-Path $NssmExe) {
+        $jarFile = Get-ChildItem (Join-Path $BackendDir "target") -Filter "*.jar" | Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1
+        if ($jarFile) {
+            $jarPath = $jarFile.FullName
+            & $NssmExe set $ServiceName AppParameters "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
+        }
         & $NssmExe start $ServiceName 2>&1 | Out-Null
         Start-Sleep -Seconds 3
         $status = & $NssmExe status $ServiceName 2>&1
@@ -1490,60 +1510,59 @@ function Show-Diagnostics {
     Write-Host ""
 }
 
-function Show-ProductionMenu {
-    while ($true) {
-        Clear-Host
-        Write-Banner "- MODO PRODUCCION"
-        Show-Menu "Seleccionar opcion" @(
-            "Instalacion nueva", "Actualizar aplicacion (rebuild + restart)",
-            "Reparar configuracion", "Desinstalar", "Diagnosticos del entorno", "Volver al menu principal"
-        )
-        switch (Read-Choice "Seleccionar opcion" -Max 6) {
-            1 { Install-Full }
-            2 { Update-App }
-            3 { Repair-App }
-            4 { if ((Read-Host "  Esta seguro de desinstalar? (s/n)") -eq 's') { Uninstall-App } }
-            5 { Show-Diagnostics }
-            6 { return }
-        }
-        Write-Host ""
-        Read-Host "  Presione ENTER para continuar"
-    }
-}
-
 # ═══════════════════════════════════════════════════════════════════
-# MENU PRINCIPAL
+# MENU PRINCIPAL (unificado: Pruebas + Produccion en un solo menu)
 # ═══════════════════════════════════════════════════════════════════
 function Show-MainMenu {
-    while ($true) {
+    $salir = $false
+    while (-not $salir) {
         Clear-Host
         Write-Banner
         
         $options = @(
             "Pruebas (entorno de desarrollo local)",
-            "Produccion (compilar, servicio de Windows, firewall)",
+            "Instalacion nueva (Produccion)",
+            "Actualizar aplicacion (rebuild + restart)",
+            "Reparar configuracion",
+            "Desinstalar",
+            "Diagnosticos del entorno",
             "Salir"
         )
         
         Show-Menu "Que deseas hacer?" $options
         
-        $selection = Read-Choice "Seleccionar opcion" -Max 3
+        $selection = Read-Choice "Seleccionar opcion" -Max 7
         
-        if ($selection -eq 1) {
-            Start-TestSetup
+        $requiresAdmin = $selection -ge 2 -and $selection -le 6
+        
+        if ($requiresAdmin -and -not (Test-IsAdmin)) {
+            Write-Host ""
+            Write-Host "  [!] Esta opcion requiere permisos de Administrador." -ForegroundColor Yellow
+            Write-Host "      Usa Inicio.bat (doble clic) en lugar de ejecutar Inicio.ps1 directamente." -ForegroundColor Yellow
+            Write-Host "      El .bat solicita elevacion UAC automaticamente al abrir." -ForegroundColor DarkGray
+            Write-Host ""
+            Read-Host "  Presione ENTER para continuar"
+            continue
         }
-        elseif ($selection -eq 2) {
-            if (Test-IsAdmin) {
-                Show-ProductionMenu
-            } else {
-                Write-Log "Se requieren permisos de Administrador para Produccion." 'WARN'
-                Start-Process powershell -Verb RunAs -ArgumentList "-NoExit", "-File", "`"$PSCommandPath`""
-                return
+        
+        switch ($selection) {
+            1 { Start-TestSetup }
+            2 { Install-Full }
+            3 { Update-App }
+            4 { Repair-App }
+            5 { 
+                if ((Read-Host "  Esta seguro de desinstalar? (s/n)") -eq 's') { Uninstall-App } 
+            }
+            6 { Show-Diagnostics }
+            7 { 
+                Write-Host "  Saliendo... Hasta luego!" -ForegroundColor Yellow
+                $salir = $true
             }
         }
-        elseif ($selection -eq 3) {
-            Write-Host "  Saliendo..." -ForegroundColor Yellow
-            break
+        
+        if (-not $salir) {
+            Write-Host ""
+            Read-Host "  Presione ENTER para continuar"
         }
     }
 }
@@ -1552,20 +1571,7 @@ function Show-MainMenu {
 # INICIO
 # ═══════════════════════════════════════════════════════════════════
 try {
-    if ($Mode -eq 'Production') {
-        if (-not (Test-IsAdmin)) {
-            Write-Log "Este modo requiere privilegios de administrador." 'ERROR'
-            Read-Host "  Presione ENTER para salir"
-        } else {
-            Show-ProductionMenu
-            # "Volver al menu principal" desde Produccion cae aqui: como ya
-            # estamos elevados, mostramos el menu principal en esta misma
-            # ventana en vez de simplemente cerrarla.
-            Show-MainMenu
-        }
-    } else {
-        Show-MainMenu
-    }
+    Show-MainMenu
 } catch {
     Write-Log "Error inesperado: $_" 'ERROR'
     Write-Log "Stack: $($_.ScriptStackTrace)" 'ERROR'
