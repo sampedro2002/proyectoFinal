@@ -909,7 +909,7 @@ app:
     provider: zk
     match-threshold: 70
     encryption-key: "$($ProdConfig.BiometricEncryptionKey)"
-    native-lib-path: "$ZkNativePath"
+    native-lib-path: "$($ZkNativePath -replace '\\', '/')"
   cors:
     allowed-origins: "$($ProdConfig.CorsOrigins)"
   rate-limit:
