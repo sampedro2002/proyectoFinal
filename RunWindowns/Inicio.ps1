@@ -51,6 +51,10 @@ $ZkNativePath = Join-Path $ScriptRoot "native"
 }
 $LogFile = Join-Path $LogsDir ("inicio_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
 
+# Variables de sesión para re-lanzar sin reconfigurar
+$script:lastDbConfig = $null
+$script:lastDevJwtSecret = $null
+
 # ═══════════════════════════════════════════════════════════════════
 # UTILIDADES COMPARTIDAS
 # ═══════════════════════════════════════════════════════════════════
@@ -477,25 +481,55 @@ function Step-ConfigureDatabase {
         $dbConfig.Type = 'remote'
         Write-Log "Configuracion de base de datos remota..."
 
-        $dbConfig.Host = Read-Host "  IP/Host del servidor MySQL"
-        $dbConfig.Port = Read-Default "Puerto" $dbConfig.Port
-        $dbConfig.Name = Read-Default "Nombre de base de datos" $dbConfig.Name
-        $dbConfig.User = Read-Default "Usuario" $dbConfig.User
-        $dbConfig.Password = if ($Mode -eq 'Prod') { Read-SecureInput "Contrasena" } else { Read-Default "Contrasena" $dbConfig.Password }
+        $dbConfig.Host = ''
+        $dbConfig.Name = ''
+        $dbConfig.User = ''
+        $dbConfig.Password = ''
 
-        Write-Log "Probando conexion a $($dbConfig.Host):$($dbConfig.Port)..."
-        $connSuccess = Test-TcpPort -HostName $dbConfig.Host -Port ([int]$dbConfig.Port)
-        if ($connSuccess) {
-            Write-Log "Conexion TCP exitosa a $($dbConfig.Host):$($dbConfig.Port)." 'SUCCESS'
-        } else {
-            Write-Log "No se pudo conectar a $($dbConfig.Host):$($dbConfig.Port)." 'ERROR'
-            Write-Log "Verifica firewall, que MySQL acepte conexiones remotas, y las credenciales." 'WARN'
-        }
+        $connSuccess = $false
+        do {
+            $dbConfig.Host = if ($dbConfig.Host) { Read-Default "IP/Host del servidor MySQL" $dbConfig.Host } else { Read-RequiredInput "IP/Host del servidor MySQL" }
+            $dbConfig.Port = Read-Default "Puerto" $dbConfig.Port
+            $dbConfig.Name = if ($dbConfig.Name) { Read-Default "Nombre de base de datos" $dbConfig.Name } else { Read-RequiredInput "Nombre de base de datos" }
+            $dbConfig.User = if ($dbConfig.User) { Read-Default "Usuario" $dbConfig.User } else { Read-RequiredInput "Usuario" }
+            
+            if ($Mode -eq 'Prod') {
+                if ($dbConfig.Password) {
+                    $newPass = Read-SecureInput "Contrasena (ENTER para mantener actual)"
+                    if (-not [string]::IsNullOrWhiteSpace($newPass)) { $dbConfig.Password = $newPass }
+                } else {
+                    $dbConfig.Password = Read-SecureInput "Contrasena"
+                }
+            } else {
+                $dbConfig.Password = if ($dbConfig.Password) { Read-Default "Contrasena" $dbConfig.Password } else { Read-RequiredInput "Contrasena" }
+            }
 
-        if (-not $connSuccess) {
-            $cont = Read-Host "  La conexion TCP fallo. Continuar de todos modos? (s/n)"
-            if ($cont -ne 's') { return (Step-ConfigureDatabase -Mode $Mode) }
-        }
+            Write-Host ""
+            Write-Host "  --- Resumen de configuracion ---" -ForegroundColor Cyan
+            Write-Host "    Host: $($dbConfig.Host):$($dbConfig.Port)"
+            Write-Host "    Base de datos: $($dbConfig.Name)"
+            Write-Host "    Usuario: $($dbConfig.User)"
+            Write-Host ""
+            
+            $confirm = Read-Host "  Los datos son correctos? (s/n, ENTER para 's')"
+            if ($confirm -eq 'n') {
+                continue
+            }
+
+            Write-Log "Probando conexion a $($dbConfig.Host):$($dbConfig.Port)..."
+            $connSuccess = Test-TcpPort -HostName $dbConfig.Host -Port ([int]$dbConfig.Port)
+            if ($connSuccess) {
+                Write-Log "Conexion TCP exitosa a $($dbConfig.Host):$($dbConfig.Port)." 'SUCCESS'
+            } else {
+                Write-Log "No se pudo conectar a $($dbConfig.Host):$($dbConfig.Port)." 'ERROR'
+                Write-Log "Verifica firewall, que MySQL acepte conexiones remotas, y las credenciales." 'WARN'
+                
+                $retry = Read-Host "  La conexion TCP fallo. Reintentar configuracion? (s/n, n para continuar de todos modos)"
+                if ($retry -eq 'n') {
+                    $connSuccess = $true
+                }
+            }
+        } until ($connSuccess)
 
         $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?useSSL=false&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
     }
@@ -574,6 +608,50 @@ function Invoke-BiometricSetup {
 # ═══════════════════════════════════════════════════════════════════
 # MODO PRUEBAS (equivalente a setup_env.bat, mejorado)
 # ═══════════════════════════════════════════════════════════════════
+function Stop-ExistingProcesses {
+    Write-Log "Cerrando procesos anteriores del backend/frontend..." 'STEP'
+    
+    # Cerrar ventanas de PowerShell con el título específico
+    $shell = New-Object -ComObject Shell.Application
+    $windows = $shell.Windows()
+    foreach ($window in $windows) {
+        if ($window.LocationName -match 'ControlEatFood') {
+            $window.Quit()
+            Start-Sleep -Milliseconds 500
+        }
+    }
+    
+    # Matar procesos de Java (backend) que estén usando el puerto 3000
+    $javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue
+    if ($javaProcesses) {
+        foreach ($proc in $javaProcesses) {
+            try {
+                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 3000 }
+                if ($connections) {
+                    $proc | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Write-Log "Proceso backend cerrado (PID: $($proc.Id))." 'SUCCESS'
+                }
+            } catch { }
+        }
+    }
+    
+    # Matar procesos de Node (frontend) que estén usando el puerto 5173
+    $nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue
+    if ($nodeProcesses) {
+        foreach ($proc in $nodeProcesses) {
+            try {
+                $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 5173 }
+                if ($connections) {
+                    $proc | Stop-Process -Force -ErrorAction SilentlyContinue
+                    Write-Log "Proceso frontend cerrado (PID: $($proc.Id))." 'SUCCESS'
+                }
+            } catch { }
+        }
+    }
+    
+    Start-Sleep -Seconds 1
+}
+
 function Start-TestSetup {
     Clear-Host
     Write-Banner "- MODO PRUEBAS (Desarrollo)"
@@ -594,6 +672,10 @@ function Start-TestSetup {
         Write-Log "No se pudieron instalar las dependencias del frontend. Revisa el log." 'WARN'
     }
     Invoke-BiometricSetup
+    
+    # Guardar configuración en variable de sesión para re-lanzar después
+    $script:lastDbConfig = $dbConfig
+    $script:lastDevJwtSecret = Get-DevJwtSecret
 
     Write-Host ""
     Write-Host "  ============================================================" -ForegroundColor Green
@@ -605,40 +687,38 @@ function Start-TestSetup {
 
     $devJwtSecret = Get-DevJwtSecret
 
-    $launch = Read-Host "  Deseas iniciar backend y frontend ahora en ventanas separadas? (s/n)"
-    if ($launch -eq 's') {
-        $beCmd = "cd `"$BackendDir`"; " +
-            "`$env:DB_URL='$($dbConfig.Url)'; `$env:DB_USER='$($dbConfig.User)'; `$env:DB_PASSWORD='$($dbConfig.Password)'; " +
-            "`$env:JWT_SECRET='$devJwtSecret'; " +
-            "`$env:CORS_ORIGINS='http://localhost:5173,http://localhost:5174,http://localhost:4173'; " +
-            "`$env:RATE_LIMIT_ENABLED='true'; `$env:RATE_LIMIT_AUTH='10'; `$env:RATE_LIMIT_SCAN='60'; " +
-            "`$env:ZK_NATIVE_PATH='./native'; " +
-            "mvn spring-boot:run"
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
-        Start-Sleep -Seconds 2
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
-        Write-Log "Backend y frontend lanzados en ventanas nuevas." 'SUCCESS'
-    } else {
-        Write-Host ""
-        Write-Host "  Para iniciar manualmente (en esta misma ventana, las variables ya quedaron seteadas):" -ForegroundColor Yellow
-        Write-Host "    cd controlEatFoodWeb\backend"
-        Write-Host "    mvn spring-boot:run"
-        Write-Host ""
-        Write-Host "    cd controlEatFoodWeb\frontend"
-        Write-Host "    npm run dev"
-        $env:DB_URL = $dbConfig.Url
-        $env:DB_USER = $dbConfig.User
-        $env:DB_PASSWORD = $dbConfig.Password
-        $env:JWT_SECRET = $devJwtSecret
-        $env:CORS_ORIGINS = 'http://localhost:5173,http://localhost:5174,http://localhost:4173'
-        $env:RATE_LIMIT_ENABLED = 'true'
-        $env:RATE_LIMIT_AUTH = '10'
-        $env:RATE_LIMIT_SCAN = '60'
-        $env:ZK_NATIVE_PATH = './native'
-    }
+    Show-Menu "Que deseas hacer?" @(
+        "Iniciar backend y frontend en ventanas separadas",
+        "Volver a configurar base de datos",
+        "Volver al menu principal"
+    )
+    $action = Read-Choice "Seleccionar" -Max 3
 
-    Write-Host ""
-    Read-Host "  Presione ENTER para volver al menu"
+    switch ($action) {
+        1 {
+            Stop-ExistingProcesses
+            $beCmd = "cd `"$BackendDir`"; " +
+                "`$env:DB_URL='$($dbConfig.Url)'; `$env:DB_USER='$($dbConfig.User)'; `$env:DB_PASSWORD='$($dbConfig.Password)'; " +
+                "`$env:JWT_SECRET='$devJwtSecret'; " +
+                "`$env:CORS_ORIGINS='http://localhost:5173,http://localhost:5174,http://localhost:4173'; " +
+                "`$env:RATE_LIMIT_ENABLED='true'; `$env:RATE_LIMIT_AUTH='10'; `$env:RATE_LIMIT_SCAN='60'; " +
+                "`$env:ZK_NATIVE_PATH='./native'; " +
+                "mvn spring-boot:run"
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
+            Start-Sleep -Seconds 2
+            Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
+            Write-Log "Backend y frontend lanzados en ventanas nuevas." 'SUCCESS'
+            Write-Host ""
+            Read-Host "  Presione ENTER para volver al menu"
+        }
+        2 {
+            Start-TestSetup
+        }
+        3 {
+            # Volver al menú principal
+            return
+        }
+    }
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -1187,30 +1267,82 @@ function Show-ProductionMenu {
 # ═══════════════════════════════════════════════════════════════════
 # MENU PRINCIPAL
 # ═══════════════════════════════════════════════════════════════════
+function Start-DevRelaunch {
+    if (-not $script:lastDbConfig) {
+        Write-Log "No hay configuración previa. Ejecuta 'Pruebas' primero." 'ERROR'
+        Read-Host "  Presione ENTER para continuar"
+        return
+    }
+    
+    Stop-ExistingProcesses
+    
+    $dbConfig = $script:lastDbConfig
+    $devJwtSecret = $script:lastDevJwtSecret
+    
+    Write-Log "Re-lanzando con configuración anterior..." 'STEP'
+    Write-Host "  BD: $($dbConfig.Url)" -ForegroundColor Cyan
+    Write-Host "  Usuario: $($dbConfig.User)" -ForegroundColor Cyan
+    
+    $beCmd = "cd `"$BackendDir`"; " +
+        "`$env:DB_URL='$($dbConfig.Url)'; `$env:DB_USER='$($dbConfig.User)'; `$env:DB_PASSWORD='$($dbConfig.Password)'; " +
+        "`$env:JWT_SECRET='$devJwtSecret'; " +
+        "`$env:CORS_ORIGINS='http://localhost:5173,http://localhost:5174,http://localhost:4173'; " +
+        "`$env:RATE_LIMIT_ENABLED='true'; `$env:RATE_LIMIT_AUTH='10'; `$env:RATE_LIMIT_SCAN='60'; " +
+        "`$env:ZK_NATIVE_PATH='./native'; " +
+        "mvn spring-boot:run"
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", $beCmd
+    Start-Sleep -Seconds 2
+    Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$FrontendDir`"; npm run dev"
+    
+    Write-Log "Backend y frontend re-lanzados en ventanas nuevas." 'SUCCESS'
+    Write-Host ""
+    Read-Host "  Presione ENTER para volver al menu"
+}
+
 function Show-MainMenu {
     while ($true) {
         Clear-Host
         Write-Banner
-        Show-Menu "Que deseas hacer?" @(
-            "Pruebas (entorno de desarrollo local)",
-            "Produccion (compilar, servicio de Windows, firewall)",
-            "Salir"
-        )
-        switch (Read-Choice "Seleccionar opcion" -Max 3) {
-            1 { Start-TestSetup }
-            2 {
-                if (Test-IsAdmin) {
-                    Show-ProductionMenu
-                } else {
-                    Write-Host ""
-                    Write-Host "  Se abrira una nueva ventana solicitando permisos de Administrador..." -ForegroundColor Yellow
-                    Start-Process powershell -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Mode Production"
-                    Write-Host "  Continua la instalacion en esa ventana. Puedes cerrar esta." -ForegroundColor Yellow
-                    Read-Host "  Presione ENTER para salir"
-                    return
-                }
+        
+        $options = @("Pruebas (entorno de desarrollo local)")
+        if ($script:lastDbConfig) {
+            $options += "Re-lanzar con configuración anterior (BD: $($script:lastDbConfig.Host))"
+        }
+        $options += "Produccion (compilar, servicio de Windows, firewall)"
+        $options += "Salir"
+        
+        Show-Menu "Que deseas hacer?" $options
+        
+        $maxOption = $options.Count
+        $selection = Read-Choice "Seleccionar opcion" -Max $maxOption
+        
+        if ($selection -eq 1) {
+            Start-TestSetup
+        }
+        elseif ($selection -eq 2 -and $script:lastDbConfig) {
+            Start-DevRelaunch
+        }
+        elseif ($selection -eq 2 -and -not $script:lastDbConfig) {
+            if (Test-IsAdmin) {
+                Show-ProductionMenu
+            } else {
+                Write-Log "Se requieren permisos de Administrador para Produccion." 'WARN'
+                Start-Process powershell -Verb RunAs -ArgumentList "-NoExit", "-File", "`"$PSCommandPath`""
+                return
             }
-            3 { return }
+        }
+        elseif ($selection -eq 3 -and $script:lastDbConfig) {
+            if (Test-IsAdmin) {
+                Show-ProductionMenu
+            } else {
+                Write-Log "Se requieren permisos de Administrador para Produccion." 'WARN'
+                Start-Process powershell -Verb RunAs -ArgumentList "-NoExit", "-File", "`"$PSCommandPath`""
+                return
+            }
+        }
+        elseif ($selection -eq 3 -or ($selection -eq 4 -and $script:lastDbConfig)) {
+            Write-Host "  Saliendo..." -ForegroundColor Yellow
+            break
         }
     }
 }
