@@ -968,6 +968,48 @@ logging:
     } finally { Pop-Location }
 }
 
+function Ensure-Nssm {
+    # nssm.cc es un unico servidor y responde intermitente (503 "Service Unavailable"
+    # observado en pruebas reales, exitoso al reintentar segundos despues). Se reintenta
+    # varias veces antes de caer al flujo manual, igual que Install-MavenViaWinget.
+    # Se usa tanto desde Step-ConfigureService como desde Step-ConfigureCaddyProxy: si
+    # ya esta instalado (Test-Path), devuelve true de inmediato sin volver a descargar.
+    if (Test-Path $NssmExe) { return $true }
+
+    $nssmUrl = "https://nssm.cc/release/nssm-2.24.zip"
+    $zipPath = Join-Path $NssmDir "nssm.zip"
+    $maxAttempts = 3
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        Write-Log "Descargando NSSM (Non-Sucking Service Manager) (intento $attempt de $maxAttempts)..."
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+            Invoke-WebRequest -Uri $nssmUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
+            Expand-Archive -Path $zipPath -DestinationPath $NssmDir -Force -ErrorAction Stop
+            $foundNssm = Get-ChildItem $NssmDir -Recurse -Filter "nssm.exe" |
+                Where-Object { $_.DirectoryName -match 'win64' } | Select-Object -First 1
+            if (-not $foundNssm) { $foundNssm = Get-ChildItem $NssmDir -Recurse -Filter "nssm.exe" | Select-Object -First 1 }
+            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+            if ($foundNssm) {
+                Copy-Item $foundNssm.FullName $NssmExe -Force
+                Write-Log "NSSM descargado: $NssmExe" 'SUCCESS'
+                return $true
+            }
+            Write-Log "El ZIP se descargo pero no se encontro nssm.exe dentro." 'WARN'
+        } catch {
+            Write-Log "Intento $attempt fallo: $($_.Exception.Message)" 'WARN'
+            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        }
+        if ($attempt -lt $maxAttempts) { Start-Sleep -Seconds 3 }
+    }
+
+    Write-Log "No se pudo descargar NSSM automaticamente tras $maxAttempts intentos." 'ERROR'
+    Start-Process "https://nssm.cc/download"
+    Read-Host "  Presione ENTER cuando NSSM este instalado en $NssmDir"
+    if (Test-Path $NssmExe) { return $true }
+    Write-Log "NSSM no encontrado en $NssmDir." 'ERROR'
+    return $false
+}
+
 function Step-ConfigureService {
     param($DbConfig, $ProdConfig)
     Write-Log "Configurando servicio de Windows..." 'STEP'
@@ -976,26 +1018,7 @@ function Step-ConfigureService {
         Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1
     if (-not $jarFile) { Write-Log "No se encontro JAR del backend. No se puede crear servicio." 'ERROR'; return $false }
 
-    if (-not (Test-Path $NssmExe)) {
-        Write-Log "Descargando NSSM (Non-Sucking Service Manager)..."
-        try {
-            $nssmUrl = "https://nssm.cc/release/nssm-2.24.zip"
-            $zipPath = Join-Path $NssmDir "nssm.zip"
-            [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -Uri $nssmUrl -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
-            Expand-Archive -Path $zipPath -DestinationPath $NssmDir -Force -ErrorAction Stop
-            $foundNssm = Get-ChildItem $NssmDir -Recurse -Filter "nssm.exe" |
-                Where-Object { $_.DirectoryName -match 'win64' } | Select-Object -First 1
-            if (-not $foundNssm) { $foundNssm = Get-ChildItem $NssmDir -Recurse -Filter "nssm.exe" | Select-Object -First 1 }
-            if ($foundNssm) { Copy-Item $foundNssm.FullName $NssmExe -Force; Write-Log "NSSM descargado: $NssmExe" 'SUCCESS' }
-            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        } catch {
-            Write-Log "No se pudo descargar NSSM automaticamente." 'ERROR'
-            Start-Process "https://nssm.cc/download"
-            Read-Host "  Presione ENTER cuando NSSM este instalado en $NssmDir"
-            if (-not (Test-Path $NssmExe)) { Write-Log "NSSM no encontrado. Servicio no creado." 'ERROR'; return $false }
-        }
-    }
+    if (-not (Ensure-Nssm)) { Write-Log "Servicio no creado (NSSM no disponible)." 'ERROR'; return $false }
 
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($existingService) {
@@ -1116,6 +1139,11 @@ function Step-ConfigureCaddyProxy {
 "@
     Set-Content -Path $CaddyfilePath -Value $caddyfileContent -Encoding UTF8
     Write-Log "Caddyfile generado en: $CaddyfilePath" 'SUCCESS'
+
+    if (-not (Ensure-Nssm)) {
+        Write-Log "No se pudo registrar el servicio de Caddy (NSSM no disponible). HTTPS no quedara activo." 'ERROR'
+        return $false
+    }
 
     $existingService = Get-Service -Name $CaddyServiceName -ErrorAction SilentlyContinue
     if ($existingService) {
