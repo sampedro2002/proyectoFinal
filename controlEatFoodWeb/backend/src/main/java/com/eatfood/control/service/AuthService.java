@@ -5,6 +5,7 @@ import com.eatfood.control.domain.AppUser;
 import com.eatfood.control.domain.LoginSession;
 import com.eatfood.control.dto.AuthDtos.*;
 import com.eatfood.control.exception.BusinessException;
+import com.eatfood.control.exception.UnauthorizedException;
 import com.eatfood.control.repository.AppUserRepository;
 import com.eatfood.control.repository.LoginSessionRepository;
 import com.eatfood.control.security.JwtService;
@@ -47,11 +48,11 @@ public class AuthService {
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(OffsetDateTime.now())) {
-            throw new BusinessException("ACCOUNT_LOCKED",
+            throw new UnauthorizedException("ACCOUNT_LOCKED",
                     "Cuenta bloqueada temporalmente por intentos fallidos. Intente más tarde.");
         }
         if (!user.isEnabled()) {
-            throw new BusinessException("ACCOUNT_DISABLED", "Usuario deshabilitado.");
+            throw new UnauthorizedException("ACCOUNT_DISABLED", "Usuario deshabilitado.");
         }
 
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
@@ -91,15 +92,15 @@ public class AuthService {
     @Transactional
     public AuthResponse refresh(RefreshRequest req) {
         LoginSession session = sessionRepository.findByRefreshTokenAndRevokedFalse(req.refreshToken())
-                .orElseThrow(() -> new BusinessException("INVALID_REFRESH", "Refresh token inválido."));
+                .orElseThrow(() -> new UnauthorizedException("INVALID_REFRESH", "Refresh token inválido."));
         if (session.getExpiresAt().isBefore(OffsetDateTime.now())) {
             // Revocar en tx nueva para que el revoke persista aunque el lanzamiento de
             // la excepción revierta la tx padre.
             self.revokeSession(session);
-            throw new BusinessException("EXPIRED_REFRESH", "Sesión expirada, inicie sesión nuevamente.");
+            throw new UnauthorizedException("EXPIRED_REFRESH", "Sesión expirada, inicie sesión nuevamente.");
         }
         AppUser user = userRepository.findById(session.getUserId())
-                .orElseThrow(() -> new BusinessException("INVALID_REFRESH", "Usuario no encontrado."));
+                .orElseThrow(() -> new UnauthorizedException("INVALID_REFRESH", "Usuario no encontrado."));
         session.setRevoked(true);
         sessionRepository.save(session);
         return issueTokens(user);

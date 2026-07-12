@@ -1012,6 +1012,66 @@ function Step-ConfigureService {
 
     if (-not (Ensure-Nssm)) { Write-Log "Servicio no creado (NSSM no disponible)." 'ERROR'; return $false }
 
+    # ─────────────────────────────────────────────────────────────────────
+    # Cuenta con la que correrá el servicio de Windows.
+    #
+    # LocalSystem (por defecto) funciona para todo EXCEPTO para abrir el
+    # lector biométrico ZK9500 por JNA/libzkfp: LocalSystem no siempre puede
+    # abrir dispositivos USB que requieren interacción con el driver del
+    # fabricante. Si este servidor va a tener el lector ZK9500 conectado
+    # directamente (kiosco o panel de enrolamiento), conviene correr el
+    # servicio con una cuenta de usuario real de Windows que haya iniciado
+    # sesión al menos una vez con el lector enchufado, para que el driver
+    # quede cargado en su perfil.
+    #
+    # NSSM registra la cuenta con su password (necesario para que Windows
+    # pueda loguear al usuario al arrancar el servicio automáticamente). El
+    # password NO se persiste en install_config.json ni en ningún archivo
+    # del proyecto: solo se pasa a NSSM/sc.exe en este momento.
+    # ─────────────────────────────────────────────────────────────────────
+    $serviceAccount = "LocalSystem"
+    $servicePassword = $null
+
+    Write-Host ""
+    Write-Host "  --- Cuenta del servicio de Windows ---" -ForegroundColor Yellow
+    Write-Host "    [1] LocalSystem (por defecto, recomendado si este equipo NO tiene el lector ZK9500)"
+    Write-Host "    [2] Una cuenta de usuario de Windows (recomendado si aquí está conectado el lector)"
+    $accountChoice = Read-Choice "Seleccionar opcion" -Max 2
+
+    if ($accountChoice -eq 2) {
+        $defaultUser = $env:USERNAME
+        do {
+            Write-Host ""
+            Write-Host "    Importante: debe ser el NOMBRE de usuario (no el PIN de Windows Hello)," -ForegroundColor DarkGray
+            Write-Host "    y la CONTRASEÑA de Windows (no el PIN). Si entrás con PIN, necesitás" -ForegroundColor DarkGray
+            Write-Host "    crear/recordar tu password real (Ctrl+Alt+Supr → Cambiar contraseña)." -ForegroundColor DarkGray
+            Write-Host ""
+            $serviceAccount = Read-Default "Usuario (sin dominio, ej: $defaultUser)" $defaultUser
+            $servicePassword = Read-SecureInput "Contrasena de Windows para '$serviceAccount' (se usa solo aqui, no se guarda)"
+            $serviceAccount = ".\$serviceAccount"
+
+            # Validar las credenciales antes de registrar el servicio.
+            Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction SilentlyContinue
+            $validated = $false
+            try {
+                $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
+                    [System.DirectoryServices.AccountManagement.ContextType]::Machine)
+                $validated = $ctx.ValidateCredentials(($serviceAccount -replace '^\.\\',''), $servicePassword)
+            } catch { Write-Log "No se pudo validar la cuenta: $($_.Exception.Message)" 'WARN' }
+
+            if (-not $validated) {
+                Write-Host "    Las credenciales NO validan contra Windows. El servicio no arrancará." -ForegroundColor Red
+                Write-Host "    Verificá usuario/contraseña (recordá: password real, no PIN de Windows Hello)." -ForegroundColor Red
+                $retry = Read-Host "    Reintentar? (s/n, ENTER para 's')"
+                if ($retry -eq 'n') { Write-Log "Cuenta invalida; volviendo a LocalSystem." 'WARN'; $serviceAccount = "LocalSystem"; $servicePassword = $null; break }
+            }
+        } until ($validated)
+
+        if ($validated) {
+            Write-Log "Cuenta validada: $serviceAccount" 'SUCCESS'
+        }
+    }
+
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($existingService) {
         Write-Log "Servicio '$ServiceName' ya existe. Deteniendo y eliminando..."
@@ -1026,6 +1086,16 @@ function Step-ConfigureService {
 
     & $NssmExe install $ServiceName $javaExe "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log "Error al registrar servicio." 'ERROR'; return $false }
+
+    # Fijar la cuenta del servicio. NSSM con LocalSystem no lleva password;
+    # con un usuario real, NSSM otorga automáticamente el derecho
+    # "SeServiceLogonRight" y registra el password para el inicio automático.
+    if ($serviceAccount -eq "LocalSystem") {
+        & $NssmExe set $ServiceName ObjectName "LocalSystem" 2>&1 | ForEach-Object { Write-Log $_ }
+    } else {
+        $acctShort = $serviceAccount -replace '^\.\\',''
+        & $NssmExe set $ServiceName ObjectName $serviceAccount $servicePassword 2>&1 | ForEach-Object { Write-Log $_ }
+    }
 
     & $NssmExe set $ServiceName AppEnvironmentExtra "DB_URL=$($DbConfig.Url)" "DB_USER=$($DbConfig.User)" "DB_PASSWORD=$($DbConfig.Password)" "JWT_SECRET=$($ProdConfig.JwtSecret)" "CORS_ORIGINS=$($ProdConfig.CorsOrigins)" "PUBLIC_URL=$($ProdConfig.PublicUrl)" "BIOMETRIC_ENCRYPTION_KEY=$($ProdConfig.BiometricEncryptionKey)" "RATE_LIMIT_ENABLED=$($ProdConfig.RateLimitEnabled)" "ZK_NATIVE_PATH=$ZkNativePath" | Out-Null
     & $NssmExe set $ServiceName AppDirectory $BackendDir | Out-Null
@@ -1047,8 +1117,18 @@ function Step-ConfigureService {
     Start-Sleep -Seconds 5
 
     $status = & $NssmExe status $ServiceName 2>&1
-    if ($status -match 'SERVICE_RUNNING') { Write-Log "Servicio '$ServiceName' iniciado correctamente." 'SUCCESS' }
-    else { Write-Log "El servicio podria no haber iniciado. Estado: $status" 'WARN'; Write-Log "Revisar logs en: $serviceLogsDir" 'WARN' }
+    if ($status -match 'SERVICE_RUNNING') {
+        Write-Log "Servicio '$ServiceName' iniciado correctamente." 'SUCCESS'
+        if ($serviceAccount -ne "LocalSystem") {
+            Write-Log "Cuenta del servicio: $serviceAccount (lector ZK9500 deberia poder abrirse)." 'SUCCESS'
+        }
+    } else {
+        Write-Log "El servicio podria no haber iniciado. Estado: $status" 'WARN'; Write-Log "Revisar logs en: $serviceLogsDir" 'WARN'
+        if ($serviceAccount -ne "LocalSystem") {
+            Write-Log "Si el error es 'inicio de sesion', revisa usuario/password (no PIN)." 'WARN'
+            Write-Log "Volve a ejecutar la instalacion y proba con LocalSystem si no tenes el password." 'WARN'
+        }
+    }
 
     return $true
 }

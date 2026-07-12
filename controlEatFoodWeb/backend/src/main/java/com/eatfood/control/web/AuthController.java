@@ -3,6 +3,7 @@ package com.eatfood.control.web;
 import com.eatfood.control.config.AppProperties;
 import com.eatfood.control.dto.AuthDtos.*;
 import com.eatfood.control.exception.BusinessException;
+import com.eatfood.control.exception.UnauthorizedException;
 import com.eatfood.control.service.AuthService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -67,7 +68,7 @@ public class AuthController {
     private static String resolveToken(RefreshRequest body, String cookieToken) {
         if (cookieToken != null && !cookieToken.isBlank()) return cookieToken;
         if (body != null && body.refreshToken() != null && !body.refreshToken().isBlank()) return body.refreshToken();
-        throw new BusinessException("INVALID_REFRESH", "Refresh token faltante.");
+        throw new UnauthorizedException("INVALID_REFRESH", "Refresh token faltante.");
     }
 
     private void setRefreshCookie(HttpServletRequest req, HttpServletResponse res, String value) {

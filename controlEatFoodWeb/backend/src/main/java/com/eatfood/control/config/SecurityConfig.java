@@ -81,23 +81,13 @@ public class SecurityConfig {
                 .requestMatchers("/api/scan/**").permitAll()
                 // Endpoints de API distintos de los anteriores requieren autenticacion
                 .requestMatchers("/api/**").authenticated()
-                // Recursos publicos de la SPA (servida desde BOOT-INF/classes/static):
-                // la welcome page (index.html), assets del bundle, manifest, service worker
-                // de la PWA e iconos. Sin estos matchers, anyRequest().authenticated()
-                // bloquearia la carga de la SPA y el navegador veria 401 al abrir la app.
-                .requestMatchers(
-                        "/",
-                        "/index.html",
-                        "/favicon.svg",
-                        "/logo.png",
-                        "/manifest.webmanifest",
-                        "/registerSW.js",
-                        "/sw.js",
-                        "/workbox-*.js",
-                        "/pwa-*.png",
-                        "/assets/**"
-                ).permitAll()
-                .anyRequest().authenticated()
+                // Todo lo que no es API son recursos estaticos de la SPA (index.html,
+                // assets, manifest, sw) o rutas virtuales de React Router (:/login,
+                // /restaurants, /reports, etc. ver SpaController). Para soportar F5
+                // en sub-rutas del SPA, esas rutas deben ser publicas: el controlador
+                // SpaController hace forward a index.html y deja que el frontend decida
+                // si la pagina requiere auth (componente Protected).
+                .anyRequest().permitAll()
             )
             // Rate-limiting antes de autenticar: protege /api/auth y /api/scan del abuso.
             // Se instancia manualmente (no es @Component) para que Spring Boot no lo
