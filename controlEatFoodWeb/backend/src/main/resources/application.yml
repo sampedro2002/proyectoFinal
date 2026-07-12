@@ -78,6 +78,9 @@ app:
     encryption-key: ${BIOMETRIC_ENCRYPTION_KEY:}
     # Ruta donde se encuentran las librerías nativas del SDK ZKFinger (libzkfp.dll / .so)
     native-lib-path: ${ZK_NATIVE_PATH:./native}
+  # Archivo donde se anotan usuario/contraseña generados al azar en el primer arranque de
+  # producción (ver DataInitializer). Vacío = no se escribe archivo (solo queda en el log).
+  credentials-file: ${CREDENTIALS_FILE:}
   cors:
     allowed-origins: ${CORS_ORIGINS:http://localhost:4173,http://localhost:5173,http://localhost:5174}
   rate-limit:

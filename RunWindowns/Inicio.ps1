@@ -1097,7 +1097,8 @@ function Step-ConfigureService {
         & $NssmExe set $ServiceName ObjectName $serviceAccount $servicePassword 2>&1 | ForEach-Object { Write-Log $_ }
     }
 
-    & $NssmExe set $ServiceName AppEnvironmentExtra "DB_URL=$($DbConfig.Url)" "DB_USER=$($DbConfig.User)" "DB_PASSWORD=$($DbConfig.Password)" "JWT_SECRET=$($ProdConfig.JwtSecret)" "CORS_ORIGINS=$($ProdConfig.CorsOrigins)" "PUBLIC_URL=$($ProdConfig.PublicUrl)" "BIOMETRIC_ENCRYPTION_KEY=$($ProdConfig.BiometricEncryptionKey)" "RATE_LIMIT_ENABLED=$($ProdConfig.RateLimitEnabled)" "ZK_NATIVE_PATH=$ZkNativePath" | Out-Null
+    $credentialsFile = Join-Path $ScriptRoot "credenciales.txt"
+    & $NssmExe set $ServiceName AppEnvironmentExtra "DB_URL=$($DbConfig.Url)" "DB_USER=$($DbConfig.User)" "DB_PASSWORD=$($DbConfig.Password)" "JWT_SECRET=$($ProdConfig.JwtSecret)" "CORS_ORIGINS=$($ProdConfig.CorsOrigins)" "PUBLIC_URL=$($ProdConfig.PublicUrl)" "BIOMETRIC_ENCRYPTION_KEY=$($ProdConfig.BiometricEncryptionKey)" "RATE_LIMIT_ENABLED=$($ProdConfig.RateLimitEnabled)" "ZK_NATIVE_PATH=$ZkNativePath" "CREDENTIALS_FILE=$credentialsFile" | Out-Null
     & $NssmExe set $ServiceName AppDirectory $BackendDir | Out-Null
     & $NssmExe set $ServiceName AppExit Default Restart | Out-Null
     & $NssmExe set $ServiceName AppRestartDelay 10000 | Out-Null

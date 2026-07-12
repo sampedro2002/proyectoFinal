@@ -8,6 +8,7 @@ import com.eatfood.control.repository.RestaurantRepository;
 import com.eatfood.control.repository.RoleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
@@ -15,7 +16,15 @@ import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -44,9 +53,13 @@ public class DataInitializer implements CommandLineRunner {
     private final PasswordEncoder passwordEncoder;
     private final Environment env;
 
+    @Value("${app.credentials-file:}")
+    private String credentialsFilePath;
+
     @Override
     public void run(String... args) {
         boolean production = env.acceptsProfiles(Profiles.of("prod"));
+        List<String> generated = new ArrayList<>();
 
         // Asegurar contraseña válida del admin
         userRepository.findByUsername("admin").ifPresent(admin -> {
@@ -56,6 +69,7 @@ public class DataInitializer implements CommandLineRunner {
                 userRepository.save(admin);
                 if (production) {
                     log.warn("[SECURITY] Contraseña de 'admin' generada al azar (solo se muestra esta vez): {}", pwd);
+                    generated.add("admin: " + pwd);
                 } else {
                     log.info("Contraseña del usuario 'admin' inicializada ({}).", DEV_ADMIN_PASSWORD);
                 }
@@ -65,28 +79,54 @@ public class DataInitializer implements CommandLineRunner {
         // Crear usuarios de restaurant si no existen. El nombre de usuario se deriva
         // del nombre del restaurant (p. ej. "Restaurant Norte" -> "restaurantNorte").
         Role restaurantRole = roleRepository.findByName("CATERING").orElse(null);
-        if (restaurantRole == null) return;
-
-        for (Restaurant restaurant : restaurantRepository.findAll()) {
-            String username = restaurantUsername(restaurant.getName());
-            if (!userRepository.existsByUsername(username)) {
-                String pwd = production ? generateOneTimePassword() : DEV_RESTAURANT_PASSWORD;
-                AppUser user = AppUser.builder()
-                        .username(username)
-                        .passwordHash(passwordEncoder.encode(pwd))
-                        .fullName("Operador " + restaurant.getName())
-                        .enabled(true)
-                        .restaurant(restaurant)
-                        .roles(Set.of(restaurantRole))
-                        .build();
-                userRepository.save(user);
-                if (production) {
-                    log.warn("[SECURITY] Usuario de restaurant creado: {} -> {} (clave generada al azar, solo se muestra esta vez: {})",
-                            username, restaurant.getName(), pwd);
-                } else {
-                    log.info("Usuario de restaurant creado: {} (clave: {}) -> {}", username, DEV_RESTAURANT_PASSWORD, restaurant.getName());
+        if (restaurantRole != null) {
+            for (Restaurant restaurant : restaurantRepository.findAll()) {
+                String username = restaurantUsername(restaurant.getName());
+                if (!userRepository.existsByUsername(username)) {
+                    String pwd = production ? generateOneTimePassword() : DEV_RESTAURANT_PASSWORD;
+                    AppUser user = AppUser.builder()
+                            .username(username)
+                            .passwordHash(passwordEncoder.encode(pwd))
+                            .fullName("Operador " + restaurant.getName())
+                            .enabled(true)
+                            .restaurant(restaurant)
+                            .roles(Set.of(restaurantRole))
+                            .build();
+                    userRepository.save(user);
+                    if (production) {
+                        log.warn("[SECURITY] Usuario de restaurant creado: {} -> {} (clave generada al azar, solo se muestra esta vez: {})",
+                                username, restaurant.getName(), pwd);
+                        generated.add(username + " (" + restaurant.getName() + "): " + pwd);
+                    } else {
+                        log.info("Usuario de restaurant creado: {} (clave: {}) -> {}", username, DEV_RESTAURANT_PASSWORD, restaurant.getName());
+                    }
                 }
             }
+        }
+
+        if (production && !generated.isEmpty() && credentialsFilePath != null && !credentialsFilePath.isBlank()) {
+            writeCredentialsFile(generated);
+        }
+    }
+
+    /** Anota usuario/contraseña recién generados en un txt local, para el primer ingreso. */
+    private void writeCredentialsFile(List<String> generated) {
+        try {
+            Path path = Path.of(credentialsFilePath);
+            if (path.getParent() != null) {
+                Files.createDirectories(path.getParent());
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("=== Credenciales generadas ").append(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))).append(" ===\n");
+            sb.append("Cambia estas contraseñas desde Gestion de usuarios apenas ingreses, y luego borra este archivo.\n");
+            for (String line : generated) {
+                sb.append(line).append('\n');
+            }
+            sb.append('\n');
+            Files.writeString(path, sb.toString(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            log.warn("[SECURITY] Credenciales tambien escritas en: {}", path.toAbsolutePath());
+        } catch (IOException e) {
+            log.error("No se pudo escribir el archivo de credenciales en {}", credentialsFilePath, e);
         }
     }
 
