@@ -79,6 +79,24 @@ public class SecurityConfig {
                 ).permitAll()
                 // El dispositivo de restaurant se autentica con token de dispositivo en el propio servicio
                 .requestMatchers("/api/scan/**").permitAll()
+                // Endpoints de API distintos de los anteriores requieren autenticacion
+                .requestMatchers("/api/**").authenticated()
+                // Recursos publicos de la SPA (servida desde BOOT-INF/classes/static):
+                // la welcome page (index.html), assets del bundle, manifest, service worker
+                // de la PWA e iconos. Sin estos matchers, anyRequest().authenticated()
+                // bloquearia la carga de la SPA y el navegador veria 401 al abrir la app.
+                .requestMatchers(
+                        "/",
+                        "/index.html",
+                        "/favicon.svg",
+                        "/logo.png",
+                        "/manifest.webmanifest",
+                        "/registerSW.js",
+                        "/sw.js",
+                        "/workbox-*.js",
+                        "/pwa-*.png",
+                        "/assets/**"
+                ).permitAll()
                 .anyRequest().authenticated()
             )
             // Rate-limiting antes de autenticar: protege /api/auth y /api/scan del abuso.
