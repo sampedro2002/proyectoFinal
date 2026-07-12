@@ -928,7 +928,8 @@ logging:
     com.eatfood: INFO
     org.springframework.security: WARN
 "@
-    Set-Content -Path $ProdYmlPath -Value $ymlContent -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllText($ProdYmlPath, $ymlContent, $utf8NoBom)
     Write-Log "application-prod.yml generado en: $ProdYmlPath" 'SUCCESS'
 
     Write-Log "Compilando frontend (npm run build)..."
@@ -1137,7 +1138,8 @@ function Step-ConfigureCaddyProxy {
 	redir https://{host}{uri} permanent
 }
 "@
-    Set-Content -Path $CaddyfilePath -Value $caddyfileContent -Encoding UTF8
+    $utf8NoBom = New-Object System.Text.UTF8Encoding $False
+    [System.IO.File]::WriteAllText($CaddyfilePath, $caddyfileContent, $utf8NoBom)
     Write-Log "Caddyfile generado en: $CaddyfilePath" 'SUCCESS'
 
     if (-not (Ensure-Nssm)) {
