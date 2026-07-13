@@ -9,6 +9,7 @@ public final class EmployeeDtos {
             @NotBlank @Size(max = 20) String identityCard,
             @NotBlank @Size(max = 160) String fullName,
             @Size(max = 500) String observation,
+            Boolean isPassport,
             String status,
             Boolean allowsLunch,
             Boolean allowsSnack) {}

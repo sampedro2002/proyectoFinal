@@ -12,6 +12,7 @@ export default function ManualScan() {
   const [employee, setEmployee] = useState(null);
   const [extCard, setExtCard] = useState('');
   const [extName, setExtName] = useState('');
+  const [isPassport, setIsPassport] = useState(false);
   const [restaurants, setRestaurants] = useState([]);
   const [meals, setMeals] = useState([]);
   const [restaurantId, setRestaurantId] = useState('');
@@ -73,6 +74,7 @@ export default function ManualScan() {
     setTerm('');
     setExtCard('');
     setExtName('');
+    setIsPassport(false);
   }
 
   async function submit(e) {
@@ -101,11 +103,9 @@ export default function ManualScan() {
     } else {
       // Persona externa
       const card = extCard.trim();
-      if (!card) { setError('Ingrese la cédula.'); return; }
-      // Si tiene forma de cédula (10 dígitos) debe ser válida; un pasaporte
-      // u otro documento alfanumérico se acepta tal cual.
-      if (looksLikeCedula(card) && !isValidCedulaEC(card)) {
-        setError('La cédula ingresada no es una cédula ecuatoriana válida. Si es un pasaporte, ingréselo con sus letras.');
+      // Si es cédula, validar estrictamente. Si es pasaporte, se acepta.
+      if (!isPassport && !isValidCedulaEC(card)) {
+        setError('La cédula ingresada no es una cédula ecuatoriana válida (10 dígitos con verificador).');
         return;
       }
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
@@ -115,6 +115,7 @@ export default function ManualScan() {
       try {
         const { data } = await api.post('/manual-consumptions/external', {
           identityCard: extCard.trim(),
+          isPassport,
           fullName: extName.trim(),
           mealTypeCode: mealCode,
           restaurantId: Number(restaurantId),
@@ -183,7 +184,7 @@ export default function ManualScan() {
                 }}
                 onFocus={() => { if (suggestions.length) setShowSuggest(true); }}
                 onBlur={() => setTimeout(() => setShowSuggest(false), 150)}
-                placeholder="Escriba nombre o cédula…"
+                placeholder="Escriba nombre o identificación…"
                 autoComplete="off"
               />
               {showSuggest && suggestions.length > 0 && (
@@ -227,11 +228,19 @@ export default function ManualScan() {
           ) : (
             <>
               <div className="field">
-                <label>Cédula</label>
+                <label>Tipo de Documento</label>
+                <select value={isPassport ? 'PASSPORT' : 'CEDULA'}
+                        onChange={e => { setIsPassport(e.target.value === 'PASSPORT'); setResult(null); }}>
+                  <option value="CEDULA">Cédula</option>
+                  <option value="PASSPORT">Pasaporte</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>{isPassport ? 'Pasaporte' : 'Cédula'}</label>
                 <input
                   value={extCard}
                   onChange={(e) => { setExtCard(e.target.value); setResult(null); }}
-                  placeholder="Cédula de la persona externa"
+                  placeholder={`Ingrese ${isPassport ? 'el pasaporte' : 'la cédula'} de la persona externa`}
                   required
                 />
               </div>
@@ -298,7 +307,7 @@ export default function ManualScan() {
               className="ghost"
               onClick={() => {
                 setTerm(''); setEmployee(null); setResult(null); setError('');
-                setExtCard(''); setExtName(''); setObservation('');
+                setExtCard(''); setExtName(''); setObservation(''); setIsPassport(false);
               }}
             >
               Limpiar

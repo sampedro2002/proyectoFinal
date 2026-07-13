@@ -48,7 +48,7 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponse create(EmployeeRequest req) {
-        String identityCard = normalizedCard(req.identityCard());
+        String identityCard = normalizedCard(req.identityCard(), Boolean.TRUE.equals(req.isPassport()));
         if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
             throw new BusinessException("DUPLICATE_CARD", "Ya existe un empleado con esa cédula.");
         }
@@ -75,7 +75,7 @@ public class EmployeeService {
     @Transactional
     public EmployeeResponse update(Long id, EmployeeRequest req) {
         Employee e = find(id);
-        String identityCard = normalizedCard(req.identityCard());
+        String identityCard = normalizedCard(req.identityCard(), Boolean.TRUE.equals(req.isPassport()));
         if (employeeRepository.existsByIdentityCardAndIdNot(identityCard, id)) {
             throw new BusinessException("DUPLICATE_CARD", "Ya existe otro empleado con esa cédula.");
         }
@@ -96,7 +96,7 @@ public class EmployeeService {
     }
 
     private void apply(Employee e, EmployeeRequest req) {
-        e.setIdentityCard(normalizedCard(req.identityCard()));
+        e.setIdentityCard(normalizedCard(req.identityCard(), Boolean.TRUE.equals(req.isPassport())));
         e.setFullName(req.fullName());
         e.setObservation(blankToNull(req.observation()));
         if (req.status() != null) {
@@ -130,12 +130,11 @@ public class EmployeeService {
     }
 
     /**
-     * Normaliza y valida la cédula: los empleados siempre deben tener una cédula
-     * ecuatoriana válida (10 dígitos con verificador módulo 10).
+     * Normaliza y valida la cédula. Si es pasaporte, se omite la validación de 10 dígitos.
      */
-    private static String normalizedCard(String identityCard) {
+    private static String normalizedCard(String identityCard, boolean isPassport) {
         String card = identityCard == null ? "" : identityCard.trim();
-        if (!com.eatfood.control.util.CedulaValidator.isValid(card)) {
+        if (!isPassport && !com.eatfood.control.util.CedulaValidator.isValid(card)) {
             throw new BusinessException("INVALID_CARD",
                     "La cédula ingresada no es una cédula ecuatoriana válida (verifique los 10 dígitos).");
         }

@@ -20,9 +20,9 @@
 [CmdletBinding()]
 param()
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # AUTO-CONFIGURACION INICIAL (reemplaza la funcionalidad de Inicio.bat)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 try {
     $currentPolicy = Get-ExecutionPolicy -Scope Process
     if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'Undefined') {
@@ -42,9 +42,9 @@ Set-StrictMode -Version Latest
 # revisan $LASTEXITCODE, que no depende de esta preferencia.
 $ErrorActionPreference = 'Continue'
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CONFIGURACION GLOBAL
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 $ScriptRoot   = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot  = Split-Path -Parent $ScriptRoot
 $ConfigDir    = Join-Path $ScriptRoot "config"
@@ -65,13 +65,13 @@ $ZkNativePath = Join-Path $ScriptRoot "native"
 }
 $LogFile = Join-Path $LogsDir ("inicio_{0}.log" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
 
-# Variables de sesión para re-lanzar sin reconfigurar
+# Variables de sesiÃ³n para re-lanzar sin reconfigurar
 $script:lastDbConfig = $null
 $script:lastDevJwtSecret = $null
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # UTILIDADES COMPARTIDAS
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Write-Log {
     param([string]$Message, [string]$Level = 'INFO')
     $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -96,8 +96,8 @@ function Write-Banner {
 
 # Poda los archivos de stdout/stderr rotados por NSSM en logs/service/.
 # Deja solo los 7 mas recientes por base (stdout/stderr); el archivo activo
-# 'stdout.log' / 'stderr.log' nunca se toca. 10 MB × 7 ≈ 70 MB max por base.
-# Se invoca al instalar, actualizar o Diagnosticos del entorno — y siempre
+# 'stdout.log' / 'stderr.log' nunca se toca. 10 MB Ã— 7 â‰ˆ 70 MB max por base.
+# Se invoca al instalar, actualizar o Diagnosticos del entorno â€” y siempre
 # que se llame Clean-ServiceLogs despues de cualquier rebuild/restart.
 function Clean-ServiceLogs {
     param([string]$ServiceLogsDir)
@@ -242,9 +242,9 @@ function Update-SessionPath {
     $env:Path = "$machinePath;$userPath"
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PREREQUISITOS (compartido por Pruebas y Produccion)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Test-Java21 {
     Write-Log "Verificando Java 21..."
     try {
@@ -420,11 +420,11 @@ function Test-MavenInstalled {
     return $false
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # BASE DE DATOS (compartido por Pruebas y Produccion)
 # Dev  -> pregunta Local (Docker/MySQL local, auto-detect) o Remoto
 # Prod -> siempre remoto: se conecta directo a un servidor, sin Docker
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 # --- Helpers del contenedor Docker 'control-mysql' (MySQL 5.6, solo modo Pruebas) ---
 function Get-ControlMysqlImage {
@@ -522,11 +522,11 @@ function Ensure-ControlMysql56 {
     & docker start control-mysql 2>&1 | Out-Null
     if (Wait-MySqlReady -DbConfig $DbConfig) { return $true }
 
-    Write-Log "El contenedor 5.6 existe pero la password de 'admin' no coincide con la ingresada." 'WARN'
-    Write-Host "    (La password de 'admin' se fija al crear el contenedor y no se puede cambiar" -ForegroundColor Yellow
+    Write-Log "El contenedor 5.6 existe pero la password del usuario '$($DbConfig.User)' no coincide con la ingresada." 'WARN'
+    Write-Host "    (La password del usuario se fija al crear el contenedor y no se puede cambiar" -ForegroundColor Yellow
     Write-Host "     con variables de entorno al reiniciarlo.)" -ForegroundColor Yellow
     if ((Read-Host "  Recrear el contenedor desde cero con la password ingresada? (s/n, ENTER = s)") -eq 'n') {
-        Write-Log "Se conserva el contenedor; usa la password original de 'admin'." 'WARN'
+        Write-Log "Se conserva el contenedor; usa la password original del usuario '$($DbConfig.User)'." 'WARN'
         return $true
     }
     & docker rm -f control-mysql 2>&1 | Out-Null
@@ -567,8 +567,8 @@ function Step-ConfigureDatabase {
 
         if ($controlImage -and ($controlImage -notmatch '^mysql:5\.6')) {
             Write-Log "Contenedor 'control-mysql' con imagen '$controlImage' (no es MySQL 5.6)." 'WARN'
-            Write-Host "    Usuario: admin (fijo)" -ForegroundColor DarkGray
-            $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario 'admin' de MySQL (obligatoria)"
+            $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
+            $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
             Ensure-ControlMysql56 -DbConfig $dbConfig | Out-Null
         }
         elseif ($portOpen) {
@@ -578,8 +578,8 @@ function Step-ConfigureDatabase {
             } else {
                 Write-Log "Asumiendo MySQL local/externo. Verifica que la BD y el usuario existan." 'WARN'
             }
-            Write-Host "    Usuario: admin (fijo)" -ForegroundColor DarkGray
-            $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario 'admin' de MySQL (obligatoria)"
+            $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
+            $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
         }
         else {
             Show-Menu "Como deseas levantar MySQL local?" @(
@@ -595,8 +595,8 @@ function Step-ConfigureDatabase {
                         Start-Process "https://www.docker.com/products/docker-desktop/"
                         Read-Host "  Presione ENTER cuando Docker este instalado"
                     }
-                    Write-Host "    Usuario: admin (fijo)" -ForegroundColor DarkGray
-                    $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario 'admin' de MySQL (obligatoria)"
+                    $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
+                    $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
                     Ensure-ControlMysql56 -DbConfig $dbConfig | Out-Null
                 }
                 2 {
@@ -604,8 +604,8 @@ function Step-ConfigureDatabase {
                         Write-Log "'mysql' no encontrado en PATH." 'ERROR'
                         Read-Host "  Presione ENTER cuando MySQL este configurado"
                     } else {
-                        Write-Host "    Usuario: admin (fijo)" -ForegroundColor DarkGray
-                        $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario 'admin' de MySQL (obligatoria)"
+                        $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
+                        $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
                         $rootPass = Read-Host "  Contrasena de root en MySQL local (ENTER para omitir)"
                         if ($rootPass) {
                             # MySQL 5.6 no soporta "CREATE USER IF NOT EXISTS" (llego en 5.7.6).
@@ -700,9 +700,9 @@ function Step-ConfigureDatabase {
     return $dbConfig
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # FRONTEND / SDK BIOMETRICO (compartido)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Install-FrontendDependencies {
     Write-Log "Instalando dependencias del frontend..." 'STEP'
     if (-not (Test-Path (Join-Path $FrontendDir "package.json"))) {
@@ -767,13 +767,13 @@ function Invoke-BiometricSetup {
     Write-Log "setup.exe finalizado." 'SUCCESS'
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MODO PRUEBAS (equivalente a setup_env.bat, mejorado)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Stop-ExistingProcesses {
     Write-Log "Cerrando procesos anteriores del backend/frontend..." 'STEP'
     
-    # Cerrar ventanas de PowerShell con el título específico
+    # Cerrar ventanas de PowerShell con el tÃ­tulo especÃ­fico
     $shell = New-Object -ComObject Shell.Application
     $windows = $shell.Windows()
     foreach ($window in $windows) {
@@ -783,7 +783,7 @@ function Stop-ExistingProcesses {
         }
     }
     
-    # Matar procesos de Java (backend) que estén usando el puerto 3000
+    # Matar procesos de Java (backend) que estÃ©n usando el puerto 3000
     $javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue
     if ($javaProcesses) {
         foreach ($proc in $javaProcesses) {
@@ -797,7 +797,7 @@ function Stop-ExistingProcesses {
         }
     }
     
-    # Matar procesos de Node (frontend) que estén usando el puerto 4173 (vite.config.js)
+    # Matar procesos de Node (frontend) que estÃ©n usando el puerto 4173 (vite.config.js)
     $nodeProcesses = Get-Process -Name node -ErrorAction SilentlyContinue
     if ($nodeProcesses) {
         foreach ($proc in $nodeProcesses) {
@@ -835,7 +835,7 @@ function Start-TestSetup {
     }
     Invoke-BiometricSetup
     
-    # Guardar configuración en variable de sesión para re-lanzar después
+    # Guardar configuraciÃ³n en variable de sesiÃ³n para re-lanzar despuÃ©s
     $script:lastDbConfig = $dbConfig
     $script:lastDevJwtSecret = Get-DevJwtSecret
 
@@ -905,9 +905,9 @@ function Start-TestSetup {
     }
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MODO PRODUCCION (equivalente a install.ps1 + uninstall.ps1)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Step-ConfigureProduction {
     $prodConfig = @{
         JwtSecret = ''; CorsOrigins = ''; PublicUrl = ''; BiometricEncryptionKey = ''
@@ -918,16 +918,13 @@ function Step-ConfigureProduction {
     Write-Host ""
     Write-Host "  --- Puerto ---" -ForegroundColor Yellow
     Write-Host "    IP detectada del servidor: $($prodConfig.ServerIP)" -ForegroundColor DarkGray
-    $prodConfig.BackendPort = Read-Port "Puerto de la aplicacion (API + frontend)" "3000"
+    $prodConfig.BackendPort = "3000"
+    Write-Log "Puerto configurado por defecto: $($prodConfig.BackendPort)" 'SUCCESS'
 
     Write-Host ""
     Write-Host "  --- JWT Secret ---" -ForegroundColor Yellow
-    Write-Host "    [1] Generar automaticamente (recomendado)"
-    Write-Host "    [2] Ingresar manualmente"
-    $prodConfig.JwtSecret = if ((Read-Choice "Seleccionar" -Max 2) -eq 1) {
-        Write-Log "JWT Secret generado automaticamente." 'SUCCESS'
-        Generate-RandomBase64 -Bytes 32
-    } else { Read-Host "  Ingrese JWT Secret (Base64, min 256 bits)" }
+    $prodConfig.JwtSecret = Generate-RandomBase64 -Bytes 32
+    Write-Log "JWT Secret generado automaticamente." 'SUCCESS'
 
     Write-Host ""
     Write-Host "  --- CORS Origins ---" -ForegroundColor Yellow
@@ -935,31 +932,22 @@ function Step-ConfigureProduction {
     # sin reverse proxy / HTTPS). El origen CORS incluye el puerto para que la SPA
     # y los clientes (mobile, kioscos) coincidan exactamente con el origen del navegador.
     $defaultCors = "http://$($prodConfig.ServerIP):$($prodConfig.BackendPort),http://localhost:$($prodConfig.BackendPort)"
-    $prodConfig.CorsOrigins = Read-Default "Origenes CORS (separar por coma)" $defaultCors
+    $prodConfig.CorsOrigins = $defaultCors
+    Write-Log "Origenes CORS configurados por defecto: $($prodConfig.CorsOrigins)" 'SUCCESS'
 
     Write-Host ""
     Write-Host "  --- URL Publica ---" -ForegroundColor Yellow
-    Write-Host "    [1] Auto-detectar (vacio)"
-    Write-Host "    [2] Ingresar manualmente (ej: http://192.168.18.62:3000)"
-    if ((Read-Choice "Seleccionar" -Max 2) -eq 2) {
-        $prodConfig.PublicUrl = Read-Host "  URL publica"
-    }
+    Write-Log "URL publica auto-detectada." 'SUCCESS'
 
     Write-Host ""
     Write-Host "  --- Biometric Encryption Key (AES-256) ---" -ForegroundColor Yellow
-    Write-Host "    [1] Generar automaticamente (recomendado)"
-    Write-Host "    [2] Ingresar manualmente"
-    Write-Host "    (Obligatoria en produccion: el backend no arranca sin ella. No hay opcion de dejarla vacia.)" -ForegroundColor DarkGray
-    switch (Read-Choice "Seleccionar" -Max 2) {
-        1 { $prodConfig.BiometricEncryptionKey = Generate-RandomBase64 -Bytes 32; Write-Log "Biometric Encryption Key generada." 'SUCCESS' }
-        2 { $prodConfig.BiometricEncryptionKey = Read-RequiredInput "Ingrese clave AES-256 (Base64, 32 bytes)" }
-    }
+    $prodConfig.BiometricEncryptionKey = Generate-RandomBase64 -Bytes 32
+    Write-Log "Biometric Encryption Key generada." 'SUCCESS'
 
     Write-Host ""
     Write-Host "  --- Rate Limit ---" -ForegroundColor Yellow
-    Write-Host "    [1] Habilitado (recomendado para produccion)"
-    Write-Host "    [2] Deshabilitado"
-    $prodConfig.RateLimitEnabled = if ((Read-Choice "Seleccionar" -Max 2) -eq 1) { 'true' } else { 'false' }
+    $prodConfig.RateLimitEnabled = 'true'
+    Write-Log "Rate Limit habilitado." 'SUCCESS'
 
     return $prodConfig
 }
@@ -1135,39 +1123,39 @@ function Step-ConfigureService {
 
     if (-not (Ensure-Nssm)) { Write-Log "Servicio no creado (NSSM no disponible)." 'ERROR'; return $false }
 
-    # ─────────────────────────────────────────────────────────────────────
-    # Cuenta con la que correrá el servicio de Windows.
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # Cuenta con la que correrÃ¡ el servicio de Windows.
     #
     # LocalSystem (por defecto) funciona para todo EXCEPTO para abrir el
-    # lector biométrico ZK9500 por JNA/libzkfp: LocalSystem no siempre puede
-    # abrir dispositivos USB que requieren interacción con el driver del
+    # lector biomÃ©trico ZK9500 por JNA/libzkfp: LocalSystem no siempre puede
+    # abrir dispositivos USB que requieren interacciÃ³n con el driver del
     # fabricante. Si este servidor va a tener el lector ZK9500 conectado
     # directamente (kiosco o panel de enrolamiento), conviene correr el
     # servicio con una cuenta de usuario real de Windows que haya iniciado
-    # sesión al menos una vez con el lector enchufado, para que el driver
+    # sesiÃ³n al menos una vez con el lector enchufado, para que el driver
     # quede cargado en su perfil.
     #
     # NSSM registra la cuenta con su password (necesario para que Windows
-    # pueda loguear al usuario al arrancar el servicio automáticamente). El
-    # password NO se persiste en install_config.json ni en ningún archivo
+    # pueda loguear al usuario al arrancar el servicio automÃ¡ticamente). El
+    # password NO se persiste en install_config.json ni en ningÃºn archivo
     # del proyecto: solo se pasa a NSSM/sc.exe en este momento.
-    # ─────────────────────────────────────────────────────────────────────
+    # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     $serviceAccount = "LocalSystem"
     $servicePassword = $null
 
     Write-Host ""
     Write-Host "  --- Cuenta del servicio de Windows ---" -ForegroundColor Yellow
-    Write-Host "    [1] LocalSystem (por defecto, recomendado si este equipo NO tiene el lector ZK9500)"
-    Write-Host "    [2] Una cuenta de usuario de Windows (recomendado si aquí está conectado el lector)"
+    Write-Host "    [1] Una cuenta de usuario de Windows (recomendado si aquí está conectado el lector)"
+    Write-Host "    [2] LocalSystem (por defecto, recomendado si este equipo NO tiene el lector ZK9500)"
     $accountChoice = Read-Choice "Seleccionar opcion" -Max 2
 
-    if ($accountChoice -eq 2) {
+    if ($accountChoice -eq 1) {
         $defaultUser = $env:USERNAME
         do {
             Write-Host ""
             Write-Host "    Importante: debe ser el NOMBRE de usuario (no el PIN de Windows Hello)," -ForegroundColor DarkGray
-            Write-Host "    y la CONTRASEÑA de Windows (no el PIN). Si entrás con PIN, necesitás" -ForegroundColor DarkGray
-            Write-Host "    crear/recordar tu password real (Ctrl+Alt+Supr → Cambiar contraseña)." -ForegroundColor DarkGray
+            Write-Host "    y la CONTRASEÃ‘A de Windows (no el PIN). Si entrÃ¡s con PIN, necesitÃ¡s" -ForegroundColor DarkGray
+            Write-Host "    crear/recordar tu password real (Ctrl+Alt+Supr â†’ Cambiar contraseÃ±a)." -ForegroundColor DarkGray
             Write-Host ""
             $serviceAccount = Read-Default "Usuario (sin dominio, ej: $defaultUser)" $defaultUser
             $servicePassword = Read-SecureInput "Contrasena de Windows para '$serviceAccount' (se usa solo aqui, no se guarda)"
@@ -1183,8 +1171,8 @@ function Step-ConfigureService {
             } catch { Write-Log "No se pudo validar la cuenta: $($_.Exception.Message)" 'WARN' }
 
             if (-not $validated) {
-                Write-Host "    Las credenciales NO validan contra Windows. El servicio no arrancará." -ForegroundColor Red
-                Write-Host "    Verificá usuario/contraseña (recordá: password real, no PIN de Windows Hello)." -ForegroundColor Red
+                Write-Host "    Las credenciales NO validan contra Windows. El servicio no arrancarÃ¡." -ForegroundColor Red
+                Write-Host "    VerificÃ¡ usuario/contraseÃ±a (recordÃ¡: password real, no PIN de Windows Hello)." -ForegroundColor Red
                 $retry = Read-Host "    Reintentar? (s/n, ENTER para 's')"
                 if ($retry -eq 'n') { Write-Log "Cuenta invalida; volviendo a LocalSystem." 'WARN'; $serviceAccount = "LocalSystem"; $servicePassword = $null; break }
             }
@@ -1211,8 +1199,8 @@ function Step-ConfigureService {
     if ($LASTEXITCODE -ne 0) { Write-Log "Error al registrar servicio." 'ERROR'; return $false }
 
     # Fijar la cuenta del servicio. NSSM con LocalSystem no lleva password;
-    # con un usuario real, NSSM otorga automáticamente el derecho
-    # "SeServiceLogonRight" y registra el password para el inicio automático.
+    # con un usuario real, NSSM otorga automÃ¡ticamente el derecho
+    # "SeServiceLogonRight" y registra el password para el inicio automÃ¡tico.
     if ($serviceAccount -eq "LocalSystem") {
         & $NssmExe set $ServiceName ObjectName "LocalSystem" 2>&1 | ForEach-Object { Write-Log $_ }
     } else {
@@ -1270,11 +1258,11 @@ function Step-ConfigureService {
     return $true
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # FIREWALL -- expone el puerto del backend directamente a la LAN
 # (entorno interno sin HTTPS / reverse proxy). El puerto lo define
 # $ProdConfig.BackendPort en la instancia en curso.
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Step-ConfigureFirewall {
     param($ProdConfig)
     Write-Log "Configurando firewall de Windows..." 'STEP'
@@ -1589,9 +1577,9 @@ function Show-Diagnostics {
     Write-Host ""
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MENU PRINCIPAL (unificado: Pruebas + Produccion en un solo menu)
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function Show-MainMenu {
     $salir = $false
     while (-not $salir) {
@@ -1646,12 +1634,12 @@ function Show-MainMenu {
     }
 }
 
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # INICIO
-# ═══════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 try {
     # Limpieza baseline de logs de servicio cada vez que se abre el instalador.
-    # Programa rotacion de NSSM en logs/service/ → stdout.log.N, stdout.log.(N+1)...
+    # Programa rotacion de NSSM en logs/service/ â†’ stdout.log.N, stdout.log.(N+1)...
     # Sin esto, los archivos crecen indefinidamente entre reinstalaciones.
     Clean-ServiceLogs -ServiceLogsDir (Join-Path $LogsDir "service")
 

@@ -78,9 +78,9 @@ public final class ScanDtos {
             String employeeName,
             String mealName) {}
 
-    /** Registro de consumo para una persona externa (no empleada). */
     public record ExternalScanRequest(
             @NotBlank String identityCard,
+            Boolean isPassport,
             @NotBlank String fullName,
             @NotBlank String mealTypeCode,
             @NotNull Long restaurantId,

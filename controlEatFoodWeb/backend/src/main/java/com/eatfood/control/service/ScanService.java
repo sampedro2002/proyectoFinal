@@ -322,11 +322,10 @@ public class ScanService {
         // (10 dígitos) debe ser válida; otros formatos (pasaporte de un visitante
         // extranjero, documento alfanumérico) se aceptan tal cual.
         String identityCard = req.identityCard().trim();
-        if (com.eatfood.control.util.CedulaValidator.looksLikeCedula(identityCard)
-                && !com.eatfood.control.util.CedulaValidator.isValid(identityCard)) {
+        boolean isPassport = Boolean.TRUE.equals(req.isPassport());
+        if (!isPassport && !com.eatfood.control.util.CedulaValidator.isValid(identityCard)) {
             throw new BusinessException("INVALID_CARD",
-                    "La cédula ingresada no es una cédula ecuatoriana válida. " +
-                    "Si es un pasaporte u otro documento, ingréselo con sus letras/formato original.");
+                    "La cédula ingresada no es una cédula ecuatoriana válida.");
         }
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);

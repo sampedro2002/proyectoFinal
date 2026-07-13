@@ -25,6 +25,7 @@ data class EmployeeRequest(
     val identityCard: String,
     val fullName: String,
     val observation: String?,
+    val isPassport: Boolean?,
     val status: String?,
     val allowsLunch: Boolean?,
     val allowsSnack: Boolean?
@@ -195,7 +196,8 @@ data class ExternalScanRequest(
     val fullName: String,
     val mealTypeCode: String,
     val restaurantId: Long,
-    val observation: String? = null
+    val observation: String? = null,
+    val isPassport: Boolean? = null
 )
 
 data class ManualScanResponse(

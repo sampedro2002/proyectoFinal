@@ -12,7 +12,7 @@ const FINGERS = [
 ];
 
 const empty = {
-  identityCard: '', fullName: '', observation: '',
+  identityCard: '', isPassport: false, fullName: '', observation: '',
   status: 'ACTIVE', allowsLunch: true, allowsSnack: false,
 };
 
@@ -129,6 +129,7 @@ export default function Employees() {
     setFingerIndex(0); setTab('data');
     setForm({
       ...emp,
+      isPassport: emp.identityCard && !isValidCedulaEC(emp.identityCard),
       observation:   emp.observation ?? '',
       allowsLunch:   emp.allowsLunch ?? true,
       allowsSnack:   emp.allowsSnack ?? emp.effectiveSnack ?? false,
@@ -151,12 +152,13 @@ export default function Employees() {
     setError('');
     setSavedMsg('');
     const identityCard = form.identityCard.trim();
-    if (!isValidCedulaEC(identityCard)) {
+    if (!form.isPassport && !isValidCedulaEC(identityCard)) {
       setError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
       return;
     }
     const payload = {
       identityCard,
+      isPassport: form.isPassport,
       fullName: form.fullName,
       observation: form.observation || null,
       status: form.status,
@@ -381,7 +383,15 @@ export default function Employees() {
                   </div>
                 )}
                 <div className="field">
-                  <label>Cédula</label>
+                  <label>Tipo de Documento</label>
+                  <select value={form.isPassport ? 'PASSPORT' : 'CEDULA'}
+                          onChange={e => setForm({ ...form, isPassport: e.target.value === 'PASSPORT' })}>
+                    <option value="CEDULA">Cédula</option>
+                    <option value="PASSPORT">Pasaporte</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>{form.isPassport ? 'Pasaporte' : 'Cédula'}</label>
                   <input value={form.identityCard} required
                          onChange={e => setForm({ ...form, identityCard: e.target.value })} />
                 </div>
