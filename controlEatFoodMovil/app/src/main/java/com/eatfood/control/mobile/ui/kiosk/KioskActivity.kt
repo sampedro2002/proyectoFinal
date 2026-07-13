@@ -101,7 +101,7 @@ private fun KioskRoot() {
 private fun ConnectPanel(onConnected: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
-    val scanApi = remember { ApiClient.scanApi(context) }
+    val scanApi = remember(store.serverUrl) { ApiClient.scanApi(context) }
     val scope = rememberCoroutineScope()
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
@@ -182,7 +182,7 @@ private fun ConnectPanel(onConnected: () -> Unit) {
 private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
-    val scanApi = remember { ApiClient.scanApi(context) }
+    val scanApi = remember(store.serverUrl) { ApiClient.scanApi(context) }
     val dao = remember { AppDatabase.get(context).pendingScanDao() }
     val scope = rememberCoroutineScope()
 

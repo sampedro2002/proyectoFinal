@@ -17,6 +17,7 @@ import com.eatfood.control.mobile.data.model.ConsumptionRow
 import com.eatfood.control.mobile.data.model.MealTypeResponse
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
+import com.eatfood.control.mobile.data.prefs.SessionStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -28,7 +29,7 @@ import java.time.LocalDate
 @Composable
 fun ReportsScreen() {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
@@ -142,7 +143,7 @@ private fun timeOf(iso: String?): String =
 @Composable
 fun AuditScreen() {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var entity by remember { mutableStateOf("") }

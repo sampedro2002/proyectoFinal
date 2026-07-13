@@ -213,10 +213,15 @@ public class ZkBiometricMatcher implements BiometricMatcher {
         }
         log.info("enroll: registrando huella id={}, empleado={}, template={} bytes.",
                 fingerprintId, employeeId, template.length);
-        sdk.ZKFPM_DBDel(dbCache, (int) fingerprintId);
-        addInternal(fingerprintId, employeeId, template);
+
+        // ZKFPM_DBDel seguido de ZKFPM_DBAdd corrompe el índice interno del SDK ZKTeco
+        // y hace que ZKFPM_DBIdentify falle para plantillas previamente añadidas.
+        // En lugar de tocar la caché nativa, reconstruimos todo el índice desde BD.
+        fidToEmployee.put((int) fingerprintId, employeeId);
+        rebuildIndex();
     }
 
+    @SuppressWarnings("unused")
     private void addInternal(long fingerprintId, long employeeId, byte[] template) {
         try {
             int rc = sdk.ZKFPM_DBAdd(dbCache, (int) fingerprintId, template, template.length);

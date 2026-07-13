@@ -23,6 +23,7 @@ import com.eatfood.control.mobile.biometric.BiometricReader
 import com.eatfood.control.mobile.data.model.*
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
+import com.eatfood.control.mobile.data.prefs.SessionStore
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -30,7 +31,7 @@ import java.time.LocalDate
 @Composable
 fun DashboardScreen() {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     var stats by remember { mutableStateOf<DashboardStats?>(null) }
     var trend by remember { mutableStateOf<List<TrendPoint>>(emptyList()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -103,7 +104,7 @@ private fun StatCard(label: String, value: String, modifier: Modifier = Modifier
 @Composable
 fun EmployeesScreen(canModify: Boolean) {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
@@ -276,7 +277,7 @@ private fun EmployeeDialog(
 @Composable
 fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val fingers = listOf(
@@ -370,7 +371,7 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
 @Composable
 fun RestaurantsScreen(isAdmin: Boolean) {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var items by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
@@ -456,7 +457,7 @@ fun RestaurantsScreen(isAdmin: Boolean) {
 @Composable
 fun SchedulesScreen() {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var startTime by remember { mutableStateOf("12:00") }
@@ -551,7 +552,7 @@ fun SchedulesScreen() {
 @Composable
 fun ExtraMealsScreen() {
     val context = LocalContext.current
-    val api = remember { ApiClient.api(context) }
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
