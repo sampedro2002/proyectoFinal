@@ -42,6 +42,15 @@ public class ZkBiometricMatcher implements BiometricMatcher {
     private ZkfpSdk sdk;
     private Pointer dbCache;
     private boolean ready = false;
+    /**
+     * Indica si el último intento de inicialización falló. Se usa para
+     * emitir el WARN de "lector no disponible" UNA sola vez (transición
+     * OK→fallo) y silenciar los reintentos periódicos a DEBUG. Sin esto,
+     * un ZK9500 desconectado genera una línea de WARN cada 10 s de forma
+     * indefinida y satura el log de producción.
+     */
+    private boolean lastInitFailed = false;
+    private String lastInitErrorMessage = null;
 
     private final ScheduledExecutorService retryScheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> retryTask = null;
@@ -61,6 +70,8 @@ public class ZkBiometricMatcher implements BiometricMatcher {
             if (sdk == null) {
                 sdk = loadSdk();
                 if (sdk == null) {
+                    logInitFailure("No se pudo cargar el SDK nativo ZKFinger desde '" + nativeLibPath
+                            + "'. Coloque las DLL/.so del SDK ZK9500 en esa ruta.");
                     scheduleRetry();
                     return;
                 }
@@ -70,29 +81,50 @@ public class ZkBiometricMatcher implements BiometricMatcher {
             if (rc != ZKFP_ERR_OK) {
                 String hint = rc == -1 ? " (sin dispositivo o driver no instalado)" :
                               rc == -2 ? " (driver USB no instalado o ZK9500 no conectado)" : "";
-                log.warn("ZKFPM_Init falló (código {}){} — reintentando en 10 segundos...", rc, hint);
+                logInitFailure("ZKFPM_Init falló (código " + rc + ")" + hint);
                 scheduleRetry();
                 return;
             }
             dbCache = sdk.ZKFPM_DBInit();
             if (dbCache == null) {
-                log.error("ZKFPM_DBInit devolvió null. Reintentando en 10 segundos...");
+                logInitFailure("ZKFPM_DBInit devolvió null (libzkfp corrupta o sensor en uso).");
                 scheduleRetry();
                 return;
             }
             rebuildIndex();
             ready = true;
             cancelRetry();
+            if (lastInitFailed) {
+                log.info("ZKTeco9500 reconectado — motor listo tras reintentos.");
+                lastInitFailed = false;
+            }
             log.info("Motor biométrico ZKFinger inicializado correctamente (umbral={}).", threshold);
         } catch (UnsatisfiedLinkError e) {
-            log.error("No se pudo cargar el SDK nativo ZKFinger desde '{}'. " +
-                    "Coloque las DLL/.so del SDK ZK9500 en esa ruta. Detalle: {}", nativeLibPath, e.getMessage());
+            logInitFailure("No se pudo cargar el SDK nativo ZKFinger desde '" + nativeLibPath
+                    + "'. Detalle: " + e.getMessage());
             scheduleRetry();
         } catch (Throwable e) {
             ready = false;
-            log.error("Error inesperado al inicializar el motor ZKFinger: {}. Reintentando en 10 segundos...", e.getMessage());
+            logInitFailure("Error inesperado al inicializar el motor ZKFinger: " + e.getMessage());
             scheduleRetry();
         }
+    }
+
+    /**
+     * Emite el log de fallo de inicialización UNA sola vez como WARN
+     * (transición OK→fallo) y como DEBUG en los sucesivos reintentos.
+     * Evita la repetición masiva del mismo mensaje cada 10 s cuando el
+     * ZK9500 está desconectado. Cualquier error nuevo (cambio de
+     * mensaje) vuelve a salir como WARN para mantener visibilidad.
+     */
+    private void logInitFailure(String msg) {
+        if (!lastInitFailed || !msg.equals(lastInitErrorMessage)) {
+            log.warn("{} — reintentando cada 10 s hasta que se conecte.", msg);
+            lastInitErrorMessage = msg;
+        } else {
+            log.debug("{} — reintentando...", msg);
+        }
+        lastInitFailed = true;
     }
 
     private void scheduleRetry() {

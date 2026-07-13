@@ -3,6 +3,7 @@ import axios from 'axios';
 import { ZkFingerClient, getWsUrl, setWsUrl } from '../biometric/zkfinger.js';
 import { enqueue, pending, remove, newUuid } from '../offline/queue.js';
 import { playSuccess, playError } from '../offline/sound.js';
+import logger from '../utils/logger.js';
 
 const SUCCESS_SECONDS = 1;
 const scanApi = axios.create({ baseURL: '/api' });
@@ -178,7 +179,7 @@ export default function Kiosk() {
               setResult(null);
             }
           } catch (err) {
-            console.error('[Kiosk] Error procesando captura:', err);
+            logger.error('[Kiosk] Error procesando captura:', err);
           } finally {
             // Volver a habilitar el escaneo aunque processCapture haya fallado,
             // para no dejar el kiosk "congelado" con scanning=false.
@@ -208,7 +209,7 @@ export default function Kiosk() {
     const clientUuid = newUuid();
     const consumedAt = new Date().toISOString();
 
-    if (import.meta.env.DEV) console.log('[SCAN] processCapture llamado', { clientUuid, consumedAt, online: navigator.onLine });
+    logger.debug('[SCAN] processCapture llamado', { clientUuid, consumedAt, online: navigator.onLine });
 
     if (navigator.onLine) {
       try {
@@ -221,12 +222,12 @@ export default function Kiosk() {
         });
         // No loguear `data` en producción: incluye employeeName/mealName del empleado
         // escaneado, y el Kiosk es una pantalla de acceso físico público (F12 lo expondría).
-        if (import.meta.env.DEV) console.log('[SCAN] Respuesta del servidor:', JSON.stringify(data));
+        logger.debug('[SCAN] Respuesta del servidor:', JSON.stringify(data));
         showResult(data);
         if (data.status === 'SUCCESS') fetchFeed();
         return;
       } catch (err) {
-        if (import.meta.env.DEV) console.error('[SCAN] Error de red en /scan:', err.response?.status, err.response?.data || err.message);
+        logger.debug('[SCAN] Error de red en /scan:', err.response?.status, err.response?.data || err.message);
         if (err.response?.data?.code === 'INVALID_SESSION') {
           // Sesión expirada o invalidada (ej. reinicio del backend con sesión antigua)
           localStorage.removeItem('kioskSession');
@@ -308,7 +309,7 @@ export default function Kiosk() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.error('[Kiosk] Error descargando reporte:', err);
+      logger.error('[Kiosk] Error descargando reporte:', err);
     } finally {
       setDownloading(false);
     }

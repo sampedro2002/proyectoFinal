@@ -4,11 +4,13 @@ import com.eatfood.control.domain.AuditLog;
 import com.eatfood.control.repository.AuditLogRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class AuditService {
@@ -16,7 +18,7 @@ public class AuditService {
     private final AuditLogRepository auditLogRepository;
 
     public void record(String entity, String entityId, String action, String oldValue, String newValue) {
-        AuditLog log = AuditLog.builder()
+        AuditLog auditEntry = AuditLog.builder()
                 .username(currentUsername())
                 .entityName(entity)
                 .entityId(entityId)
@@ -26,7 +28,7 @@ public class AuditService {
                 .ipAddress(clientIp())
                 .deviceInfo(userAgent())
                 .build();
-        auditLogRepository.save(log);
+        auditLogRepository.save(auditEntry);
     }
 
     private String currentUsername() {
