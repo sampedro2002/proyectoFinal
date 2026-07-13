@@ -7,7 +7,7 @@ const ROLE_LABELS = { ADMIN: 'Administrador', CATERING: 'Restaurante' };
 const roleLabel = (name) => ROLE_LABELS[name] || name;
 
 const empty = {
-  username: '', fullName: '', email: '', password: '',
+  username: '', fullName: '', email: '', password: '', password2: '',
   enabled: true, roles: ['CATERING'], restaurantId: '',
 };
 
@@ -20,6 +20,7 @@ export default function Users() {
   const [form, setForm] = useState(null);
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
+  const [showPass, setShowPass] = useState(false);
 
   const load = () => api.get('/users')
     .then((r) => { setItems(r.data); setLoadError(''); })
@@ -33,17 +34,20 @@ export default function Users() {
 
   function openNew() {
     setError('');
+    setShowPass(false);
     setForm({ ...empty });
   }
 
   function openEdit(u) {
     setError('');
+    setShowPass(false);
     setForm({
       id: u.id,
       username: u.username,
       fullName: u.fullName,
       email: u.email || '',
       password: '',
+      password2: '',
       enabled: u.enabled,
       roles: u.roles && u.roles.length ? u.roles : ['CATERING'],
       restaurantId: u.restaurantId || '',
@@ -60,6 +64,18 @@ export default function Users() {
   async function save(e) {
     e.preventDefault();
     setError('');
+    // La contraseña se escribe dos veces: ambas deben coincidir. Al editar es
+    // opcional (vacía = no cambiar), pero si se llena una, se validan las dos.
+    if (form.password || form.password2) {
+      if (form.password !== form.password2) {
+        setError('Las contraseñas no coinciden. Escriba la misma en ambos campos.');
+        return;
+      }
+      if (form.password.length < 6) {
+        setError('La contraseña debe tener al menos 6 caracteres.');
+        return;
+      }
+    }
     const payload = {
       username: form.username.trim(),
       fullName: form.fullName.trim(),
@@ -153,9 +169,36 @@ export default function Users() {
 
             <div className="field">
               <label>{form.id ? 'Nueva contraseña (dejar en blanco para no cambiar)' : 'Contraseña'}</label>
-              <input type="password" value={form.password} required={!form.id}
-                autoComplete="new-password"
-                onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              <div className="password-container">
+                <input type={showPass ? 'text' : 'password'} value={form.password} required={!form.id}
+                  autoComplete="new-password"
+                  onChange={(e) => setForm({ ...form, password: e.target.value })} />
+                <button type="button" className="password-toggle"
+                  onClick={() => setShowPass(!showPass)}
+                  title={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                  {showPass ? '👁️' : '🙈'}
+                </button>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>{form.id ? 'Confirmar nueva contraseña' : 'Confirmar contraseña'}</label>
+              <div className="password-container">
+                <input type={showPass ? 'text' : 'password'} value={form.password2}
+                  required={!form.id || !!form.password}
+                  autoComplete="new-password"
+                  onChange={(e) => setForm({ ...form, password2: e.target.value })} />
+                <button type="button" className="password-toggle"
+                  onClick={() => setShowPass(!showPass)}
+                  title={showPass ? 'Ocultar contraseña' : 'Mostrar contraseña'}>
+                  {showPass ? '👁️' : '🙈'}
+                </button>
+              </div>
+              {form.password2 && form.password !== form.password2 && (
+                <span style={{ fontSize: 12, color: 'var(--err, #ef4444)' }}>
+                  Las contraseñas no coinciden.
+                </span>
+              )}
             </div>
 
             <div className="field">
