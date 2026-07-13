@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -110,9 +111,10 @@ fun ReportsScreen() {
                 Modifier.padding(10.dp), color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             LazyColumn(Modifier.fillMaxSize()) {
-                items(rows) { r ->
+                // Numeración de registros (N° 1..n), espejo de la columna "N°" del reporte web.
+                itemsIndexed(rows) { index, r ->
                     RowItem(
-                        title = "${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
+                        title = "${index + 1}. ${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
                         subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}",
                         trailing = if (r.offline) "offline" else ""
                     )

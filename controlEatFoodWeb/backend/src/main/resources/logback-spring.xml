@@ -15,6 +15,11 @@
 -->
 <configuration scan="false">
 
+    <!-- Defaults de Spring Boot: registran la conversion word %clr (colores) que usa
+         PATTERN_CONSOLE. Sin este include, Logback aborta con "no conversion class
+         registered for [clr]" y la aplicación (y los tests) no arrancan. -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
     <!-- ====== Patrones ====== -->
     <property name="PATTERN_FILE"
               value="%d{ISO8601, America/Guayaquil} %-5level [%15.15thread] %X{reqId:-} %X{user:-} %X{ip:-} %-36.36logger{36} · %msg%n%ex"/>

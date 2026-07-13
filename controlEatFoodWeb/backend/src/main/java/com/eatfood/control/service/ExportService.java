@@ -76,7 +76,7 @@ public class ExportService {
     }
 
     private static final String[] HEADERS =
-            {"Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
+            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
     private static final String[] EMP_HEADERS =
             {"Código", "Cédula", "Nombre", "Desayuno", "Almuerzo", "Estado",
              "N.º Huellas", "Observación"};
@@ -89,8 +89,10 @@ public class ExportService {
         }
         sb.append("\n");
         sb.append(String.join(";", HEADERS)).append("\n");
+        int n = 1;
         for (ConsumptionRow r : rows) {
-            sb.append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+            sb.append(n++).append(';')
+              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
               .append(csv(r.restaurantName())).append(';')
@@ -209,14 +211,16 @@ public class ExportService {
                 c.setCellStyle(headerStyle);
             }
             int rn = headerRowIdx + 1;
+            int n = 1;
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
-                row.createCell(1).setCellValue(safe(r.identityCard()));
-                row.createCell(2).setCellValue(safe(r.employeeName()));
-                row.createCell(3).setCellValue(safe(r.restaurantName()));
-                row.createCell(4).setCellValue(safe(r.mealName()));
-                row.createCell(5).setCellValue(safe(r.observation()));
+                row.createCell(0).setCellValue(n++);
+                row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
+                row.createCell(2).setCellValue(safe(r.identityCard()));
+                row.createCell(3).setCellValue(safe(r.employeeName()));
+                row.createCell(4).setCellValue(safe(r.restaurantName()));
+                row.createCell(5).setCellValue(safe(r.mealName()));
+                row.createCell(6).setCellValue(safe(r.observation()));
             }
 
             // Resumen de platos
@@ -262,12 +266,16 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(HEADERS.length);
             table.setWidthPercentage(100);
+            // N° angosta; el resto reparte el ancho como antes.
+            table.setWidths(new float[]{5f, 14f, 12f, 20f, 16f, 11f, 22f});
             table.setHeaderRows(1);
             addHeaderRow(table, HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
+            int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = (zebra = !zebra) ? new Color(244, 247, 251) : Color.WHITE;
+                addBodyCell(table, String.valueOf(n++), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);
@@ -464,7 +472,7 @@ public class ExportService {
     // Reporte diario del Kiosk (con conteo de platos al final)
     // ------------------------------------------------------------------------
     private static final String[] KIOSK_HEADERS =
-            {"Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
+            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
 
     public byte[] kioskDailyCsv(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
@@ -473,8 +481,10 @@ public class ExportService {
         sb.append("Reporte Diario - ").append(restaurantName)
           .append(" - Fecha: ").append(date.format(DATE_FMT)).append("\n\n");
         sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
+        int n = 1;
         for (ConsumptionRow r : rows) {
-            sb.append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+            sb.append(n++).append(';')
+              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
               .append(csv(restaurantName)).append(';')
@@ -509,14 +519,16 @@ public class ExportService {
                 c.setCellStyle(headerStyle);
             }
             int rn = headerRowIdx + 1;
+            int n = 1;
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
-                row.createCell(1).setCellValue(safe(r.identityCard()));
-                row.createCell(2).setCellValue(safe(r.employeeName()));
-                row.createCell(3).setCellValue(safe(restaurantName));
-                row.createCell(4).setCellValue(safe(r.mealName()));
-                row.createCell(5).setCellValue(safe(r.observation()));
+                row.createCell(0).setCellValue(n++);
+                row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
+                row.createCell(2).setCellValue(safe(r.identityCard()));
+                row.createCell(3).setCellValue(safe(r.employeeName()));
+                row.createCell(4).setCellValue(safe(restaurantName));
+                row.createCell(5).setCellValue(safe(r.mealName()));
+                row.createCell(6).setCellValue(safe(r.observation()));
             }
 
             rn += 1;
@@ -563,12 +575,16 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(KIOSK_HEADERS.length);
             table.setWidthPercentage(100);
+            // N° angosta; el resto reparte el ancho como antes.
+            table.setWidths(new float[]{5f, 14f, 12f, 20f, 16f, 11f, 22f});
             table.setHeaderRows(1);
             addHeaderRow(table, KIOSK_HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
+            int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = (zebra = !zebra) ? new Color(244, 247, 251) : Color.WHITE;
+                addBodyCell(table, String.valueOf(n++), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);

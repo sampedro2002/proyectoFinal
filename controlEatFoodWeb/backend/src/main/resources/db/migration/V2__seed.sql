@@ -22,9 +22,3 @@ INSERT INTO restaurant (name, location, max_devices) VALUES
 
 -- Horario único de comidas
 INSERT INTO schedule (start_time, end_time) VALUES ('11:00:00', '16:00:00');
-
--- Configuración global
-INSERT INTO app_config (config_key, config_value, description) VALUES
-  ('biometric.match.threshold', '70', 'Umbral mínimo de matching 1:N del SDK'),
-  ('catering.max.devices', '2', 'Máximo de dispositivos simultáneos por restaurante'),
-  ('ui.success.display.seconds', '10', 'Segundos que se muestra el registro exitoso');

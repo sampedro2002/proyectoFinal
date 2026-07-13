@@ -1,6 +1,8 @@
 -- ============================================================================
 -- Control de Consumo de Alimentos por Huella Digital (ZK9500)
--- Esquema relacional MySQL — estado final consolidado (reemplaza V1..V11)
+-- Esquema relacional MySQL — estado final consolidado (reemplaza V1..V11 y la
+-- antigua V3 de renombre Merienda→Almuerzo: los únicos platos del sistema son
+-- "Desayuno" y "Almuerzo", ver ScanService).
 --
 -- Todas las tablas usan CREATE TABLE IF NOT EXISTS para poder correr esta
 -- migración contra una base de datos ya creada (por ejemplo, en una máquina
@@ -140,7 +142,7 @@ CREATE TABLE IF NOT EXISTS consumption (
     business_date   DATE NOT NULL,
     offline         BOOLEAN NOT NULL DEFAULT FALSE,
     sync_status     VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (sync_status IN ('SYNCED','PENDING','CONFLICT')),
-    meal_name       VARCHAR(30),
+    meal_name       VARCHAR(30),          -- 'Desayuno' (1er plato) o 'Almuerzo' (2º plato)
     observation     VARCHAR(500),
     client_uuid     VARCHAR(36) NOT NULL,
     created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -204,17 +206,6 @@ CREATE TABLE IF NOT EXISTS login_session (
     revoked       BOOLEAN NOT NULL DEFAULT FALSE,
     KEY idx_session_user (user_id),
     FOREIGN KEY (user_id) REFERENCES app_user(id)
-);
-
--- ----------------------------------------------------------------------------
--- CONFIGURACIÓN (tabla histórica; la app hoy lee configuración desde
--- application.yml / AppProperties, no desde aquí)
--- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS app_config (
-    config_key   VARCHAR(80) PRIMARY KEY,
-    config_value VARCHAR(400) NOT NULL,
-    description  VARCHAR(200),
-    updated_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 -- ----------------------------------------------------------------------------
