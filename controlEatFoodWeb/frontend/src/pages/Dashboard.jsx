@@ -56,7 +56,7 @@ export default function Dashboard() {
       <div className="grid cols-3">
         <Stat value={stats.totalConsumptions} label="Consumos de hoy" />
         <Stat value={stats.desayunoCount} label="Desayunos" />
-        <Stat value={stats.meriendaCount} label="Meriendas" />
+        <Stat value={stats.almuerzoCount} label="Almuerzos" />
       </div>
       <div className="grid cols-4">
         <Stat value={stats.expectedEmployees} label="Empleados esperados" />

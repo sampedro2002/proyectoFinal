@@ -38,9 +38,6 @@ interface ApiService {
     @PUT("employees/{id}")
     suspend fun updateEmployee(@Path("id") id: Long, @Body body: EmployeeRequest): EmployeeResponse
 
-    @DELETE("employees/{id}")
-    suspend fun deleteEmployee(@Path("id") id: Long): Response<Unit>
-
     // ── Huellas ───────────────────────────────────────────────────────────────
     @GET("fingerprints/employee/{employeeId}")
     suspend fun fingerprints(@Path("employeeId") employeeId: Long): List<FingerprintResponse>
@@ -59,13 +56,8 @@ interface ApiService {
     @PUT("restaurants/{id}")
     suspend fun updateRestaurant(@Path("id") id: Long, @Body body: RestaurantRequest): RestaurantResponse
 
-    @GET("meal-types")
-    suspend fun mealTypes(): List<MealTypeResponse>
-
     @GET("schedules")
     suspend fun schedules(): List<ScheduleResponse>
-    @POST("schedules")
-    suspend fun saveSchedule(@Body body: ScheduleRequest): ScheduleResponse
     @POST("schedules")
     suspend fun saveGeneralSchedule(@Body body: GeneralScheduleRequest): ScheduleResponse
 
@@ -81,7 +73,6 @@ interface ApiService {
         @Query("from") from: String,
         @Query("to") to: String,
         @Query("restaurantId") restaurantId: Long? = null,
-        @Query("mealTypeId") mealTypeId: Long? = null,
         @Query("employeeId") employeeId: Long? = null
     ): List<ConsumptionRow>
 
@@ -91,8 +82,7 @@ interface ApiService {
         @Query("format") format: String,
         @Query("from") from: String,
         @Query("to") to: String,
-        @Query("restaurantId") restaurantId: Long? = null,
-        @Query("mealTypeId") mealTypeId: Long? = null
+        @Query("restaurantId") restaurantId: Long? = null
     ): Response<ResponseBody>
 
     // ── Auditoría ──────────────────────────────────────────────────────────────

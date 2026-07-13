@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import api, { getAccessToken } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { isValidCedulaEC } from '../utils/cedula.js';
 import { ZkFingerClient } from '../biometric/zkfinger.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 import Drawer from '../components/Drawer.jsx';
@@ -149,8 +150,13 @@ export default function Employees() {
     e.preventDefault();
     setError('');
     setSavedMsg('');
+    const identityCard = form.identityCard.trim();
+    if (!isValidCedulaEC(identityCard)) {
+      setError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
+      return;
+    }
     const payload = {
-      identityCard: form.identityCard,
+      identityCard,
       fullName: form.fullName,
       observation: form.observation || null,
       status: form.status,
@@ -303,7 +309,7 @@ export default function Employees() {
           <thead>
             <tr>
               <th>Código</th><th>Cédula</th><th>Nombre</th>
-              <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
+              <th>Desayuno</th><th>Almuerzo</th><th>Huellas</th><th>Estado</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -388,12 +394,12 @@ export default function Employees() {
                   <label>
                     <input type="checkbox" checked={form.allowsLunch}
                       onChange={e => setForm({ ...form, allowsLunch: e.target.checked })} />
-                    {' '}Almuerzo
+                    {' '}Desayuno
                   </label>
                   <label>
                     <input type="checkbox" checked={form.allowsSnack}
                       onChange={e => setForm({ ...form, allowsSnack: e.target.checked })} />
-                    {' '}Merienda
+                    {' '}Almuerzo
                   </label>
                 </div>
 

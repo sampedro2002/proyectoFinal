@@ -215,8 +215,15 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                 store.kioskSession = updatedSession
                 session = updatedSession
             }
-        }.onFailure {
+        }.onFailure { e ->
             apiError = true
+            // Sesión de dispositivo expirada/invalidada (TTL de 5 min de inactividad,
+            // reinicio del backend, etc.): volver a la pantalla de conexión igual que
+            // hace el flujo de escaneo, en vez de quedarse en "Error servidor".
+            if (e.apiError()?.code == "INVALID_SESSION") {
+                store.kioskSession = null
+                onDisconnect()
+            }
         }
     }
 
@@ -273,16 +280,19 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                     return
                 }
 
-                val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val uri: Uri? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     try {
                         saveFileToDownloads(context, filename, bytes)
                     } catch (e: Exception) {
                         Log.e("DownloadReport", "Error guardando en Descargas", e)
                         // Fallback a caché local si falla MediaStore
-                        val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
-                        java.io.File(dir, filename).also { f ->
+                        runCatching {
+                            val dir = java.io.File(context.cacheDir, "exports").apply { mkdirs() }
+                            val f = java.io.File(dir, filename)
                             f.outputStream().use { out -> out.write(bytes) }
-                        }
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context, "${context.packageName}.fileprovider", f)
+                        }.getOrNull()
                     }
                 }
 
@@ -290,10 +300,6 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
 
                 // Intentar abrir el archivo si hay un visor disponible
                 runCatching {
-                    val uri = if (file is java.io.File && file.exists()) {
-                        androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-                    } else null
-                    
                     if (uri != null) {
                         val mime = when (reportFormat) {
                             "csv" -> "text/csv"
@@ -811,35 +817,29 @@ private fun isOnline(context: Context): Boolean {
     return caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
-private fun saveFileToDownloads(context: Context, filename: String, bytes: ByteArray) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val contentValues = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, filename)
-            put(MediaStore.Downloads.MIME_TYPE, getMimeType(filename))
-            put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            put(MediaStore.Downloads.IS_PENDING, 1)
-        }
-        val resolver = context.contentResolver
-        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
-            ?: throw IOException("No se pudo crear el archivo en Descargas")
-        
-        resolver.openOutputStream(uri)?.use { outputStream ->
-            outputStream.write(bytes)
-        } ?: throw IOException("No se pudo abrir el archivo para escritura")
-        
-        contentValues.clear()
-        contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
-        resolver.update(uri, contentValues, null, null)
-    } else {
-        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-        if (!downloadsDir.exists()) {
-            downloadsDir.mkdirs()
-        }
-        val file = File(downloadsDir, filename)
-        FileOutputStream(file).use { outputStream ->
-            outputStream.write(bytes)
-        }
+/**
+ * Guarda el reporte en Descargas vía MediaStore (minSdk = 29, siempre disponible)
+ * y devuelve el content-Uri, que sirve directamente para el Intent ACTION_VIEW.
+ */
+private fun saveFileToDownloads(context: Context, filename: String, bytes: ByteArray): Uri {
+    val contentValues = ContentValues().apply {
+        put(MediaStore.Downloads.DISPLAY_NAME, filename)
+        put(MediaStore.Downloads.MIME_TYPE, getMimeType(filename))
+        put(MediaStore.Downloads.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
+        put(MediaStore.Downloads.IS_PENDING, 1)
     }
+    val resolver = context.contentResolver
+    val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, contentValues)
+        ?: throw IOException("No se pudo crear el archivo en Descargas")
+
+    resolver.openOutputStream(uri)?.use { outputStream ->
+        outputStream.write(bytes)
+    } ?: throw IOException("No se pudo abrir el archivo para escritura")
+
+    contentValues.clear()
+    contentValues.put(MediaStore.Downloads.IS_PENDING, 0)
+    resolver.update(uri, contentValues, null, null)
+    return uri
 }
 
 private fun getMimeType(filename: String): String {

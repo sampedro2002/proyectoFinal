@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
+import { looksLikeCedula, isValidCedulaEC } from '../utils/cedula.js';
 
 export default function ManualScan() {
   const { hasRole } = useAuth();
@@ -99,7 +100,14 @@ export default function ManualScan() {
       }
     } else {
       // Persona externa
-      if (!extCard.trim()) { setError('Ingrese la cédula.'); return; }
+      const card = extCard.trim();
+      if (!card) { setError('Ingrese la cédula.'); return; }
+      // Si tiene forma de cédula (10 dígitos) debe ser válida; un pasaporte
+      // u otro documento alfanumérico se acepta tal cual.
+      if (looksLikeCedula(card) && !isValidCedulaEC(card)) {
+        setError('La cédula ingresada no es una cédula ecuatoriana válida. Si es un pasaporte, ingréselo con sus letras.');
+        return;
+      }
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (!mealCode) { setError('Seleccione un tipo de comida.'); return; }

@@ -28,6 +28,11 @@ public class ScanService {
     /** Huso horario de negocio (Ecuador). Coincide con spring.jpa.properties.hibernate.jdbc.time_zone. */
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Guayaquil");
 
+    /** Mismo esquema de código público que EmployeeService (la columna public_code es NOT NULL). */
+    private static final String CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    private static final int CODE_LENGTH = 6;
+    private static final java.security.SecureRandom CODE_RANDOM = new java.security.SecureRandom();
+
     private final BiometricMatcher matcher;
     private final DeviceService deviceService;
     private final EmployeeRepository employeeRepository;
@@ -87,7 +92,7 @@ public class ScanService {
 
         log.debug("[SCAN] Empleado identificado: id={}, nombre='{}'", employee.getId(), employee.getFullName());
 
-        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Merienda).
+        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Almuerzo).
         // Se convierte SIEMPRE a BUSINESS_ZONE antes de leer fecha/hora: `when` puede traer
         // cualquier offset (dispositivo offline con reloj/zona distinta, backend con TZ de
         // JVM distinta a Ecuador), y calcular la fecha/hora de negocio con el offset "tal
@@ -126,7 +131,7 @@ public class ScanService {
             Consumption existing = consumptionRepository
                     .findByClientUuid(clientUuid)
                     .orElseGet(() -> consumptionRepository
-                            .findByEmployeeIdAndBusinessDate(employee.getId(), businessDate)
+                            .findFirstByEmployeeIdAndBusinessDate(employee.getId(), businessDate)
                             .orElse(null));
             if (existing != null) {
                 return success(existing);
@@ -160,18 +165,20 @@ public class ScanService {
         }
 
         // Se decide por las comidas YA registradas hoy (no solo por el conteo), para que un
-        // empleado autorizado únicamente a merienda (allowsLunch=false, allowsSnack=true) no
-        // reciba "Desayuno" en su primer escaneo y luego otra "Merienda" en el segundo: su
+        // empleado autorizado únicamente a almuerzo (allowsLunch=false, allowsSnack=true) no
+        // reciba "Desayuno" en su primer escaneo y luego otro "Almuerzo" en el segundo: su
         // tope diario es 1 comida, no 2.
+        // Nota de nomenclatura: allows_lunch gobierna el "Desayuno" (primer plato) y
+        // allows_snack el "Almuerzo" (segundo plato); son los dos únicos platos del sistema.
         List<String> consumedToday = consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), date);
         boolean hadBreakfast = consumedToday.contains("Desayuno");
-        boolean hadSnack = consumedToday.contains("Merienda");
+        boolean hadLunch = consumedToday.contains("Almuerzo");
 
         if (!hadBreakfast && employee.isAllowsLunch()) {
             return MealSelection.ok("Desayuno");
         }
-        if (!hadSnack && employee.effectiveSnack()) {
-            return MealSelection.ok("Merienda");
+        if (!hadLunch && employee.effectiveSnack()) {
+            return MealSelection.ok("Almuerzo");
         }
         if (consumedToday.isEmpty()) {
             return MealSelection.fail("NOT_ALLOWED", "CONSUMO NO PERMITIDO", "NOT_ALLOWED");
@@ -228,12 +235,12 @@ public class ScanService {
                 .toList();
 
         long desayunos = consumptions.stream().filter(c -> "Desayuno".equals(c.getMealName())).count();
-        long meriendas = consumptions.stream().filter(c -> "Merienda".equals(c.getMealName())).count();
-        long general = consumptions.stream().filter(c -> !"Desayuno".equals(c.getMealName()) && !"Merienda".equals(c.getMealName())).count();
+        long almuerzos = consumptions.stream().filter(c -> "Almuerzo".equals(c.getMealName())).count();
+        long general = consumptions.stream().filter(c -> !"Desayuno".equals(c.getMealName()) && !"Almuerzo".equals(c.getMealName())).count();
 
         Map<String, Long> plateCounts = new LinkedHashMap<>();
         plateCounts.put("Desayunos", desayunos);
-        plateCounts.put("Meriendas", meriendas);
+        plateCounts.put("Almuerzos", almuerzos);
         if (general > 0) plateCounts.put("Otros", general);
 
         return new KioskReport(
@@ -288,9 +295,16 @@ public class ScanService {
                 employee.getFullName(), mealName);
     }
 
-    /** Traduce el código de tipo de comida (LUNCH/SNACK) al nombre usado en los reportes. */
+    /**
+     * Traduce el código de tipo de comida al nombre usado en los reportes.
+     * Solo existen dos platos: Desayuno (BREAKFAST) y Almuerzo (LUNCH).
+     * SNACK se acepta por compatibilidad con clientes antiguos y equivale a Almuerzo.
+     */
     private static String mealNameForCode(String mealTypeCode) {
-        return "SNACK".equalsIgnoreCase(mealTypeCode) ? "Merienda" : "Desayuno";
+        if ("LUNCH".equalsIgnoreCase(mealTypeCode) || "SNACK".equalsIgnoreCase(mealTypeCode)) {
+            return "Almuerzo";
+        }
+        return "Desayuno";
     }
 
     /**
@@ -304,19 +318,31 @@ public class ScanService {
         log.info("[EXTERNAL] Registro externo: cedula='{}', nombre='{}', restaurantId={}",
                 req.identityCard(), req.fullName(), req.restaurantId());
 
+        // Validación flexible del documento: si tiene forma de cédula ecuatoriana
+        // (10 dígitos) debe ser válida; otros formatos (pasaporte de un visitante
+        // extranjero, documento alfanumérico) se aceptan tal cual.
+        String identityCard = req.identityCard().trim();
+        if (com.eatfood.control.util.CedulaValidator.looksLikeCedula(identityCard)
+                && !com.eatfood.control.util.CedulaValidator.isValid(identityCard)) {
+            throw new BusinessException("INVALID_CARD",
+                    "La cédula ingresada no es una cédula ecuatoriana válida. " +
+                    "Si es un pasaporte u otro documento, ingréselo con sus letras/formato original.");
+        }
+
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
         if (restaurant == null) {
             return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null);
         }
 
-        Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(req.identityCard())
+        Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(identityCard)
                 .orElseGet(() -> {
                     Employee e = new Employee();
-                    e.setIdentityCard(req.identityCard());
+                    e.setIdentityCard(identityCard);
                     e.setFullName(req.fullName());
                     e.setStatus(EmployeeStatus.INACTIVE);
                     e.setAllowsLunch(true);
                     e.setAllowsSnack(true);
+                    e.setPublicCode(generatePublicCode());
                     return e;
                 });
         if (employee.getId() == null) {
@@ -350,6 +376,19 @@ public class ScanService {
         if (v == null) return null;
         String t = v.trim();
         return t.isEmpty() ? null : t;
+    }
+
+    /** Genera un código público único EMP-XXXXXX reintentando ante colisión. */
+    private String generatePublicCode() {
+        for (int attempt = 0; attempt < 20; attempt++) {
+            StringBuilder sb = new StringBuilder("EMP-");
+            for (int i = 0; i < CODE_LENGTH; i++) {
+                sb.append(CODE_ALPHABET.charAt(CODE_RANDOM.nextInt(CODE_ALPHABET.length())));
+            }
+            String code = sb.toString();
+            if (!employeeRepository.existsByPublicCode(code)) return code;
+        }
+        throw new BusinessException("CODE_GENERATION", "No se pudo generar un código único de empleado.");
     }
 
     private byte[] decode(String b64) {

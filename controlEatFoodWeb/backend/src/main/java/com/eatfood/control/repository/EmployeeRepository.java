@@ -16,6 +16,12 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     Optional<Employee> findByIdentityCardAndDeletedFalse(String identityCard);
 
+    /** Búsqueda global (incluye soft-deleted): identity_card es UNIQUE en la BD. */
+    Optional<Employee> findByIdentityCard(String identityCard);
+
+    /** ¿Otro empleado (distinto de id) ya usa esta cédula? Para validar en la edición. */
+    boolean existsByIdentityCardAndIdNot(String identityCard, Long id);
+
     /**
      * Igual que {@link #findById}, pero toma un bloqueo pesimista de escritura sobre la fila.
      * Se usa en el escaneo para serializar los escaneos concurrentes del mismo empleado y

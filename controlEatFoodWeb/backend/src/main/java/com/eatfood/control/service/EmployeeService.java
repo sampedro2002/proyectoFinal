@@ -48,8 +48,21 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponse create(EmployeeRequest req) {
-        if (employeeRepository.existsByIdentityCardAndDeletedFalse(req.identityCard())) {
+        String identityCard = normalizedCard(req.identityCard());
+        if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
             throw new BusinessException("DUPLICATE_CARD", "Ya existe un empleado con esa cédula.");
+        }
+        // identity_card es UNIQUE global en la BD: si la cédula pertenece a un empleado
+        // eliminado (soft-delete), el INSERT fallaría con un 500. Se reactiva ese registro
+        // con los datos nuevos en lugar de crear una fila duplicada.
+        Employee revived = employeeRepository.findByIdentityCard(identityCard).orElse(null);
+        if (revived != null) {
+            apply(revived, req);
+            revived.setDeleted(false);
+            if (revived.getPublicCode() == null) revived.setPublicCode(generatePublicCode());
+            Employee saved = employeeRepository.save(revived);
+            auditService.record("Employee", String.valueOf(saved.getId()), "REACTIVATE", null, saved.getFullName());
+            return toResponse(saved);
         }
         Employee e = new Employee();
         apply(e, req);
@@ -62,6 +75,10 @@ public class EmployeeService {
     @Transactional
     public EmployeeResponse update(Long id, EmployeeRequest req) {
         Employee e = find(id);
+        String identityCard = normalizedCard(req.identityCard());
+        if (employeeRepository.existsByIdentityCardAndIdNot(identityCard, id)) {
+            throw new BusinessException("DUPLICATE_CARD", "Ya existe otro empleado con esa cédula.");
+        }
         String before = snapshot(e);
         apply(e, req);
         e = employeeRepository.save(e);
@@ -79,7 +96,7 @@ public class EmployeeService {
     }
 
     private void apply(Employee e, EmployeeRequest req) {
-        e.setIdentityCard(req.identityCard());
+        e.setIdentityCard(normalizedCard(req.identityCard()));
         e.setFullName(req.fullName());
         e.setObservation(blankToNull(req.observation()));
         if (req.status() != null) {
@@ -112,8 +129,21 @@ public class EmployeeService {
         return t.isEmpty() ? null : t;
     }
 
+    /**
+     * Normaliza y valida la cédula: los empleados siempre deben tener una cédula
+     * ecuatoriana válida (10 dígitos con verificador módulo 10).
+     */
+    private static String normalizedCard(String identityCard) {
+        String card = identityCard == null ? "" : identityCard.trim();
+        if (!com.eatfood.control.util.CedulaValidator.isValid(card)) {
+            throw new BusinessException("INVALID_CARD",
+                    "La cédula ingresada no es una cédula ecuatoriana válida (verifique los 10 dígitos).");
+        }
+        return card;
+    }
+
     private String snapshot(Employee e) {
-        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
+        return "%s|%s|desayuno=%s|almuerzo=%s|estado=%s".formatted(
                 e.getIdentityCard(), e.getFullName(),
                 e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus());
     }

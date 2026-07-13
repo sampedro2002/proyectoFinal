@@ -110,10 +110,20 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private static String clientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+        String remote = request.getRemoteAddr();
+        // X-Forwarded-For solo se acepta si la conexión llega desde la propia máquina
+        // (reverse proxy local, p. ej. nginx). Un cliente directo de la LAN podría
+        // falsificar el header para evadir el límite rotando IPs inventadas.
+        if (isLoopback(remote)) {
+            String xff = request.getHeader("X-Forwarded-For");
+            if (xff != null && !xff.isBlank()) {
+                return xff.split(",")[0].trim();
+            }
         }
-        return request.getRemoteAddr();
+        return remote;
+    }
+
+    private static boolean isLoopback(String ip) {
+        return "127.0.0.1".equals(ip) || "::1".equals(ip) || "0:0:0:0:0:0:0:1".equals(ip);
     }
 }

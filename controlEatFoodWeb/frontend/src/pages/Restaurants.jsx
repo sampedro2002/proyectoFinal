@@ -76,6 +76,13 @@ export default function Restaurants() {
                   const n = Number(e.target.value);
                   setForm({ ...form, maxDevices: Number.isFinite(n) && n >= 1 ? n : 1 });
                 }} /></div>
+            <div className="field">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input type="checkbox" checked={form.active ?? true}
+                  onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+                Activo (sus dispositivos pueden conectarse)
+              </label>
+            </div>
             {error && <p className="error-text">{error}</p>}
             <div className="row" style={{ marginTop: 16 }}>
               <button type="submit">Guardar</button>

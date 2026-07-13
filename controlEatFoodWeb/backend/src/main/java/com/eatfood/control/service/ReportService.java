@@ -72,7 +72,7 @@ public class ReportService {
 
         long total = consumptionRepository.countByBusinessDate(date);
         long desayunos = consumptionRepository.countByBusinessDateAndMealName(date, "Desayuno");
-        long meriendas = consumptionRepository.countByBusinessDateAndMealName(date, "Merienda");
+        long almuerzos = consumptionRepository.countByBusinessDateAndMealName(date, "Almuerzo");
 
         long expected = employeeRepository.countByDeletedFalseAndStatus(EmployeeStatus.ACTIVE);
         long consumed = consumptionRepository.countDistinctEmployees(date);
@@ -85,7 +85,7 @@ public class ReportService {
         long notFound = failed.stream().filter(f -> "NOT_FOUND".equals(f.getReason())).count();
         long outOfSchedule = failed.stream().filter(f -> "OUT_OF_SCHEDULE".equals(f.getReason())).count();
 
-        return new DashboardStats(date, total, desayunos, meriendas,
+        return new DashboardStats(date, total, desayunos, almuerzos,
                 expected, consumed, pending, pct, notFound, outOfSchedule);
     }
 

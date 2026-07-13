@@ -92,12 +92,13 @@ export default function Reports() {
         <p>{rows.length} registros</p>
         <table>
           <thead><tr>
-            <th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
+            <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
             <th>Restaurante</th><th>Comida</th><th>Observación</th><th>Modo</th>
           </tr></thead>
           <tbody>
-            {rows.map((r) => (
+            {rows.map((r, i) => (
               <tr key={r.id}>
+                <td>{i + 1}</td>
                 <td>{r.businessDate}</td>
                 <td>{new Date(r.consumedAt).toLocaleTimeString()}</td>
                 <td>{r.identityCard}</td>

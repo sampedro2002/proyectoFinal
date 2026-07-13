@@ -73,15 +73,10 @@ data class RestaurantResponse(
     val active: Boolean, val maxDevices: Int, val connectedDevices: Long
 )
 
-data class MealTypeResponse(val id: Long, val code: String, val name: String, val active: Boolean, val sortOrder: Int)
-
-data class ScheduleRequest(val mealTypeId: Long, val startTime: String, val endTime: String, val active: Boolean?)
-
-/** Request para actualizar el horario general (sin mealTypeId, igual que la web). */
+/** Request para actualizar el horario general único (igual que la web). */
 data class GeneralScheduleRequest(val startTime: String, val endTime: String, val active: Boolean?)
 data class ScheduleResponse(
-    val id: Long, val mealTypeId: Long? = null, val mealTypeName: String? = null,
-    val startTime: String?, val endTime: String?, val active: Boolean
+    val id: Long, val startTime: String?, val endTime: String?, val active: Boolean
 )
 
 // ── Escaneo / restaurant ───────────────────────────────────────────────────────
@@ -155,8 +150,8 @@ data class ConsumptionRow(
 data class DashboardStats(
     val date: String?,
     val totalConsumptions: Long,
-    val lunchCount: Long,
-    val snackCount: Long,
+    val desayunoCount: Long,
+    val almuerzoCount: Long,
     val expectedEmployees: Long,
     val employeesConsumed: Long,
     val employeesPending: Long,

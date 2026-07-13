@@ -104,7 +104,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOrigins(Arrays.asList(props.getCors().getAllowedOrigins().split(",")));
+        // trim de cada origen: "http://a, http://b" con espacio tras la coma dejaría
+        // " http://b" y ese origen jamás coincidiría con el header Origin del navegador.
+        config.setAllowedOrigins(Arrays.stream(props.getCors().getAllowedOrigins().split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         // Lista explícita en vez de "*": con allowCredentials(true) un comodín de headers
         // es una combinación frágil de mantener; el frontend solo necesita estos dos.

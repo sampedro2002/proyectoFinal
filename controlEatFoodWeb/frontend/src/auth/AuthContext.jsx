@@ -6,8 +6,9 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 function pickUser(data) {
-  const { id, username, fullName, roles, restaurantId } = data;
-  return { id, username, fullName, roles, restaurantId };
+  // Solo los campos que AuthResponse realmente envía (no incluye id).
+  const { username, fullName, roles, restaurantId } = data;
+  return { username, fullName, roles, restaurantId };
 }
 
 export function AuthProvider({ children }) {

@@ -51,13 +51,12 @@ public class CatalogController {
     }
 
     // ---- Tipos de comida ----
+    // El sistema solo maneja dos platos por día: Desayuno y Almuerzo (ver ScanService).
     @GetMapping("/meal-types")
     public List<MealTypeResponse> listMealTypes() {
         return Arrays.asList(
-            new MealTypeResponse("BREAKFAST", "Desayuno", "Primera comida del día"),
-            new MealTypeResponse("LUNCH", "Almuerzo", "Comida del mediodía"),
-            new MealTypeResponse("DINNER", "Cena", "Comida de la noche"),
-            new MealTypeResponse("SNACK", "Merienda", "Refrigerio entre comidas")
+            new MealTypeResponse("BREAKFAST", "Desayuno", "Primer plato del día"),
+            new MealTypeResponse("LUNCH", "Almuerzo", "Segundo plato del día")
         );
     }
 }

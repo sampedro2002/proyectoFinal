@@ -15,9 +15,10 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    Optional<Consumption> findByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
+    /** "First" porque un empleado puede tener hasta 2 consumos el mismo día (desayuno y almuerzo). */
+    Optional<Consumption> findFirstByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Desayuno", "Merienda"). */
+    /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Desayuno", "Almuerzo"). */
     @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date")
     List<String> findMealNamesByEmployeeIdAndBusinessDate(@Param("employeeId") Long employeeId, @Param("date") LocalDate date);
 
@@ -36,11 +37,11 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
-     * las relaciones LAZY ({@code restaurant}) que
+     * las relaciones LAZY ({@code restaurant} y {@code employee}) que
      * {@link com.eatfood.control.service.ReportService#toRow} accede después,
      * evitando un problema de N+1 SELECT.
      */
-    @EntityGraph(attributePaths = {"restaurant"})
+    @EntityGraph(attributePaths = {"restaurant", "employee"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to

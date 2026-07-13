@@ -6,7 +6,7 @@ import com.eatfood.control.domain.Role;
 import com.eatfood.control.dto.AuthDtos.AuthResponse;
 import com.eatfood.control.dto.AuthDtos.LoginRequest;
 import com.eatfood.control.dto.AuthDtos.RefreshRequest;
-import com.eatfood.control.exception.BusinessException;
+import com.eatfood.control.exception.UnauthorizedException;
 import com.eatfood.control.repository.AppUserRepository;
 import com.eatfood.control.repository.LoginSessionRepository;
 import com.eatfood.control.repository.RoleRepository;
@@ -98,8 +98,8 @@ class AuthServiceTest {
         assertThat(locked.getLockedUntil()).isNotNull().isAfter(OffsetDateTime.now());
 
         assertThatThrownBy(() -> authService.login(new LoginRequest(user.getUsername(), PASSWORD)))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("ACCOUNT_LOCKED"));
+                .isInstanceOf(UnauthorizedException.class)
+                .satisfies(ex -> assertThat(((UnauthorizedException) ex).getCode()).isEqualTo("ACCOUNT_LOCKED"));
     }
 
     @Test
@@ -116,8 +116,8 @@ class AuthServiceTest {
 
         // Reusar el refresh token ya revocado debe fallar.
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest(oldRefreshToken)))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("INVALID_REFRESH"));
+                .isInstanceOf(UnauthorizedException.class)
+                .satisfies(ex -> assertThat(((UnauthorizedException) ex).getCode()).isEqualTo("INVALID_REFRESH"));
     }
 
     @Test
@@ -130,8 +130,8 @@ class AuthServiceTest {
                 .build());
 
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest(expired.getRefreshToken())))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(ex -> assertThat(((BusinessException) ex).getCode()).isEqualTo("EXPIRED_REFRESH"));
+                .isInstanceOf(UnauthorizedException.class)
+                .satisfies(ex -> assertThat(((UnauthorizedException) ex).getCode()).isEqualTo("EXPIRED_REFRESH"));
 
         LoginSession reloaded = sessionRepository.findById(expired.getId()).orElseThrow();
         assertThat(reloaded.isRevoked()).isTrue();

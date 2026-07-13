@@ -211,7 +211,8 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
     val scope = rememberCoroutineScope()
-    var username by remember { mutableStateOf("admin") }
+    // Prellenar "admin" solo en builds de desarrollo (mismo criterio que la web con import.meta.env.DEV).
+    var username by remember { mutableStateOf(if (com.eatfood.control.mobile.BuildConfig.DEBUG) "admin" else "") }
     var password by remember { mutableStateOf("") }
     var showPass by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }

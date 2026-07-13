@@ -408,7 +408,7 @@ export default function Kiosk() {
   const rInfo = readerStatusLabel[readerStatus] || readerStatusLabel[READER_STATUS.DISCONNECTED];
 
   const totalDesayunos = feed.filter(e => e.mealName?.toLowerCase().includes('desayuno')).length;
-  const totalMeriendas = feed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
+  const totalAlmuerzos = feed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
 
   return (
     <div className={`kiosk ${cls}`}>
@@ -515,7 +515,7 @@ export default function Kiosk() {
             </table>
             <div className="kiosk-feed-summary">
               <div>Desayunos: <strong>{totalDesayunos}</strong></div>
-              <div>Meriendas: <strong>{totalMeriendas}</strong></div>
+              <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
               <div>Total: <strong>{feed.length}</strong></div>
             </div>
             <div style={{

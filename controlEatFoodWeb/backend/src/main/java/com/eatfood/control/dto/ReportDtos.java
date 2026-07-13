@@ -21,7 +21,7 @@ public final class ReportDtos {
             LocalDate date,
             long totalConsumptions,
             long desayunoCount,
-            long meriendaCount,
+            long almuerzoCount,
             long expectedEmployees,
             long employeesConsumed,
             long employeesPending,

@@ -52,8 +52,8 @@ fun DashboardScreen() {
         Spacer(Modifier.height(12.dp))
         val cards = listOf(
             "Consumos de hoy" to s.totalConsumptions.toString(),
-            "Almuerzos" to s.lunchCount.toString(),
-            "Meriendas" to s.snackCount.toString(),
+            "Desayunos" to s.desayunoCount.toString(),
+            "Almuerzos" to s.almuerzoCount.toString(),
             "Empleados esperados" to s.expectedEmployees.toString(),
             "Consumieron" to s.employeesConsumed.toString(),
             "Pendientes" to s.employeesPending.toString(),
@@ -192,8 +192,19 @@ fun EmployeesScreen(canModify: Boolean) {
                     TextButton(onClick = { fpEmployee = e; actionsFor = null }) { Text("Huellas") }
                     if (canModify) TextButton(onClick = {
                         val emp = e; actionsFor = null
+                        // No existe DELETE /api/employees en el backend: "inactivar" es un
+                        // update con status=INACTIVE, igual que en la web.
                         scope.launch {
-                            runCatching { api.deleteEmployee(emp.id) }
+                            runCatching {
+                                api.updateEmployee(emp.id, EmployeeRequest(
+                                    identityCard = emp.identityCard,
+                                    fullName = emp.fullName,
+                                    observation = emp.observation,
+                                    status = "INACTIVE",
+                                    allowsLunch = emp.allowsLunch,
+                                    allowsSnack = emp.allowsSnack
+                                ))
+                            }
                                 .onSuccess { reload() }
                                 .onFailure { snackbar.showSnackbar(it.apiMessage()) }
                         }
@@ -239,9 +250,9 @@ private fun EmployeeDialog(
                 OutlinedTextField(identity, { identity = it }, label = { Text("Cédula") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(allowsLunch, { allowsLunch = it }); Text("Almuerzo")
+                    Switch(allowsLunch, { allowsLunch = it }); Text("Desayuno")
                     Spacer(Modifier.width(16.dp))
-                    Switch(allowsSnack, { allowsSnack = it }); Text("Merienda")
+                    Switch(allowsSnack, { allowsSnack = it }); Text("Almuerzo")
                 }
                 OutlinedTextField(observation, { observation = it }, label = { Text("Observación (opcional)") },
                     modifier = Modifier.fillMaxWidth())
@@ -254,6 +265,10 @@ private fun EmployeeDialog(
             TextButton(onClick = {
                 if (identity.isBlank() || fullName.isBlank()) {
                     scope.launch { snackbar.showSnackbar("Cédula y nombre son obligatorios") }; return@TextButton
+                }
+                if (!com.eatfood.control.mobile.util.CedulaValidator.isValid(identity.trim())) {
+                    scope.launch { snackbar.showSnackbar("La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador)") }
+                    return@TextButton
                 }
                 val req = EmployeeRequest(
                     identityCard = identity.trim(), fullName = fullName.trim(),
@@ -556,9 +571,8 @@ fun ExtraMealsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // Catálogos cargados al inicio: restaurants y tipos de comida
+    // Catálogo cargado al inicio: restaurants
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
-    var mealTypes by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
     var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
 
     // Búsqueda de empleado existente
@@ -571,22 +585,21 @@ fun ExtraMealsScreen() {
     var extName by remember { mutableStateOf("") }
     var extCard by remember { mutableStateOf("") }
 
-    // Comidas a registrar (LUNCH / SNACK)
+    // Comidas a registrar (BREAKFAST / LUNCH)
+    var desayuno by remember { mutableStateOf(false) }
     var almuerzo by remember { mutableStateOf(false) }
-    var merienda by remember { mutableStateOf(false) }
     var observation by remember { mutableStateOf("") }
 
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
     var isEditing by remember { mutableStateOf(false) }
 
-    // Carga inicial de restaurants y meal types
+    // Carga inicial de restaurants
     LaunchedEffect(Unit) {
         runCatching { api.restaurants() }.onSuccess { list ->
             restaurants = list
             if (selectedRestaurantId == null && list.isNotEmpty()) selectedRestaurantId = list.first().id
         }
-        runCatching { api.mealTypes() }.onSuccess { mealTypes = it }
     }
 
     suspend fun searchEmployees() {
@@ -697,11 +710,11 @@ fun ExtraMealsScreen() {
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Spacer(Modifier.height(8.dp))
+                            // Teclado de texto: un pasaporte extranjero puede tener letras.
                             OutlinedTextField(
                                 value = extCard, onValueChange = { extCard = it },
-                                label = { Text("Cédula / ID") },
+                                label = { Text("Cédula / Pasaporte") },
                                 singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         } else {
@@ -726,11 +739,11 @@ fun ExtraMealsScreen() {
                         Spacer(Modifier.height(16.dp))
                         Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(desayuno, { desayuno = it })
+                            Text("Desayuno", Modifier.clickable { desayuno = !desayuno })
+                            Spacer(Modifier.width(20.dp))
                             Checkbox(almuerzo, { almuerzo = it })
                             Text("Almuerzo", Modifier.clickable { almuerzo = !almuerzo })
-                            Spacer(Modifier.width(20.dp))
-                            Checkbox(merienda, { merienda = it })
-                            Text("Merienda", Modifier.clickable { merienda = !merienda })
                         }
 
                         Spacer(Modifier.height(12.dp))
@@ -741,7 +754,7 @@ fun ExtraMealsScreen() {
                         )
 
                         Spacer(Modifier.height(20.dp))
-                        val canSubmit = !busy && (almuerzo || merienda) &&
+                        val canSubmit = !busy && (desayuno || almuerzo) &&
                             selectedRestaurantId != null &&
                             if (isExternal) extName.isNotBlank() && extCard.isNotBlank()
                             else selectedEmployee != null
@@ -749,11 +762,22 @@ fun ExtraMealsScreen() {
                         Button(
                             enabled = canSubmit,
                             onClick = {
+                                // Validación flexible del documento externo: si tiene forma de
+                                // cédula (10 dígitos) debe ser válida; un pasaporte alfanumérico
+                                // se acepta tal cual (misma regla que backend y web).
+                                val card = extCard.trim()
+                                if (isExternal &&
+                                    com.eatfood.control.mobile.util.CedulaValidator.looksLikeCedula(card) &&
+                                    !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)
+                                ) {
+                                    scope.launch { snackbar.showSnackbar("La cédula no es válida. Si es pasaporte, ingréselo con sus letras.") }
+                                    return@Button
+                                }
                                 busy = true
                                 scope.launch {
                                     val codes = mutableListOf<String>()
+                                    if (desayuno) codes.add("BREAKFAST")
                                     if (almuerzo) codes.add("LUNCH")
-                                    if (merienda) codes.add("SNACK")
                                     val res = mutableListOf<String>()
                                     val restaurantId = selectedRestaurantId!!
                                     val obs = observation.trim().ifBlank { null }
@@ -778,7 +802,7 @@ fun ExtraMealsScreen() {
                                     if (res.none { it.contains("Error") }) {
                                         snackbar.showSnackbar("Registros guardados con éxito")
                                         isEditing = false
-                                        almuerzo = false; merienda = false
+                                        desayuno = false; almuerzo = false
                                         selectedEmployee = null
                                         extName = ""; extCard = ""; observation = ""
                                     }

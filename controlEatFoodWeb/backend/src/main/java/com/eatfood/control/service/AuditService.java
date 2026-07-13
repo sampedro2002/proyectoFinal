@@ -47,8 +47,14 @@ public class AuditService {
     private String clientIp() {
         HttpServletRequest req = currentRequest();
         if (req == null) return null;
-        String xff = req.getHeader("X-Forwarded-For");
-        return (xff != null && !xff.isBlank()) ? xff.split(",")[0].trim() : req.getRemoteAddr();
+        String remote = req.getRemoteAddr();
+        // X-Forwarded-For solo se acepta desde un reverse proxy local (loopback);
+        // un cliente directo podría falsificarlo y contaminar el log de auditoría.
+        if ("127.0.0.1".equals(remote) || "::1".equals(remote) || "0:0:0:0:0:0:0:1".equals(remote)) {
+            String xff = req.getHeader("X-Forwarded-For");
+            if (xff != null && !xff.isBlank()) return xff.split(",")[0].trim();
+        }
+        return remote;
     }
 
     private String userAgent() {

@@ -14,7 +14,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.eatfood.control.mobile.data.model.RestaurantResponse
 import com.eatfood.control.mobile.data.model.ConsumptionRow
-import com.eatfood.control.mobile.data.model.MealTypeResponse
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.data.prefs.SessionStore
@@ -36,22 +35,19 @@ fun ReportsScreen() {
     var from by remember { mutableStateOf(LocalDate.now()) }
     var to by remember { mutableStateOf(LocalDate.now()) }
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
-    var meals by remember { mutableStateOf<List<MealTypeResponse>>(emptyList()) }
     var restaurantId by remember { mutableStateOf<Long?>(null) }
-    var mealTypeId by remember { mutableStateOf<Long?>(null) }
     var rows by remember { mutableStateOf<List<ConsumptionRow>>(emptyList()) }
     var catMenu by remember { mutableStateOf(false) }
-    var mealMenu by remember { mutableStateOf(false) }
 
     suspend fun search() {
-        runCatching { api.consumptions(from.toString(), to.toString(), restaurantId, mealTypeId) }
+        runCatching { api.consumptions(from.toString(), to.toString(), restaurantId) }
             .onSuccess { rows = it }
             .onFailure { snackbar.showSnackbar(it.apiMessage()) }
     }
     fun exportFile(format: String) {
         scope.launch {
             try {
-                val res = api.export(format, from.toString(), to.toString(), restaurantId, mealTypeId)
+                val res = api.export(format, from.toString(), to.toString(), restaurantId)
                 val body = res.body() ?: error("Respuesta vacía")
                 val ext = if (format == "excel") "xlsx" else format
                 val file = withContext(Dispatchers.IO) {
@@ -75,7 +71,6 @@ fun ReportsScreen() {
 
     LaunchedEffect(Unit) {
         restaurants = runCatching { api.restaurants() }.getOrDefault(emptyList())
-        meals = runCatching { api.mealTypes() }.getOrDefault(emptyList())
         search()
     }
 
@@ -100,15 +95,6 @@ fun ReportsScreen() {
                         DropdownMenu(catMenu, { catMenu = false }) {
                             DropdownMenuItem(text = { Text("Todos los restaurants") }, onClick = { restaurantId = null; catMenu = false })
                             restaurants.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { restaurantId = c.id; catMenu = false }) }
-                        }
-                    }
-                    Box {
-                        OutlinedButton(onClick = { mealMenu = true }, modifier = Modifier.fillMaxWidth()) {
-                            Text(meals.firstOrNull { it.id == mealTypeId }?.name ?: "Todas las comidas")
-                        }
-                        DropdownMenu(mealMenu, { mealMenu = false }) {
-                            DropdownMenuItem(text = { Text("Todas las comidas") }, onClick = { mealTypeId = null; mealMenu = false })
-                            meals.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { mealTypeId = m.id; mealMenu = false }) }
                         }
                     }
                     Button(onClick = { scope.launch { search() } }, modifier = Modifier.fillMaxWidth()) { Text("Consultar") }

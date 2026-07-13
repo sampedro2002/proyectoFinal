@@ -244,7 +244,7 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  ## 🚀 Funcionalidades Avanzadas
  
  - **Gestión de Fallos**: El sistema registra y audita los escaneos fallidos (`FailedScan`) para analizar problemas de lectura o intentos no autorizados.
- - **Registro Manual de Consumos**: El administrador puede registrar consumos sin huella desde el panel web o la app móvil, eligiendo empleado, catering y tipo de comida (Almuerzo/Merienda). No se validan horario, permiso ni duplicados: pensado para correcciones.
+ - **Registro Manual de Consumos**: El administrador puede registrar consumos sin huella desde el panel web o la app móvil, eligiendo empleado, restaurante y tipo de comida (Desayuno/Almuerzo). No se validan horario, permiso ni duplicados: pensado para correcciones.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema crea un empleado temporal `INACTIVE` reutilizable por cédula, de modo que el consumo aparece en el feed del kiosk y en reportes, pero no contamina la gestión de empleados activos.
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
  - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos.

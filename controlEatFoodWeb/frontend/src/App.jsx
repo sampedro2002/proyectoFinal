@@ -23,6 +23,14 @@ function Protected({ children, roles }) {
   return children;
 }
 
+// El panel (dashboard y estadísticas) es solo de ADMIN. Un usuario con rol de
+// restaurante (CATERING) no tiene nada que hacer aquí: su única función es la
+// pantalla de escaneo, así que se le lleva directo al Kiosk.
+function Home() {
+  const { hasRole } = useAuth();
+  return hasRole('ADMIN') ? <Dashboard /> : <Navigate to="/kiosk" replace />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -30,7 +38,7 @@ export default function App() {
       <Route path="/kiosk" element={<Kiosk />} />
 
       <Route path="/" element={<Protected><Layout /></Protected>}>
-        <Route index element={<Dashboard />} />
+        <Route index element={<Home />} />
         <Route path="employees" element={<Protected roles={['ADMIN']}><Employees /></Protected>} />
         <Route path="restaurants" element={<Protected roles={['ADMIN']}><Restaurants /></Protected>} />
         <Route path="users" element={<Protected roles={['ADMIN']}><Users /></Protected>} />

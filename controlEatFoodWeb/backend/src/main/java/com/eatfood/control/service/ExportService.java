@@ -78,7 +78,7 @@ public class ExportService {
     private static final String[] HEADERS =
             {"Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
     private static final String[] EMP_HEADERS =
-            {"Código", "Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
+            {"Código", "Cédula", "Nombre", "Desayuno", "Almuerzo", "Estado",
              "N.º Huellas", "Observación"};
 
     public byte[] toCsv(List<ConsumptionRow> rows, String title) {
