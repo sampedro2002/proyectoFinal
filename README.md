@@ -83,6 +83,7 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
 
 - **Integración Biométrica**: 
   - En **Web**: Los kioscos de catering leen la huella digital utilizando un agente local (ZKFinger WebAPI) conectado por WebSocket, el cual envía la plantilla al backend para su identificación 1:N.
+    - *UX Mejorada en Enrolamiento*: El frontend web avanza automáticamente al siguiente dedo libre tras registrar una huella y deshabilita los dedos ya usados para evitar sobrescrituras. Es necesario colocar **el mismo dedo 3 veces** durante un registro para garantizar una lectura correcta.
   - En **Móvil**: La aplicación móvil Android puede conectar el lector directamente usando un cable USB OTG y el SDK integrado en la app.
 - **Soporte Offline**: Ambos clientes, web y móvil, disponen de una capa offline (usando IndexedDB en web y Room en Android) que almacena los registros localmente en caso de pérdida de conectividad, sincronizándolos automáticamente en cuanto la red vuelve a estar disponible.
 
