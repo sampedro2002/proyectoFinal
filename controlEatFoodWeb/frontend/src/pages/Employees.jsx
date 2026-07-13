@@ -100,6 +100,18 @@ export default function Employees() {
     };
   }, []);
 
+  // Auto-seleccionar el siguiente dedo disponible
+  useEffect(() => {
+    const usedIndices = new Set(fingerprints.map(fp => fp.fingerIndex));
+    if (!usedIndices.has(Number(fingerIndex))) return; // El actual está libre
+    for (let i = 0; i < FINGERS.length; i++) {
+      if (!usedIndices.has(i)) {
+        setFingerIndex(i);
+        break;
+      }
+    }
+  }, [fingerprints, fingerIndex]);
+
   const filtered = useMemo(() => {
     if (statusFilter === 'ALL') return items;
     return items.filter(e => e.status === statusFilter);
@@ -456,7 +468,9 @@ export default function Employees() {
                             style={{ flex: '1 1 180px' }}
                           >
                             {FINGERS.map((f, i) => (
-                              <option key={i} value={i}>{f}</option>
+                              <option key={i} value={i} disabled={fingerprints.some(fp => fp.fingerIndex === i)}>
+                                {f} {fingerprints.some(fp => fp.fingerIndex === i) ? '(Registrado)' : ''}
+                              </option>
                             ))}
                           </select>
                           <button onClick={enroll} disabled={bioStatus !== 'idle'}>
