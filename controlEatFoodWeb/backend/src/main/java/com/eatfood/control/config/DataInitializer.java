@@ -68,8 +68,8 @@ public class DataInitializer implements CommandLineRunner {
                 admin.setPasswordHash(passwordEncoder.encode(pwd));
                 userRepository.save(admin);
                 if (production) {
-                    log.warn("[SECURITY] Contraseña de 'admin' generada al azar (solo se muestra esta vez): {}", pwd);
                     generated.add("admin: " + pwd);
+                    logOneTimeCredential("admin", null, pwd);
                 } else {
                     log.info("Contraseña del usuario 'admin' inicializada ({}).", DEV_ADMIN_PASSWORD);
                 }
@@ -94,9 +94,8 @@ public class DataInitializer implements CommandLineRunner {
                             .build();
                     userRepository.save(user);
                     if (production) {
-                        log.warn("[SECURITY] Usuario de restaurant creado: {} -> {} (clave generada al azar, solo se muestra esta vez: {})",
-                                username, restaurant.getName(), pwd);
                         generated.add(username + " (" + restaurant.getName() + "): " + pwd);
+                        logOneTimeCredential(username, restaurant.getName(), pwd);
                     } else {
                         log.info("Usuario de restaurant creado: {} (clave: {}) -> {}", username, DEV_RESTAURANT_PASSWORD, restaurant.getName());
                     }
@@ -106,6 +105,30 @@ public class DataInitializer implements CommandLineRunner {
 
         if (production && !generated.isEmpty() && credentialsFilePath != null && !credentialsFilePath.isBlank()) {
             writeCredentialsFile(generated);
+        }
+    }
+
+    /**
+     * Registra la creación de cada credencial de producción. Si está
+     * configurado {@code app.credentials-file} (modo servicio Windows
+     * con NSSM), las contraseñas van sólo al {@code credenciales.txt}
+     * local con permisos restrictivos — no se imprimen en el log, ya
+     * que el log append-puro de stdout podría terminar en un archivo
+     * permanente accesible por cualquier operador. Si no hay
+     * credentials-file, se mantienen en el log como aviso WARN una sola
+     * vez (comportamiento histórico) para no dejar un despliegue nuevo
+     * sin credenciales visibles para el operador.
+     */
+    private void logOneTimeCredential(String username, String restaurantName, String pwd) {
+        String display = restaurantName != null
+                ? "'" + username + "' (" + restaurantName + ")"
+                : "'" + username + "'";
+        if (credentialsFilePath != null && !credentialsFilePath.isBlank()) {
+            log.warn("[SECURITY] Credencial de producción inicializada para {}. " +
+                    "Contraseña escrita en {} — borre ese archivo tras el primer ingreso.",
+                    display, credentialsFilePath);
+        } else {
+            log.warn("[SECURITY] Usuario {} creado (solo se muestra esta vez): {}", display, pwd);
         }
     }
 

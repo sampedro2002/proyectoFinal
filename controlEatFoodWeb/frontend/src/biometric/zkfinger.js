@@ -22,6 +22,8 @@
  *      desarrollo (proxy de Vite hacia :3000) y en producción (mismo host / reverse proxy).
  */
 
+import logger from '../utils/logger.js';
+
 /**
  * URL del agente biométrico EMBEBIDO en el backend, derivada del origen actual.
  * Evita depender de cualquier programa externo y funciona en dev y producción.
@@ -125,7 +127,7 @@ export class ZkFingerClient {
 
   parseMessage(data, resolveConnect, onResolved) {
     let msg;
-    try { msg = JSON.parse(data); } catch { console.warn('[ZkFingerClient] Mensaje no-JSON ignorado:', data); return; }
+    try { msg = JSON.parse(data); } catch { logger.warn('[ZkFingerClient] Mensaje no-JSON ignorado:', data); return; }
 
     if (msg.ret === 'open') {
       this.ready = !!msg.result;
@@ -152,7 +154,7 @@ export class ZkFingerClient {
     }
     if (msg.ret === 'capture' && msg.template) {
       const template = msg.template;
-      console.log('[ZkFingerClient] Mensaje capture recibido, template present:', !!template);
+      logger.debug('[ZkFingerClient] Mensaje capture recibido, template present:', !!template);
       if (this.onCapture) {
         // Encolar y procesar de a una para evitar capturas paralelas en el Kiosk.
         this._captureQueue.push(template);
@@ -161,10 +163,10 @@ export class ZkFingerClient {
         const { resolve, timer } = this._pendingCapture;
         this._pendingCapture = null;
         if (timer) clearTimeout(timer);
-        console.log('[ZkFingerClient] Resolviendo promesa pendiente...');
+        logger.debug('[ZkFingerClient] Resolviendo promesa pendiente...');
         resolve(template);
       } else {
-        console.warn('[ZkFingerClient] Se recibió captura pero no había promesa pendiente (posible timeout previo).');
+        logger.warn('[ZkFingerClient] Se recibió captura pero no había promesa pendiente (posible timeout previo).');
       }
     }
   }
@@ -182,7 +184,7 @@ export class ZkFingerClient {
     try {
       await this.onCapture(next);
     } catch (e) {
-      console.error('[ZkFingerClient] Error en onCapture:', e);
+      logger.error('[ZkFingerClient] Error en onCapture:', e);
     } finally {
       this._captureProcessing = false;
       // Si quedan más capturas encoladas, seguir drenando.

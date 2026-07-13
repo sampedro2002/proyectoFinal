@@ -94,6 +94,23 @@ function Write-Banner {
     Write-Host ""
 }
 
+# Poda los archivos de stdout/stderr rotados por NSSM en logs/service/.
+# Deja solo los 7 mas recientes por base (stdout/stderr); el archivo activo
+# 'stdout.log' / 'stderr.log' nunca se toca. 10 MB × 7 ≈ 70 MB max por base.
+# Se invoca al instalar, actualizar o Diagnosticos del entorno — y siempre
+# que se llame Clean-ServiceLogs despues de cualquier rebuild/restart.
+function Clean-ServiceLogs {
+    param([string]$ServiceLogsDir)
+    if (-not $ServiceLogsDir -or -not (Test-Path $ServiceLogsDir)) { return }
+    foreach ($base in @('stdout','stderr')) {
+        Get-ChildItem $ServiceLogsDir -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like "$base.log.*" -and $_.Name -ne "$base.log" } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -Skip 7 |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Show-Menu {
     param([string]$Title, [string[]]$Options)
     Write-Host ""
@@ -1113,6 +1130,19 @@ function Step-ConfigureService {
     & $NssmExe set $ServiceName AppStderrCreationDisposition 4 | Out-Null
     & $NssmExe set $ServiceName AppStdoutCreationDisposition 4 | Out-Null
 
+    # Rotacion de los archivos stdout/stderr capturados por NSSM. La app
+    # escribe su log principal via Logback a backend/logs/application.log
+    # (con su propia rotacion diaria + 50MB), pero NSSM sigue capturando
+    # el banner de arranque, errores nativos de JVM/Flyway previos a Logback
+    # y cualquier System.out. Sin rotacion estos archivos crecen sin limite.
+    # AppRotateBytes=10MB + AppRotateSeconds=24h corta y respalda como
+    # stdout.log.N o stdout.log.TIMESTAMP (modo append, conserva sesion).
+    & $NssmExe set $ServiceName AppRotateFiles   1       | Out-Null
+    & $NssmExe set $ServiceName AppRotateOnline  1       | Out-Null
+    & $NssmExe set $ServiceName AppRotateBytes   10485760 | Out-Null
+    & $NssmExe set $ServiceName AppRotateSeconds 86400   | Out-Null
+    Clean-ServiceLogs -ServiceLogsDir $serviceLogsDir
+
     Write-Log "Iniciando servicio '$ServiceName'..."
     & $NssmExe start $ServiceName | Out-Null
     Start-Sleep -Seconds 5
@@ -1514,6 +1544,11 @@ function Show-MainMenu {
 # INICIO
 # ═══════════════════════════════════════════════════════════════════
 try {
+    # Limpieza baseline de logs de servicio cada vez que se abre el instalador.
+    # Programa rotacion de NSSM en logs/service/ → stdout.log.N, stdout.log.(N+1)...
+    # Sin esto, los archivos crecen indefinidamente entre reinstalaciones.
+    Clean-ServiceLogs -ServiceLogsDir (Join-Path $LogsDir "service")
+
     Show-MainMenu
 } catch {
     Write-Log "Error inesperado: $_" 'ERROR'
