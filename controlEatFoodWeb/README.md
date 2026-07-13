@@ -235,6 +235,7 @@ Si prefieres instalar manualmente o en Linux:
 2. El frontend captura la **plantilla** (template) y la envía al backend.
 3. El backend ejecuta **identificación 1:N** con el SDK nativo (`libzkfp` vía JNA) y resuelve al empleado.
 4. Se aplican las reglas de negocio y se registra el consumo.
+5. **Mejoras UX Enrolamiento**: El frontend web auto-avanza al siguiente dedo disponible tras un registro exitoso y deshabilita en el menú desplegable los dedos ya registrados, previniendo sobrescrituras accidentales. Además, al enrolar una huella, el sistema pedirá asentar **el mismo dedo 3 veces** para generar una plantilla robusta (el motor descarta enrolamientos si se colocan dedos distintos).
 
 Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
 

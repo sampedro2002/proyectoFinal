@@ -199,3 +199,4 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 - La app requiere que el backend esté corriendo para funcionar.
 - Para biometría real, se necesita un lector ZK conectado vía USB OTG al dispositivo Android.
 - Para desarrollo sin hardware, se usa el `SimBiometricReader` automáticamente.
+- **Enrolamiento de huellas**: Al registrar una huella, el sistema pedirá colocar **el mismo dedo 3 veces**. Esto es un requerimiento del SDK de ZKTeco para generar una plantilla biométrica robusta. Si se colocan dedos distintos, la lectura fallará o será inestable.
