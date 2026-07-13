@@ -121,7 +121,7 @@ Inicio.bat
 El instalador guarda la configuración en `RunWindowns/config/install_config.json` para futuras actualizaciones.
 
 ### 2. Base de Datos
-- Utiliza una instancia dedicada de MySQL (v8.0+).
+- Utiliza una instancia dedicada de MySQL (v5.6.26).
 - Asegúrate de cambiar las contraseñas predeterminadas y restringir el acceso remoto.
 - Configura copias de seguridad (backups) automáticas y periódicas de la base de datos `control_almuerzos`.
 
