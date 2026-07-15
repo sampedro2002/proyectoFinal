@@ -20,9 +20,10 @@ class SimBiometricReader : BiometricReader {
 
     override suspend fun captureForEnroll(timeoutMs: Long, onProgress: (Int, Int) -> Unit): String {
         val total = 3
+        onProgress(0, total)
         for (i in 1..total) {
-            onProgress(i, total)
             delay(1500)
+            onProgress(i, total)
         }
         return capture(timeoutMs)
     }

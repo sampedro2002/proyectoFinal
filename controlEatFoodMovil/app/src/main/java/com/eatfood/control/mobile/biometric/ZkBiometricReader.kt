@@ -174,8 +174,8 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
         val total = 3
         val samples = ArrayList<ByteArray>(total)
 
+        onProgress(0, total)   // listo para la primera muestra
         for (i in 1..total) {
-            onProgress(i, total)
             if (i > 1) {
                 // Pausa para que el usuario levante el dedo y descarte de la cola cualquier
                 // extracción residual del apoyo anterior (el sensor puede seguir emitiendo
@@ -191,6 +191,9 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
                 throw BiometricException("Las muestras no coinciden entre sí. Use el MISMO dedo las $total veces.")
             }
             samples += tpl
+            // El contador se incrementa DESPUÉS de registrar la muestra (igual que el
+            // capture_progress de la web, que se envía tras cada captura exitosa).
+            onProgress(i, total)
             Log.i(TAG, "Enroll: muestra $i/$total capturada (${tpl.size} bytes)")
         }
 

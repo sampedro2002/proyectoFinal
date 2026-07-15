@@ -20,7 +20,8 @@ interface BiometricReader {
      * Captura de ENROLAMIENTO: 3 muestras del mismo dedo (con levantamiento entre cada
      * una) fusionadas en una sola plantilla, igual que el modo "register" de la web
      * (ZkFingerWebSocketHandler.captureRegisterMode + ZKFPM_DBMerge). `onProgress`
-     * notifica qué muestra se está esperando (1..total) para que la UI guíe al usuario.
+     * notifica cuántas muestras van CAPTURADAS (0..total); se emite 0 al empezar y se
+     * incrementa después de registrar cada muestra, como el capture_progress de la web.
      * Devuelve la plantilla fusionada en Base64, lista para POST /fingerprints/enroll.
      */
     suspend fun captureForEnroll(

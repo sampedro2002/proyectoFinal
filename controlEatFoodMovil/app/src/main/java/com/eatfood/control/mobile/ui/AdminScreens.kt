@@ -313,11 +313,20 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     var fingerIndex by remember { mutableStateOf(1) }
     var fingerMenu by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("idle") }
-    // Muestra en curso del enrolamiento (1..3); 0 = aún inicializando el lector.
-    var sample by remember { mutableStateOf(0) }
+    // Muestras ya capturadas del enrolamiento (0..3); -1 = aún inicializando el lector.
+    var sample by remember { mutableStateOf(-1) }
 
     suspend fun reload() { fps = runCatching { api.fingerprints(employee.id) }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
+
+    // Auto-seleccionar el siguiente dedo disponible si el actual ya está registrado
+    // (mismo comportamiento que la web en Employees.jsx).
+    LaunchedEffect(fps) {
+        val used = fps.map { it.fingerIndex }.toSet()
+        if (fingerIndex in used) {
+            fingers.indices.firstOrNull { it !in used }?.let { fingerIndex = it }
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -339,8 +348,14 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                             modifier = Modifier.fillMaxWidth()
                         )
                         DropdownMenu(expanded = fingerMenu, onDismissRequest = { fingerMenu = false }) {
+                            val used = fps.map { it.fingerIndex }.toSet()
                             fingers.forEachIndexed { i, f ->
-                                DropdownMenuItem(text = { Text(f) }, onClick = { fingerIndex = i; fingerMenu = false })
+                                val registered = i in used
+                                DropdownMenuItem(
+                                    text = { Text(if (registered) "$f (Registrado)" else f) },
+                                    enabled = !registered,
+                                    onClick = { fingerIndex = i; fingerMenu = false }
+                                )
                             }
                         }
                     }
@@ -348,7 +363,7 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                     Button(
                         enabled = status == "idle" && fps.size < 3,
                         onClick = {
-                            status = "capturing"; sample = 0
+                            status = "capturing"; sample = -1
                             val reader = BiometricReader.create(context)
                             scope.launch {
                                 try {
@@ -362,16 +377,17 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                                     reload()
                                 } catch (e: Exception) {
                                     reader.close(); snackbar.showSnackbar(e.apiMessage("Error al registrar"))
-                                } finally { status = "idle"; sample = 0 }
+                                } finally { status = "idle"; sample = -1 }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(when {
                             fps.size >= 3 -> "Máximo 3 huellas"
-                            status == "capturing" && sample > 1 -> "Levante y coloque el dedo de nuevo… ($sample/3)"
-                            status == "capturing" && sample == 1 -> "Coloque el dedo… (1/3)"
-                            status == "capturing" -> "Iniciando lector…"
+                            status == "capturing" && sample < 0 -> "Iniciando lector…"
+                            status == "capturing" && sample == 0 -> "Coloque el dedo… (0/3)"
+                            status == "capturing" && sample >= 3 -> "Guardando… (3/3)"
+                            status == "capturing" -> "Muestra $sample/3 registrada — levante y coloque de nuevo"
                             else -> "Capturar huella (${fps.size}/3)"
                         })
                     }
