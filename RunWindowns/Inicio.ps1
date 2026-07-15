@@ -814,6 +814,49 @@ function Stop-ExistingProcesses {
     Start-Sleep -Seconds 1
 }
 
+# Regla de firewall para el backend en modo Pruebas. Sin ella, Windows descarta
+# EN SILENCIO las conexiones entrantes de la app movil al puerto 3000 (sobre todo
+# con la red Wi-Fi marcada como "Publica") y el telefono muestra "Tiempo de espera
+# agotado" aunque el backend este corriendo: desde el propio PC (localhost) todo
+# funciona, por eso el fallo solo se ve desde el telefono. Produccion ya crea la
+# regla en Step-ConfigureFirewall; Pruebas no corre elevado, asi que si hay que
+# crearla se pide elevacion puntual (UAC) solo para ese comando.
+function Ensure-DevFirewallRule {
+    param([int]$Port = 3000)
+    $ruleName = "ControlEatFood (Port $Port)"
+    if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
+        Write-Log "Regla de firewall ya existe: $ruleName" 'SUCCESS'
+        return
+    }
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($isAdmin) {
+        try {
+            New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Any -ErrorAction Stop | Out-Null
+            Write-Log "Regla de firewall creada: $ruleName" 'SUCCESS'
+        } catch {
+            Write-Log "No se pudo crear la regla de firewall: $($_.Exception.Message)" 'ERROR'
+        }
+        return
+    }
+    Write-Log "Falta la regla de firewall '$ruleName': el telefono NO podra conectarse al backend (Tiempo de espera agotado)." 'WARN'
+    $answer = Read-Host "  Crear la regla ahora? Se pedira permiso de Administrador (UAC) (s/n, ENTER = s)"
+    if ($answer -eq 'n') {
+        Write-Log "Regla omitida. La app movil seguira sin poder conectarse hasta abrir el puerto $Port." 'WARN'
+        return
+    }
+    try {
+        $cmd = "New-NetFirewallRule -DisplayName '$ruleName' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Any"
+        Start-Process powershell -Verb RunAs -Wait -ArgumentList '-NoProfile', '-WindowStyle', 'Hidden', '-Command', $cmd
+    } catch {
+        # El usuario cancelo el UAC o la elevacion fallo; se informa abajo.
+    }
+    if (Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue) {
+        Write-Log "Regla de firewall creada: $ruleName" 'SUCCESS'
+    } else {
+        Write-Log "No se creo la regla. Ejecuta en PowerShell como Administrador: New-NetFirewallRule -DisplayName '$ruleName' -Direction Inbound -Protocol TCP -LocalPort $Port -Action Allow -Profile Any" 'ERROR'
+    }
+}
+
 function Start-TestSetup {
     Clear-Host
     Write-Banner "- MODO PRUEBAS (Desarrollo)"
@@ -834,7 +877,8 @@ function Start-TestSetup {
         Write-Log "No se pudieron instalar las dependencias del frontend. Revisa el log." 'WARN'
     }
     Invoke-BiometricSetup
-    
+    Ensure-DevFirewallRule -Port 3000
+
     # Guardar configuraciÃ³n en variable de sesiÃ³n para re-lanzar despuÃ©s
     $script:lastDbConfig = $dbConfig
     $script:lastDevJwtSecret = Get-DevJwtSecret

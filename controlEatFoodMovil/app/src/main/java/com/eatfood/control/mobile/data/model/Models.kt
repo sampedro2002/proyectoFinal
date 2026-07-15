@@ -74,6 +74,34 @@ data class RestaurantResponse(
     val active: Boolean, val maxDevices: Int, val connectedDevices: Long
 )
 
+// ── Usuarios (CRUD de la pantalla Usuarios, igual que la web) ────────────────
+data class UserRequest(
+    val username: String,
+    val fullName: String,
+    val email: String?,
+    // Requerida al crear; null = no cambiar al actualizar.
+    val password: String?,
+    val enabled: Boolean?,
+    // Nombres de rol: ADMIN / CATERING.
+    val roles: List<String>?,
+    val restaurantId: Long?
+)
+
+data class UserResponse(
+    val id: Long,
+    val username: String,
+    val fullName: String,
+    val email: String?,
+    val enabled: Boolean,
+    val roles: List<String>?,
+    val restaurantId: Long?,
+    val restaurantName: String?
+)
+
+data class RoleResponse(val id: Long?, val name: String?, val description: String?)
+data class EnabledRequest(val enabled: Boolean)
+data class PasswordResetRequest(val password: String)
+
 /** Request para actualizar el horario general único (igual que la web). */
 data class GeneralScheduleRequest(val startTime: String, val endTime: String, val active: Boolean?)
 data class ScheduleResponse(

@@ -60,6 +60,7 @@ import com.eatfood.control.mobile.data.prefs.SessionStore
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiError
 import com.eatfood.control.mobile.data.remote.apiMessage
+import com.eatfood.control.mobile.data.remote.isConnectivityError
 import com.eatfood.control.mobile.ui.theme.*
 import com.eatfood.control.mobile.util.ToneFeedback
 import kotlinx.coroutines.delay
@@ -158,7 +159,10 @@ private fun ConnectPanel(onConnected: () -> Unit) {
                                 store.kioskSession = res
                                 onConnected()
                             } catch (e: Exception) {
-                                error = e.apiMessage("No se pudo conectar el dispositivo")
+                                error = e.apiMessage("No se pudo conectar el dispositivo") +
+                                    if (e.isConnectivityError())
+                                        "\nServidor: ${store.serverUrl}\nVerifique que el backend esté encendido y que el firewall del servidor permita el puerto."
+                                    else ""
                             } finally { busy = false }
                         }
                     },

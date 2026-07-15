@@ -38,6 +38,7 @@ import com.eatfood.control.mobile.data.model.LogoutRequest
 import com.eatfood.control.mobile.data.prefs.SessionStore
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
+import com.eatfood.control.mobile.data.remote.isConnectivityError
 import com.eatfood.control.mobile.ui.theme.EatFoodTheme
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -58,6 +59,7 @@ enum class Screen(val title: String, val roles: List<String>) {
     DASHBOARD("Dashboard", listOf("ADMIN")),
     EMPLOYEES("Empleados", listOf("ADMIN")),
     RESTAURANTS("Restaurantes", listOf("ADMIN")),
+    USERS("Usuarios", listOf("ADMIN")),
     SCHEDULES("Horarios", listOf("ADMIN")),
     REPORTS("Reportes", listOf("ADMIN")),
     AUDIT("Auditoría", listOf("ADMIN")),
@@ -196,6 +198,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                     Screen.DASHBOARD -> DashboardScreen()
                     Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
                     Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
+                    Screen.USERS -> UsersScreen()
                     Screen.SCHEDULES -> SchedulesScreen()
                     Screen.REPORTS -> ReportsScreen()
                     Screen.AUDIT -> AuditScreen()
@@ -265,7 +268,10 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
                                 store.saveAuth(auth)
                                 onLoggedIn()
                             } catch (e: Exception) {
-                                error = e.apiMessage("No se pudo iniciar sesión")
+                                error = e.apiMessage("No se pudo iniciar sesión") +
+                                    if (e.isConnectivityError())
+                                        "\nServidor: ${store.serverUrl}\nVerifique que el backend esté encendido y que el firewall del servidor permita el puerto."
+                                    else ""
                             } finally { loading = false }
                         }
                     },

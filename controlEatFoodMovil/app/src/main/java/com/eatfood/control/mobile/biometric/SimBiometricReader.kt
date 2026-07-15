@@ -18,5 +18,14 @@ class SimBiometricReader : BiometricReader {
         return "U01NIDAyIDQ4IDQ4IDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAgMCAwIDAg"
     }
 
+    override suspend fun captureForEnroll(timeoutMs: Long, onProgress: (Int, Int) -> Unit): String {
+        val total = 3
+        for (i in 1..total) {
+            onProgress(i, total)
+            delay(1500)
+        }
+        return capture(timeoutMs)
+    }
+
     override fun close() {}
 }

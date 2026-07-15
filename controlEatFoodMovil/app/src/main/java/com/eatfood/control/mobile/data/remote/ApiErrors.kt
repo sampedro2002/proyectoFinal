@@ -15,6 +15,17 @@ fun Throwable.apiMessage(default: String = "Ocurrió un error"): String =
     }
 
 /**
+ * True para fallos en los que nunca hubo respuesta del backend (servidor apagado,
+ * IP/URL mal configurada, firewall que descarta el puerto). Sirve para que las
+ * pantallas de login muestren a qué servidor se intentó llegar, en vez de un
+ * "Tiempo de espera agotado" sin contexto.
+ */
+fun Throwable.isConnectivityError(): Boolean =
+    this is java.net.UnknownHostException ||
+    this is java.net.ConnectException ||
+    this is java.net.SocketTimeoutException
+
+/**
  * Devuelve el cuerpo de error parseado del backend ({timestamp,status,code,message})
  * cuando el Throwable es un HttpException; null en cualquier otro caso.
  *

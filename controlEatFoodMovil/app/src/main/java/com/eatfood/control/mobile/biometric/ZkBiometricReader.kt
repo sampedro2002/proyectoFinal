@@ -9,6 +9,7 @@ import com.zkteco.android.biometric.FingerprintExceptionListener
 import com.zkteco.android.biometric.module.fingerprintreader.FingerprintCaptureListener
 import com.zkteco.android.biometric.module.fingerprintreader.FingerprintFactory
 import com.zkteco.android.biometric.module.fingerprintreader.FingerprintSensor
+import com.zkteco.android.biometric.module.fingerprintreader.ZKFingerService
 import com.zkteco.android.biometric.module.fingerprintreader.exception.FingerprintException
 import com.zkteco.android.biometric.core.device.TransportType
 import kotlinx.coroutines.Dispatchers
@@ -166,6 +167,55 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
         } catch (e: kotlinx.coroutines.channels.ClosedReceiveChannelException) {
             throw BiometricException("Lector cerrado.")
         }
+    }
+
+    override suspend fun captureForEnroll(timeoutMs: Long, onProgress: (Int, Int) -> Unit): String {
+        if (sensor == null) throw BiometricException("Lector no abierto.")
+        val total = 3
+        val samples = ArrayList<ByteArray>(total)
+
+        for (i in 1..total) {
+            onProgress(i, total)
+            if (i > 1) {
+                // Pausa para que el usuario levante el dedo y descarte de la cola cualquier
+                // extracción residual del apoyo anterior (el sensor puede seguir emitiendo
+                // plantillas mientras el dedo sigue puesto). Equivale al waitForFingerLift
+                // del modo register de la web.
+                delay(1_200)
+                while (templates.tryReceive().isSuccess) { /* drenar */ }
+            }
+            val tpl = Base64.decode(capture(timeoutMs), Base64.NO_WRAP)
+            // Las 3 muestras deben ser del mismo dedo; si no, la fusión produciría una
+            // plantilla inservible. Mismo chequeo que hace el demo oficial de ZKTeco.
+            if (samples.isNotEmpty() && verifySameFinger(samples.last(), tpl) <= 0) {
+                throw BiometricException("Las muestras no coinciden entre sí. Use el MISMO dedo las $total veces.")
+            }
+            samples += tpl
+            Log.i(TAG, "Enroll: muestra $i/$total capturada (${tpl.size} bytes)")
+        }
+
+        val merged = ByteArray(2048)
+        val len = try {
+            ZKFingerService.merge(samples[0], samples[1], samples[2], merged)
+        } catch (e: Throwable) {
+            Log.w(TAG, "ZKFingerService.merge lanzó excepción", e); -1
+        }
+        if (len > 0) {
+            Log.i(TAG, "Enroll: fusión OK ($len bytes)")
+            return Base64.encodeToString(merged.copyOf(len), Base64.NO_WRAP)
+        }
+        // Igual que mergeAndSend de la web: si la fusión falla, degradar a la mejor
+        // muestra individual en vez de abortar el enrolamiento completo.
+        Log.w(TAG, "Enroll: fusión falló (rc=$len). Usando la mejor muestra individual.")
+        val best = samples.maxByOrNull { it.size }!!
+        return Base64.encodeToString(best, Base64.NO_WRAP)
+    }
+
+    private fun verifySameFinger(a: ByteArray, b: ByteArray): Int = try {
+        ZKFingerService.verify(a, b)
+    } catch (e: Throwable) {
+        Log.w(TAG, "ZKFingerService.verify lanzó excepción; se omite el chequeo", e)
+        1   // no bloquear el enrolamiento si el verificador no está disponible
     }
 
     override fun close() {

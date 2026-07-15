@@ -18,6 +18,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.eatfood.control.mobile.biometric.BiometricReader
 import com.eatfood.control.mobile.data.model.*
@@ -311,6 +313,8 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     var fingerIndex by remember { mutableStateOf(1) }
     var fingerMenu by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("idle") }
+    // Muestra en curso del enrolamiento (1..3); 0 = aún inicializando el lector.
+    var sample by remember { mutableStateOf(0) }
 
     suspend fun reload() { fps = runCatching { api.fingerprints(employee.id) }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
@@ -344,28 +348,40 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                     Button(
                         enabled = status == "idle" && fps.size < 3,
                         onClick = {
-                            status = "capturing"
+                            status = "capturing"; sample = 0
                             val reader = BiometricReader.create(context)
                             scope.launch {
                                 try {
                                     reader.open { }
-                                    val template = reader.capture()
+                                    // 3 muestras del mismo dedo fusionadas en una plantilla,
+                                    // igual que el enrolamiento de la web.
+                                    val template = reader.captureForEnroll { s, _ -> sample = s }
                                     reader.close()
                                     api.enroll(EnrollRequest(employee.id, fingerIndex, template))
                                     snackbar.showSnackbar("Huella registrada correctamente.")
                                     reload()
                                 } catch (e: Exception) {
                                     reader.close(); snackbar.showSnackbar(e.apiMessage("Error al registrar"))
-                                } finally { status = "idle" }
+                                } finally { status = "idle"; sample = 0 }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(when {
                             fps.size >= 3 -> "Máximo 3 huellas"
-                            status == "capturing" -> "Coloque el dedo…"
+                            status == "capturing" && sample > 1 -> "Levante y coloque el dedo de nuevo… ($sample/3)"
+                            status == "capturing" && sample == 1 -> "Coloque el dedo… (1/3)"
+                            status == "capturing" -> "Iniciando lector…"
                             else -> "Capturar huella (${fps.size}/3)"
                         })
+                    }
+                    if (status == "capturing") {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Se tomarán 3 muestras del mismo dedo. Levante el dedo entre cada una.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -468,6 +484,202 @@ fun RestaurantsScreen(isAdmin: Boolean) {
                         runCatching { if (c == null) api.createRestaurant(req) else api.updateRestaurant(c.id, req) }
                             .onSuccess { creating = false; editing = null; reload() }
                             .onFailure { snackbar.showSnackbar(it.apiMessage("Error al guardar")) }
+                    }
+                }) { Text("Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { creating = false; editing = null }) { Text("Cancelar") } }
+        )
+    }
+}
+
+// ───────────────────────────── Usuarios ──────────────────────────────────────
+// Réplica de la página Usuarios de la web (Users.jsx): lista, crear, editar,
+// activar/desactivar, roles y asignación de restaurante. Mismas validaciones.
+
+/** Etiquetas amigables para los roles internos (igual que ROLE_LABELS de la web). */
+private fun roleLabel(name: String) = when (name) {
+    "ADMIN" -> "Administrador"
+    "CATERING" -> "Restaurante"
+    else -> name
+}
+
+@Composable
+fun UsersScreen() {
+    val context = LocalContext.current
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var items by remember { mutableStateOf<List<UserResponse>>(emptyList()) }
+    var roleNames by remember { mutableStateOf(listOf("ADMIN", "CATERING")) }
+    var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
+    var editing by remember { mutableStateOf<UserResponse?>(null) }
+    var creating by remember { mutableStateOf(false) }
+    var actionsFor by remember { mutableStateOf<UserResponse?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+
+    suspend fun reload() {
+        runCatching { api.users() }
+            .onSuccess { items = it; loadError = null }
+            .onFailure { items = emptyList(); loadError = it.apiMessage("No se pudieron cargar los usuarios") }
+    }
+    LaunchedEffect(Unit) {
+        reload()
+        runCatching { api.roles() }.onSuccess { r ->
+            val names = r.mapNotNull { it.name }
+            if (names.isNotEmpty()) roleNames = names
+        }
+        restaurants = runCatching { api.restaurants() }.getOrDefault(emptyList())
+    }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        floatingActionButton = { FloatingActionButton(onClick = { creating = true }) { Icon(Icons.Default.Add, null) } }
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            loadError?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+            }
+            if (items.isEmpty() && loadError == null) {
+                CenterText("Sin usuarios.")
+            } else {
+                LazyColumn(Modifier.fillMaxSize()) {
+                    items(items) { u ->
+                        val rolesText = (u.roles ?: emptyList()).joinToString(", ") { roleLabel(it) }.ifBlank { "—" }
+                        RowItem(
+                            title = u.username,
+                            subtitle = "${u.fullName} · $rolesText · ${u.restaurantName ?: "Sin restaurante"}",
+                            trailing = if (u.enabled) "Activo" else "Inactivo",
+                            onClick = { actionsFor = u }
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    actionsFor?.let { u ->
+        AlertDialog(
+            onDismissRequest = { actionsFor = null },
+            title = { Text(u.username) },
+            text = {
+                Column {
+                    Text("Nombre: ${u.fullName}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Email: ${u.email ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Roles: ${(u.roles ?: emptyList()).joinToString(", ") { roleLabel(it) }.ifBlank { "—" }}",
+                        style = MaterialTheme.typography.bodyMedium)
+                    Text("Restaurante: ${u.restaurantName ?: "—"}", style = MaterialTheme.typography.bodyMedium)
+                    Text("Estado: ${if (u.enabled) "Activo" else "Inactivo"}", style = MaterialTheme.typography.bodyMedium)
+                    Spacer(Modifier.height(8.dp))
+                    TextButton(onClick = { editing = u; actionsFor = null }) { Text("Editar") }
+                    TextButton(onClick = {
+                        scope.launch {
+                            runCatching { api.setUserEnabled(u.id, EnabledRequest(!u.enabled)) }
+                                .onSuccess { actionsFor = null; reload() }
+                                .onFailure { snackbar.showSnackbar(it.apiMessage("No se pudo cambiar el estado")) }
+                        }
+                    }) { Text(if (u.enabled) "Desactivar" else "Activar") }
+                }
+            },
+            confirmButton = { TextButton(onClick = { actionsFor = null }) { Text("Cerrar") } }
+        )
+    }
+
+    if (creating || editing != null) {
+        val u = editing
+        var username by remember { mutableStateOf(u?.username ?: "") }
+        var fullName by remember { mutableStateOf(u?.fullName ?: "") }
+        var email by remember { mutableStateOf(u?.email ?: "") }
+        var password by remember { mutableStateOf("") }
+        var password2 by remember { mutableStateOf("") }
+        var showPass by remember { mutableStateOf(false) }
+        var selRoles by remember { mutableStateOf(u?.roles?.takeIf { it.isNotEmpty() } ?: listOf("CATERING")) }
+        var restaurantId by remember { mutableStateOf(u?.restaurantId) }
+        var restaurantMenu by remember { mutableStateOf(false) }
+        var enabled by remember { mutableStateOf(u?.enabled ?: true) }
+        var formError by remember { mutableStateOf<String?>(null) }
+        val passTransform = if (showPass) VisualTransformation.None else PasswordVisualTransformation()
+
+        AlertDialog(
+            onDismissRequest = { creating = false; editing = null },
+            title = { Text(if (u == null) "Nuevo usuario" else "Editar usuario") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    // El username identifica la cuenta: no se cambia al editar (igual que la web).
+                    OutlinedTextField(username, { username = it }, label = { Text("Usuario") },
+                        singleLine = true, enabled = u == null)
+                    OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true)
+                    OutlinedTextField(email, { email = it }, label = { Text("Email (opcional)") }, singleLine = true)
+                    OutlinedTextField(password, { password = it },
+                        label = { Text(if (u == null) "Contraseña" else "Nueva contraseña (vacía = no cambiar)") },
+                        singleLine = true, visualTransformation = passTransform,
+                        trailingIcon = { TextButton(onClick = { showPass = !showPass }) { Text(if (showPass) "Ocultar" else "Ver") } })
+                    OutlinedTextField(password2, { password2 = it },
+                        label = { Text("Confirmar contraseña") },
+                        singleLine = true, visualTransformation = passTransform)
+                    if (password2.isNotEmpty() && password != password2) {
+                        Text("Las contraseñas no coinciden.",
+                            color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("Roles", style = MaterialTheme.typography.titleSmall)
+                    roleNames.forEach { name ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = name in selRoles, onCheckedChange = { checked ->
+                                selRoles = if (checked) selRoles + name else selRoles - name
+                            })
+                            Text(roleLabel(name))
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Box {
+                        OutlinedTextField(
+                            value = restaurants.firstOrNull { it.id == restaurantId }?.name ?: "— Ninguno —",
+                            onValueChange = {}, readOnly = true,
+                            label = { Text("Restaurante (para operadores)") },
+                            trailingIcon = { TextButton(onClick = { restaurantMenu = true }) { Text("▼") } }
+                        )
+                        DropdownMenu(expanded = restaurantMenu, onDismissRequest = { restaurantMenu = false }) {
+                            DropdownMenuItem(text = { Text("— Ninguno —") },
+                                onClick = { restaurantId = null; restaurantMenu = false })
+                            restaurants.forEach { r ->
+                                DropdownMenuItem(text = { Text(r.name) },
+                                    onClick = { restaurantId = r.id; restaurantMenu = false })
+                            }
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(enabled, { enabled = it }); Text("Cuenta activa")
+                    }
+                    formError?.let {
+                        Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // Mismas validaciones que la web (Users.jsx: save()).
+                    if (username.isBlank() || fullName.isBlank()) {
+                        formError = "Usuario y nombre completo son obligatorios."; return@TextButton
+                    }
+                    if (u == null && password.isBlank()) {
+                        formError = "La contraseña es obligatoria al crear."; return@TextButton
+                    }
+                    if (password.isNotEmpty() || password2.isNotEmpty()) {
+                        if (password != password2) {
+                            formError = "Las contraseñas no coinciden. Escriba la misma en ambos campos."; return@TextButton
+                        }
+                        if (password.length < 6) {
+                            formError = "La contraseña debe tener al menos 6 caracteres."; return@TextButton
+                        }
+                    }
+                    val req = UserRequest(
+                        username.trim(), fullName.trim(), email.trim().ifBlank { null },
+                        password.ifBlank { null }, enabled, selRoles, restaurantId
+                    )
+                    scope.launch {
+                        runCatching { if (u == null) api.createUser(req) else api.updateUser(u.id, req) }
+                            .onSuccess { creating = false; editing = null; reload() }
+                            .onFailure { formError = it.apiMessage("Error al guardar") }
                     }
                 }) { Text("Guardar") }
             },

@@ -56,6 +56,20 @@ interface ApiService {
     @PUT("restaurants/{id}")
     suspend fun updateRestaurant(@Path("id") id: Long, @Body body: RestaurantRequest): RestaurantResponse
 
+    // ── Usuarios (solo ADMIN, mismas rutas que la página Usuarios de la web) ──
+    @GET("users")
+    suspend fun users(): List<UserResponse>
+    @GET("users/roles")
+    suspend fun roles(): List<RoleResponse>
+    @POST("users")
+    suspend fun createUser(@Body body: UserRequest): UserResponse
+    @PUT("users/{id}")
+    suspend fun updateUser(@Path("id") id: Long, @Body body: UserRequest): UserResponse
+    @POST("users/{id}/password")
+    suspend fun resetUserPassword(@Path("id") id: Long, @Body body: PasswordResetRequest): Response<Unit>
+    @PATCH("users/{id}/enabled")
+    suspend fun setUserEnabled(@Path("id") id: Long, @Body body: EnabledRequest): UserResponse
+
     @GET("schedules")
     suspend fun schedules(): List<ScheduleResponse>
     @POST("schedules")

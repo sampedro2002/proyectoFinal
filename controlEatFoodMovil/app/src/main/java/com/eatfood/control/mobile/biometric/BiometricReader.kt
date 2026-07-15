@@ -16,6 +16,18 @@ interface BiometricReader {
     /** Captura una huella y devuelve la plantilla en Base64. Suspende hasta capturar o timeout. */
     suspend fun capture(timeoutMs: Long = 20_000): String
 
+    /**
+     * Captura de ENROLAMIENTO: 3 muestras del mismo dedo (con levantamiento entre cada
+     * una) fusionadas en una sola plantilla, igual que el modo "register" de la web
+     * (ZkFingerWebSocketHandler.captureRegisterMode + ZKFPM_DBMerge). `onProgress`
+     * notifica qué muestra se está esperando (1..total) para que la UI guíe al usuario.
+     * Devuelve la plantilla fusionada en Base64, lista para POST /fingerprints/enroll.
+     */
+    suspend fun captureForEnroll(
+        timeoutMs: Long = 20_000,
+        onProgress: (sample: Int, total: Int) -> Unit = { _, _ -> }
+    ): String
+
     /** Cierra el dispositivo y libera recursos. */
     fun close()
 
