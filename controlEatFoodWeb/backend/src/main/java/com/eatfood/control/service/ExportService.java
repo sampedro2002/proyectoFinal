@@ -78,7 +78,7 @@ public class ExportService {
     private static final String[] HEADERS =
             {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
     private static final String[] EMP_HEADERS =
-            {"Código", "Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
+            {"Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
 
     public byte[] toCsv(List<ConsumptionRow> rows, String title) {
@@ -641,8 +641,7 @@ public class ExportService {
         StringBuilder sb = new StringBuilder();
         sb.append(String.join(";", EMP_HEADERS)).append("\n");
         for (EmployeeResponse r : rows) {
-            sb.append(csv(r.publicCode())).append(';')
-              .append(csv(r.identityCard())).append(';')
+            sb.append(csv(r.identityCard())).append(';')
               .append(csv(r.fullName())).append(';')
               .append(r.allowsLunch() ? "Sí" : "No").append(';')
               .append(r.effectiveSnack() ? "Sí" : "No").append(';')
@@ -670,14 +669,13 @@ public class ExportService {
             int rn = headerRowIdx + 1;
             for (EmployeeResponse r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(safe(r.publicCode()));
-                row.createCell(1).setCellValue(safe(r.identityCard()));
-                row.createCell(2).setCellValue(safe(r.fullName()));
-                row.createCell(3).setCellValue(r.allowsLunch() ? "Sí" : "No");
-                row.createCell(4).setCellValue(r.effectiveSnack() ? "Sí" : "No");
-                row.createCell(5).setCellValue(safe(r.status()));
-                row.createCell(6).setCellValue(r.fingerprintCount());
-                row.createCell(7).setCellValue(safe(r.observation()));
+                row.createCell(0).setCellValue(safe(r.identityCard()));
+                row.createCell(1).setCellValue(safe(r.fullName()));
+                row.createCell(2).setCellValue(r.allowsLunch() ? "Sí" : "No");
+                row.createCell(3).setCellValue(r.effectiveSnack() ? "Sí" : "No");
+                row.createCell(4).setCellValue(safe(r.status()));
+                row.createCell(5).setCellValue(r.fingerprintCount());
+                row.createCell(6).setCellValue(safe(r.observation()));
             }
             for (int i = 0; i < EMP_HEADERS.length; i++) sheet.autoSizeColumn(i);
             wb.write(out);

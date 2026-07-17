@@ -310,14 +310,13 @@ export default function Employees() {
         <table>
           <thead>
             <tr>
-              <th>Código</th><th>Cédula</th><th>Nombre</th>
+              <th>Cédula</th><th>Nombre</th>
               <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(e => (
               <tr key={e.id}>
-                <td>{e.publicCode || '—'}</td>
                 <td>{e.identityCard}</td>
                 <td>{e.fullName}</td>
                 <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
@@ -376,12 +375,6 @@ export default function Employees() {
 
             {tab === 'data' && (
               <form onSubmit={save} style={{ marginTop: 12 }}>
-                {form.publicCode && (
-                  <div className="field">
-                    <label>Código</label>
-                    <input value={form.publicCode} readOnly disabled />
-                  </div>
-                )}
                 <div className="field">
                   <label>Tipo de Documento</label>
                   <select value={form.isPassport ? 'PASSPORT' : 'CEDULA'}

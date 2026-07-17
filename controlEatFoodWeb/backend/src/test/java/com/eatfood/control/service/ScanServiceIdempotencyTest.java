@@ -84,7 +84,6 @@ class ScanServiceIdempotencyTest {
         employee = employeeRepository.save(Employee.builder()
                 .identityCard("ID-" + UUID.randomUUID().toString().substring(0, 8)) // encaja en VARCHAR(20)
                 .fullName("Empleado de prueba")
-                .publicCode("E" + UUID.randomUUID().toString().substring(0, 10)) // encaja en VARCHAR(12)
                 .status(EmployeeStatus.ACTIVE)
                 .allowsLunch(true)
                 .allowsSnack(true)

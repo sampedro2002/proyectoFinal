@@ -35,7 +35,6 @@ data class EmployeeResponse(
     val id: Long,
     val identityCard: String,
     val fullName: String,
-    val publicCode: String?,
     val observation: String?,
     val status: String?,
     val allowsLunch: Boolean,

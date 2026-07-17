@@ -1,21 +1,16 @@
 -- ============================================================================
--- Control de Alimentos Club Castillo Amaguaña — Huella Digital (ZK9500)
--- Esquema relacional MySQL — estado final consolidado (reemplaza V1..V4:
--- incluye ya el renombre de platos Almuerzo/Merienda y la eliminación del
--- código público de empleado; el identificador del empleado es su id
--- autoincremental). Debe mantenerse idéntico en estructura a
--- RunWindowns\db\01_esquema.sql (los scripts del instalador).
+-- Control de Alimentos Club Castillo Amaguaña — Esquema MySQL (estado actual)
 --
--- Todas las tablas usan CREATE TABLE IF NOT EXISTS para poder correr esta
--- migración contra una base de datos ya creada (por ejemplo, por los scripts
--- del instalador o en una máquina nueva) sin que falle por "tabla ya existe".
--- Los índices y UNIQUE KEY van definidos dentro del propio CREATE TABLE: si
--- la tabla ya existe, MySQL salta la sentencia completa (índices incluidos).
+-- Este script lo ejecuta Inicio.ps1 (carpeta RunWindowns\db) SOLO cuando la
+-- base de datos aún no tiene la estructura (se detecta por la tabla employee).
+-- Es idéntico en estructura a la migración Flyway V1__schema.sql del backend,
+-- que queda como respaldo (baseline-on-migrate): si este script no se
+-- ejecuta, Flyway crea el esquema igual al arrancar la aplicación.
+-- Si cambias la estructura aquí, cámbiala también en V1 (y viceversa).
 --
--- Nota: si una base de datos ya tiene estas tablas pero con una estructura
--- distinta (por ejemplo, restos de una versión anterior con public_code o
--- nombres de comida viejos), IF NOT EXISTS NO actualiza columnas existentes.
--- Para ese caso hay que partir de una base de datos vacía.
+-- Todas las tablas usan CREATE TABLE IF NOT EXISTS para poder correrlo contra
+-- una base parcialmente creada sin fallar por "tabla ya existe". Los índices
+-- y UNIQUE KEY van dentro del propio CREATE TABLE.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------

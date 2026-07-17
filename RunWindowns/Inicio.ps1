@@ -533,6 +533,111 @@ function Ensure-ControlMysql56 {
     return (New-ControlMysql56Container -DbConfig $DbConfig)
 }
 
+# ---------------------------------------------------------------------------
+# ESQUEMA DE BASE DE DATOS (scripts en RunWindowns\db)
+# ---------------------------------------------------------------------------
+# db\01_esquema.sql y db\02_datos.sql crean la estructura y los datos iniciales
+# cuando la base aun NO tiene la estructura (se detecta por la tabla 'employee');
+# si ya existe, se omiten. El backend conserva Flyway como respaldo
+# (baseline-on-migrate): si estos scripts no corren, el esquema se crea igual
+# al arrancar la aplicacion.
+
+function Invoke-MySqlClient {
+    param(
+        [hashtable]$DbConfig,
+        [string]$Query,      # sentencia SQL inline (-e)
+        [string]$SqlFile,    # o archivo .sql completo por stdin
+        [switch]$SelectDb,   # agregar el nombre de la BD como argumento
+        [switch]$Silent      # -N -s: sin cabeceras, salida cruda (para SELECT)
+    )
+    # Ejecutor: el contenedor Docker 'control-mysql' (modo local) o mysql.exe del PATH.
+    $useDocker = ($DbConfig.Type -eq 'local') -and (Test-CommandExists 'docker') -and (Get-ControlMysqlImage)
+    $mysqlArgs = @(
+        '--protocol=TCP',
+        "--host=$(if ($useDocker) { '127.0.0.1' } else { $DbConfig.Host })",
+        "--port=$($DbConfig.Port)",
+        "--user=$($DbConfig.User)",
+        "--password=$($DbConfig.Password)",
+        '--default-character-set=utf8'
+    )
+    if ($Silent)   { $mysqlArgs += @('-N', '-s') }
+    if ($Query)    { $mysqlArgs += @('-e', $Query) }
+    if ($SelectDb) { $mysqlArgs += $DbConfig.Name }
+
+    if ($SqlFile) {
+        # El archivo va por stdin; $OutputEncoding controla la codificacion del
+        # pipe hacia el ejecutable nativo (en PS 5.1 el default es ASCII y
+        # destrozaria los acentos de los scripts).
+        $sql = Get-Content -Path $SqlFile -Raw -Encoding UTF8
+        $prevEnc = $OutputEncoding
+        try {
+            $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+            if ($useDocker) { $sql | & docker exec -i control-mysql mysql @mysqlArgs 2>&1 }
+            else            { $sql | & mysql @mysqlArgs 2>&1 }
+        } finally { $OutputEncoding = $prevEnc }
+    }
+    elseif ($useDocker) { & docker exec control-mysql mysql @mysqlArgs 2>&1 }
+    else                { & mysql @mysqlArgs 2>&1 }
+}
+
+function Ensure-DatabaseSchema {
+    param([hashtable]$DbConfig)
+
+    $dbScriptsDir = Join-Path $ScriptRoot "db"
+    $scripts = @()
+    if (Test-Path $dbScriptsDir) {
+        $scripts = @(Get-ChildItem $dbScriptsDir -Filter '*.sql' -File | Sort-Object Name)
+    }
+    if ($scripts.Count -eq 0) {
+        Write-Log "No hay scripts .sql en $dbScriptsDir; el esquema lo creara Flyway al arrancar el backend." 'WARN'
+        return
+    }
+    if (-not $DbConfig.Password) {
+        Write-Log "Sin credenciales de BD (configuracion omitida): no se ejecutan los scripts de db\." 'WARN'
+        return
+    }
+
+    $useDocker = ($DbConfig.Type -eq 'local') -and (Test-CommandExists 'docker') -and (Get-ControlMysqlImage)
+    if (-not $useDocker -and -not (Test-CommandExists 'mysql')) {
+        Write-Log "No se encontro el cliente 'mysql' en PATH (ni contenedor Docker): no puedo ejecutar db\*.sql." 'WARN'
+        Write-Log "No es un problema: Flyway creara el esquema automaticamente al arrancar el backend." 'INFO'
+        return
+    }
+
+    Write-Log "Verificando estructura de la base '$($DbConfig.Name)'..." 'STEP'
+
+    # 1) Asegurar que la base exista (mismo charset que usa el instalador local)
+    Invoke-MySqlClient -DbConfig $DbConfig -Query "CREATE DATABASE IF NOT EXISTS ``$($DbConfig.Name)`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Log "No se pudo conectar a MySQL con esas credenciales; scripts de db\ omitidos (Flyway queda como respaldo)." 'WARN'
+        return
+    }
+
+    # 2) Si ya hay estructura (tabla employee), no hay nada que hacer.
+    # La salida se filtra a la linea puramente numerica: mysql agrega por stderr
+    # el aviso "Using a password on the command line..." que 2>&1 mezcla aqui.
+    $tableCount = Invoke-MySqlClient -DbConfig $DbConfig -Silent -Query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$($DbConfig.Name)' AND table_name='employee';"
+    $countLine = @($tableCount) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
+    if ($LASTEXITCODE -eq 0 -and $countLine -and ([int]$countLine) -ge 1) {
+        Write-Log "La base ya tiene la estructura (tabla 'employee' presente): scripts de db\ omitidos." 'SUCCESS'
+        return
+    }
+
+    # 3) Base vacia: ejecutar los scripts en orden alfabetico (01_, 02_, ...)
+    Write-Log "Base sin estructura: ejecutando scripts de $dbScriptsDir..."
+    foreach ($s in $scripts) {
+        Write-Log "Ejecutando $($s.Name)..."
+        $out = Invoke-MySqlClient -DbConfig $DbConfig -SqlFile $s.FullName -SelectDb
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "Fallo $($s.Name): $out" 'ERROR'
+            Write-Log "Puedes corregir y relanzar; Flyway tambien puede crear el esquema al arrancar el backend." 'WARN'
+            return
+        }
+        Write-Log "$($s.Name) ejecutado correctamente." 'SUCCESS'
+    }
+    Write-Log "Estructura y datos iniciales creados desde RunWindowns\db." 'SUCCESS'
+}
+
 function Step-ConfigureDatabase {
     param([ValidateSet('Dev', 'Prod')][string]$Mode)
 
@@ -627,7 +732,10 @@ function Step-ConfigureDatabase {
         $dbConfig.Type = 'remote'
         Write-Log "Configuracion de base de datos remota..."
 
-        $dbConfig.Host = ''
+        # Host por defecto 'localhost' (ENTER lo acepta): el servidor MySQL puede
+        # estar en esta misma maquina; tambien se puede escribir una IP o un
+        # hostname de red. Nombre de BD, usuario y password no sugieren nada:
+        # se ingresan obligatoriamente.
         $dbConfig.Name = ''
         $dbConfig.User = ''
         $dbConfig.Password = ''
@@ -697,6 +805,13 @@ function Step-ConfigureDatabase {
     }
 
     Write-Log "DB_URL = $($dbConfig.Url)" 'SUCCESS'
+
+    # Crear la estructura y los datos iniciales desde RunWindowns\db si la base
+    # aun no los tiene (si ya existen, el paso se salta solo). Nunca es fatal:
+    # Flyway queda como respaldo al arrancar el backend.
+    try { Ensure-DatabaseSchema -DbConfig $dbConfig }
+    catch { Write-Log "Ensure-DatabaseSchema fallo: $_" 'WARN' }
+
     return $dbConfig
 }
 
@@ -1498,14 +1613,17 @@ function Uninstall-App {
     }
 
     Write-Host ""
-    Write-Host "  Se realizaran las siguientes acciones:" -ForegroundColor Yellow
+    Write-Host "  Esta accion desinstala TODO con una sola confirmacion:" -ForegroundColor Yellow
     Write-Host "    1. Detener y eliminar el servicio '$ServiceName'"
     Write-Host "       (y el servicio obsoleto 'ControlEatFoodProxy' de Caddy si aun existe)"
     Write-Host "    2. Eliminar reglas de firewall"
-    Write-Host "    3. Opcionalmente: eliminar archivos compilados"
-    Write-Host "    4. Opcionalmente: eliminar base de datos (si es local)"
+    Write-Host "    3. Eliminar archivos compilados (target/, dist/, node_modules/)"
+    Write-Host "    4. Eliminar la base de datos local (contenedor Docker 'control-mysql', si existe)"
+    Write-Host "    5. Eliminar archivos de configuracion (config/)"
     Write-Host ""
-    if ((Read-Host "  Desea continuar? (s/n)") -ne 's') { Write-Log "Desinstalacion cancelada."; return }
+    Write-Host "  ADVERTENCIA: la base de datos local se elimina CON TODOS SUS DATOS." -ForegroundColor Red
+    Write-Host ""
+    if ((Read-Host "  Desea desinstalar todo? (s/n)") -ne 's') { Write-Log "Desinstalacion cancelada."; return }
 
     Write-Log "Deteniendo servicio '$ServiceName'..."
     if (Test-Path $NssmExe) {
@@ -1547,40 +1665,35 @@ function Uninstall-App {
         }
     }
 
-    Write-Host ""
-    if ((Read-Host "  Eliminar archivos compilados (target/, dist/, node_modules/)? (s/n)") -eq 's') {
-        $targetDir = Join-Path $BackendDir "target"
-        if (Test-Path $targetDir) { Remove-Item -Path $targetDir -Recurse -Force; Write-Log "Eliminado: $targetDir" 'SUCCESS' }
-        $distDir = Join-Path $FrontendDir "dist"
-        if (Test-Path $distDir) { Remove-Item -Path $distDir -Recurse -Force; Write-Log "Eliminado: $distDir" 'SUCCESS' }
-        $nmDir = Join-Path $FrontendDir "node_modules"
-        if (Test-Path $nmDir) { Remove-Item -Path $nmDir -Recurse -Force; Write-Log "Eliminado: $nmDir" 'SUCCESS' }
-        $prodYmlInResources = Join-Path $BackendDir "src\main\resources\application-prod.yml"
-        if (Test-Path $prodYmlInResources) { Remove-Item -Path $prodYmlInResources -Force; Write-Log "Eliminado: application-prod.yml del backend" 'SUCCESS' }
-        $staticInResources = Join-Path $BackendDir "src\main\resources\static"
-        if (Test-Path $staticInResources) { Remove-Item -Path $staticInResources -Recurse -Force; Write-Log "Eliminado: static/ del backend" 'SUCCESS' }
+    Write-Log "Eliminando archivos compilados..."
+    $targetDir = Join-Path $BackendDir "target"
+    if (Test-Path $targetDir) { Remove-Item -Path $targetDir -Recurse -Force; Write-Log "Eliminado: $targetDir" 'SUCCESS' }
+    $distDir = Join-Path $FrontendDir "dist"
+    if (Test-Path $distDir) { Remove-Item -Path $distDir -Recurse -Force; Write-Log "Eliminado: $distDir" 'SUCCESS' }
+    $nmDir = Join-Path $FrontendDir "node_modules"
+    if (Test-Path $nmDir) { Remove-Item -Path $nmDir -Recurse -Force; Write-Log "Eliminado: $nmDir" 'SUCCESS' }
+    $prodYmlInResources = Join-Path $BackendDir "src\main\resources\application-prod.yml"
+    if (Test-Path $prodYmlInResources) { Remove-Item -Path $prodYmlInResources -Force; Write-Log "Eliminado: application-prod.yml del backend" 'SUCCESS' }
+    $staticInResources = Join-Path $BackendDir "src\main\resources\static"
+    if (Test-Path $staticInResources) { Remove-Item -Path $staticInResources -Recurse -Force; Write-Log "Eliminado: static/ del backend" 'SUCCESS' }
+
+    # Base de datos local: se elimina el contenedor Docker 'control-mysql' si
+    # existe (con sus datos). Para un MySQL instalado localmente no se toca la
+    # BD (no hay forma segura de hacerlo sin credenciales): se indica el DROP.
+    $dockerContainer = $false
+    try { $containers = & docker ps -a --format "{{.Names}}" 2>&1; if ($containers -match 'control-mysql') { $dockerContainer = $true } } catch { }
+    if ($dockerContainer) {
+        Write-Log "Eliminando contenedor Docker 'control-mysql' (incluye la base de datos)..."
+        & docker stop control-mysql 2>&1 | Out-Null
+        & docker rm control-mysql 2>&1 | Out-Null
+        Write-Log "Contenedor Docker 'control-mysql' eliminado." 'SUCCESS'
+    } elseif ($config -and $config.database.Type -eq 'local') {
+        Write-Log "MySQL local sin contenedor: elimina la BD manualmente con: DROP DATABASE $($config.database.Name);" 'WARN'
     }
 
-    if ($config -and $config.database.Type -eq 'local') {
-        Write-Host ""
-        if ((Read-Host "  Eliminar base de datos local '$($config.database.Name)'? (s/n)") -eq 's') {
-            $dockerContainer = $false
-            try { $containers = & docker ps -a --format "{{.Names}}" 2>&1; if ($containers -match 'control-mysql') { $dockerContainer = $true } } catch { }
-            if ($dockerContainer) {
-                if ((Read-Host "  Tambien eliminar contenedor Docker 'control-mysql'? (s/n)") -eq 's') {
-                    & docker stop control-mysql 2>&1 | Out-Null
-                    & docker rm control-mysql 2>&1 | Out-Null
-                    Write-Log "Contenedor Docker 'control-mysql' eliminado." 'SUCCESS'
-                }
-            } else {
-                Write-Log "Eliminar manualmente: DROP DATABASE $($config.database.Name);" 'WARN'
-            }
-        }
-    }
-
-    Write-Host ""
-    if ((Read-Host "  Eliminar archivos de configuracion (config/)? (s/n)") -eq 's') {
-        if (Test-Path $ConfigDir) { Remove-Item -Path $ConfigDir -Recurse -Force; Write-Log "Directorio config/ eliminado." 'SUCCESS' }
+    if (Test-Path $ConfigDir) {
+        Remove-Item -Path $ConfigDir -Recurse -Force
+        Write-Log "Directorio config/ eliminado." 'SUCCESS'
     }
 
     Write-Host ""
@@ -1661,9 +1774,7 @@ function Show-MainMenu {
             2 { Install-Full }
             3 { Update-App }
             4 { Repair-App }
-            5 { 
-                if ((Read-Host "  Esta seguro de desinstalar? (s/n)") -eq 's') { Uninstall-App } 
-            }
+            5 { Uninstall-App }
             6 { Show-Diagnostics }
             7 { 
                 Write-Host "  Saliendo... Hasta luego!" -ForegroundColor Yellow

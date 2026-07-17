@@ -28,11 +28,6 @@ public class ScanService {
     /** Huso horario de negocio (Ecuador). Coincide con spring.jpa.properties.hibernate.jdbc.time_zone. */
     private static final ZoneId BUSINESS_ZONE = ZoneId.of("America/Guayaquil");
 
-    /** Mismo esquema de código público que EmployeeService (la columna public_code es NOT NULL). */
-    private static final String CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    private static final int CODE_LENGTH = 6;
-    private static final java.security.SecureRandom CODE_RANDOM = new java.security.SecureRandom();
-
     private final BiometricMatcher matcher;
     private final DeviceService deviceService;
     private final EmployeeRepository employeeRepository;
@@ -342,7 +337,6 @@ public class ScanService {
                     e.setStatus(EmployeeStatus.INACTIVE);
                     e.setAllowsLunch(true);
                     e.setAllowsSnack(true);
-                    e.setPublicCode(generatePublicCode());
                     return e;
                 });
         if (employee.getId() == null) {
@@ -376,19 +370,6 @@ public class ScanService {
         if (v == null) return null;
         String t = v.trim();
         return t.isEmpty() ? null : t;
-    }
-
-    /** Genera un código público único EMP-XXXXXX reintentando ante colisión. */
-    private String generatePublicCode() {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            StringBuilder sb = new StringBuilder("EMP-");
-            for (int i = 0; i < CODE_LENGTH; i++) {
-                sb.append(CODE_ALPHABET.charAt(CODE_RANDOM.nextInt(CODE_ALPHABET.length())));
-            }
-            String code = sb.toString();
-            if (!employeeRepository.existsByPublicCode(code)) return code;
-        }
-        throw new BusinessException("CODE_GENERATION", "No se pudo generar un código único de empleado.");
     }
 
     private byte[] decode(String b64) {

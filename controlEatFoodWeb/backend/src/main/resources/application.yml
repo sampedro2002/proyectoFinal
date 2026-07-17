@@ -39,9 +39,16 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-    # Para una base de datos nueva/limpia, cambie baseline-on-migrate a false (o coméntelo).
-    # Si es una base de datos existente con tablas creadas manualmente, cambie a true y use baseline-version: 2.
-    baseline-on-migrate: false
+    # baseline-on-migrate=true permite convivir con los scripts del instalador
+    # (RunWindowns\db\01_esquema.sql + 02_datos.sql):
+    #  - BD vacía: Flyway migra normalmente desde V1 (baseline no aplica).
+    #  - BD con estructura creada por los scripts (sin flyway_schema_history):
+    #    Flyway la "baselinea" en la versión 2 y NO re-ejecuta V1..V2.
+    #  - BD con historial Flyway existente: se comporta igual que siempre.
+    # baseline-version debe subir cuando se agregue una migración que los
+    # scripts del instalador ya incluyan consolidada.
+    baseline-on-migrate: true
+    baseline-version: 2
     locations: classpath:db/migration
     # Debe estar en false para que app.dev.flyway-clean-on-start pueda limpiar el esquema.
     clean-disabled: ${FLYWAY_CLEAN_DISABLED:true}

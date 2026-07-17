@@ -13,17 +13,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.security.SecureRandom;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class EmployeeService {
-
-    /** Alfabeto Base32 sin caracteres ambiguos (sin O, 0, I, 1, L). */
-    private static final String CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-    private static final int CODE_LENGTH = 6;
-    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final EmployeeRepository employeeRepository;
     private final FingerprintRepository fingerprintRepository;
@@ -59,14 +53,12 @@ public class EmployeeService {
         if (revived != null) {
             apply(revived, req);
             revived.setDeleted(false);
-            if (revived.getPublicCode() == null) revived.setPublicCode(generatePublicCode());
             Employee saved = employeeRepository.save(revived);
             auditService.record("Employee", String.valueOf(saved.getId()), "REACTIVATE", null, saved.getFullName());
             return toResponse(saved);
         }
         Employee e = new Employee();
         apply(e, req);
-        e.setPublicCode(generatePublicCode());
         e = employeeRepository.save(e);
         auditService.record("Employee", String.valueOf(e.getId()), "CREATE", null, e.getFullName());
         return toResponse(e);
@@ -110,19 +102,6 @@ public class EmployeeService {
         if (req.allowsSnack() != null) e.setAllowsSnack(req.allowsSnack());
     }
 
-    /** Genera un código público único EMP-XXXXXX reintentando ante colisión. */
-    private String generatePublicCode() {
-        for (int attempt = 0; attempt < 20; attempt++) {
-            StringBuilder sb = new StringBuilder("EMP-");
-            for (int i = 0; i < CODE_LENGTH; i++) {
-                sb.append(CODE_ALPHABET.charAt(RANDOM.nextInt(CODE_ALPHABET.length())));
-            }
-            String code = sb.toString();
-            if (!employeeRepository.existsByPublicCode(code)) return code;
-        }
-        throw new BusinessException("CODE_GENERATION", "No se pudo generar un código único de empleado.");
-    }
-
     private static String blankToNull(String v) {
         if (v == null) return null;
         String t = v.trim();
@@ -153,7 +132,6 @@ public class EmployeeService {
                 e.getId(),
                 e.getIdentityCard(),
                 e.getFullName(),
-                e.getPublicCode(),
                 e.getObservation(),
                 e.getStatus().name(),
                 e.isAllowsLunch(),

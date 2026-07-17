@@ -18,7 +18,6 @@ public final class EmployeeDtos {
             Long id,
             String identityCard,
             String fullName,
-            String publicCode,
             String observation,
             String status,
             boolean allowsLunch,
