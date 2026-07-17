@@ -115,13 +115,32 @@ fun ReportsScreen() {
                 itemsIndexed(rows) { index, r ->
                     RowItem(
                         title = "${index + 1}. ${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
-                        subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}",
+                        subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}\n" +
+                                "Tipo: ${methodLabel(r.method)} · ${buildDescription(r)}",
                         trailing = if (r.offline) "offline" else ""
                     )
                 }
             }
         }
     }
+}
+
+private fun methodLabel(method: String?): String = when (method) {
+    "MANUAL"   -> "Manual"
+    "EXTERNAL" -> "Externo"
+    else       -> "Huella"
+}
+
+/** Prioriza observation; si es MANUAL sin observation (data histórica), arma
+ *  "X retira de Y" con proxyEmployeeName. Espejo de ExportService.buildDescription (web). */
+private fun buildDescription(r: ConsumptionRow): String {
+    val obs = r.observation?.trim()
+    if (!obs.isNullOrEmpty()) return obs
+    val proxy = r.proxyEmployeeName?.trim()
+    if (!proxy.isNullOrEmpty() && r.method == "MANUAL" && !r.employeeName.isNullOrBlank()) {
+        return "$proxy retira de ${r.employeeName}"
+    }
+    return "—"
 }
 
 private fun timeOf(iso: String?): String =

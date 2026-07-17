@@ -55,15 +55,60 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 `ScanResponse.status`: `SUCCESS` · `NOT_FOUND` ("HUELLA NO ENCONTRADA") · `OUT_OF_SCHEDULE`
 ("FUERA DEL HORARIO PERMITIDO") · `DUPLICATE` ("ALMUERZO/MERIENDA YA REGISTRADO") · `NOT_ALLOWED`.
 
+## Registro manual — `ADMIN`
+
+End point para "retira por otro" y persona externa. No usan JWT del dispositivo
+(sí JWT de ADMIN).
+
+| Método | Ruta | Descripción |
+|-------|------|-------------|
+| POST | `/api/manual-consumptions` | Registra "retira por otro". Un empleado (retirador) retira comidas a nombre de uno o varios titulares; se crea una fila `consumption` por cada (titular × tipo de comida) con `method='MANUAL'`, `proxy_employee_id=<retirador>` y `observation="<Retirador> retira de <Titular>"` autogenerada. No valida horario, permisos ni duplicados (override admin). |
+| POST | `/api/manual-consumptions/external` | Persona externa (visitante/contratista). Crea/reutiliza `Employee` con `status='INACTIVE'`; registra un consumo con `method='EXTERNAL'`. |
+
+`ManualScanRequest`:
+```json
+{
+  "proxyEmployeeId": 7,
+  "restaurantId": 2,
+  "titulars": [
+    { "employeeId": 10, "mealTypeCodes": ["BREAKFAST", "LUNCH"] },
+    { "employeeId": 15, "mealTypeCodes": ["LUNCH"] }
+  ]
+}
+```
+`mealTypeCodes` aceptados: `BREAKFAST` (Almuerzo) y `LUNCH`/`SNACK` (Merienda).
+
+`ManualScanResponse`:
+```json
+{ "status": "SUCCESS", "message": "3 registro(s) creado(s) por Pepe",
+  "employeeName": "Pepe", "mealName": "Merienda", "created": 3 }
+```
+
+`ExternalScanRequest`:
+```json
+{ "identityCard": "1712345678", "isPassport": false, "fullName": "Juan Pérez",
+  "mealTypeCode": "BREAKFAST", "restaurantId": 2, "observation": null }
+```
+
 ## Reportes y estadísticas — `ADMIN`/`SUPERVISOR`
 
 | Método | Ruta | Descripción |
 |-------|------|-------------|
 | GET | `/api/reports/dashboard?date=` | Estadísticas del día |
-| GET | `/api/reports/consumptions?from=&to=&cateringId=&mealTypeId=&employeeId=` | Detalle de consumos |
+| GET | `/api/reports/consumptions?from=&to=&restaurantId=&employeeId=&method=` | Detalle de consumos. `method` puede repetirse (`?method=FINGERPRINT&method=MANUAL`) para combinar; valores: `FINGERPRINT`, `MANUAL`, `EXTERNAL`. |
 | GET | `/api/reports/not-consumed?date=` | Empleados que no consumieron |
 | GET | `/api/reports/trend?from=&to=` | Tendencia de consumo |
-| GET | `/api/reports/export?format=csv|excel|pdf&from=&to=&...` | Exportación |
+| GET | `/api/reports/export?format=csv|excel|pdf&from=&to=&...&method=` | Exportación con los mismos filtros que `/consumptions` (incluye `method`). Las filas `MANUAL` salen en amarillo y `EXTERNAL` en naranja en Excel/PDF. |
+
+`ConsumptionRow` (respuesta de `/consumptions`):
+```json
+{
+  "id": 123, "businessDate": "2026-07-17", "consumedAt": "2026-07-17T12:10:00-05:00",
+  "employeeName": "Juan", "identityCard": "1712345678",
+  "restaurantName": "Norte", "mealName": "Almuerzo",
+  "observation": "Pepe retira de Juan", "offline": false,
+  "method": "MANUAL", "proxyEmployeeName": "Pepe"
+}
 
 ## Auditoría — `ADMIN`
 

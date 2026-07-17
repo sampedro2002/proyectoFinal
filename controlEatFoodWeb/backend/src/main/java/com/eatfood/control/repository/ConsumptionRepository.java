@@ -37,22 +37,26 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
-     * las relaciones LAZY ({@code restaurant} y {@code employee}) que
-     * {@link com.eatfood.control.service.ReportService#toRow} accede después,
-     * evitando un problema de N+1 SELECT.
+     * las relaciones LAZY ({@code restaurant}, {@code employee} y
+     * {@code proxyEmployee}) que {@link com.eatfood.control.service.ReportService#toRow}
+     * accede después, evitando un problema de N+1 SELECT. El filtro
+     * {@code methods} (opcional) acota por metodo de registro
+     * (FINGERPRINT/MANUAL/EXTERNAL); vacio o null = todos.
      */
-    @EntityGraph(attributePaths = {"restaurant", "employee"})
+    @EntityGraph(attributePaths = {"restaurant", "employee", "proxyEmployee"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:employeeId IS NULL OR c.employee.id = :employeeId)
+              AND (:methods IS NULL OR c.method IN :methods)
             ORDER BY c.consumedAt DESC
             """)
     List<Consumption> report(@Param("from") LocalDate from,
                              @Param("to") LocalDate to,
                              @Param("restaurantId") Long restaurantId,
-                             @Param("employeeId") Long employeeId);
+                             @Param("employeeId") Long employeeId,
+                             @Param("methods") List<com.eatfood.control.domain.Method> methods);
 
     long countByBusinessDate(LocalDate date);
 

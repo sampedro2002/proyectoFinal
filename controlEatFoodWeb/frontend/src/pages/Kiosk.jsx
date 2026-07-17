@@ -45,6 +45,7 @@ export default function Kiosk() {
   const [readerStatus, setReaderStatus] = useState(READER_STATUS.DISCONNECTED);
   const [connectError, setConnectError] = useState('');
   const [feed, setFeed] = useState([]);
+  const [feedMethod, setFeedMethod] = useState('ALL'); // ALL, MANUAL, FINGERPRINT
   const [showTable, setShowTable] = useState(true);
   const [reportFormat, setReportFormat] = useState('pdf');
   const [downloading, setDownloading] = useState(false);
@@ -438,24 +439,16 @@ export default function Kiosk() {
       <div className="title" style={{ marginTop: '20px' }}>{session.restaurantName?.toUpperCase()}</div>
       
       <img src="/logo.png" alt="Club Castillo Amaguaña" className="fingerprint-icon" style={{
+        height: '105px', // 25% smaller than original 140px
         opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25,
         margin: '20px 0'
       }} />
       
-      <div className="waiting" style={{ fontSize: '32px', margin: '0 0 8px 0', color: '#38bdf8' }}>
-        Coloque su mano en el lector...
-      </div>
-      <div style={{ color: '#94a3b8', fontSize: '18px', marginBottom: '24px' }}>
-        Asegúrese de colocar la palma completa
+      <div className="waiting" style={{ fontSize: '24px', margin: '0 0 24px 0', color: '#38bdf8' }}>
+        Coloque su dedo en el lector...
       </div>
 
-      {(readerStatus === READER_STATUS.ERROR || readerStatus === READER_STATUS.DISCONNECTED || readerStatus === READER_STATUS.NO_DEVICE) && (
-        <p style={{ color: '#94a3b8', fontSize: '14px', maxWidth: '380px', textAlign: 'center', marginBottom: '20px' }}>
-          Conecte el lector <strong>ZKTeco9500</strong> al puerto USB del servidor donde corre el
-          backend en <code style={{ color: '#38bdf8' }}>{getWsUrl()}</code>.
-          Se intentará reconectar automáticamente.
-        </p>
-      )}
+
 
       {/* Notificación Flotante de Resultado */}
       {result && (
@@ -476,6 +469,73 @@ export default function Kiosk() {
         </div>
       )}
 
+      {/* Barra de Controles (Descarga y Filtros) */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        width: '100%', maxWidth: '800px', margin: '0 auto 16px auto', padding: '0 20px'
+      }}>
+        {/* Descarga */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button
+            onClick={downloadReport}
+            disabled={downloading}
+            style={{
+              background: 'var(--panel-2)', border: '1px solid var(--border)',
+              borderRadius: '20px 0 0 20px', padding: '6px 16px', color: 'var(--text)',
+              cursor: downloading ? 'not-allowed' : 'pointer', fontSize: 14,
+              display: 'flex', alignItems: 'center', height: '36px'
+            }}
+            title="Descargar Reporte"
+          >
+            {downloading ? '⏳' : '📥'}
+          </button>
+          <select
+            value={reportFormat}
+            onChange={(e) => setReportFormat(e.target.value)}
+            style={{
+              background: 'var(--panel-2)', border: '1px solid var(--border)',
+              borderLeft: 'none', borderRadius: '0 20px 20px 0', padding: '6px 12px',
+              color: 'var(--text)', cursor: 'pointer', fontSize: 14,
+              height: '36px', outline: 'none'
+            }}
+          >
+            <option value="pdf">PDF</option>
+            <option value="excel">EXCEL</option>
+            <option value="csv">CSV</option>
+          </select>
+        </div>
+
+        {/* Filtros Tipo */}
+        <div style={{
+          display: 'flex', background: 'var(--panel-2)',
+          border: '1px solid var(--border)', borderRadius: '20px',
+          overflow: 'hidden', height: '36px'
+        }}>
+          <button
+            onClick={() => setFeedMethod(feedMethod === 'MANUAL' ? 'ALL' : 'MANUAL')}
+            style={{
+              background: feedMethod === 'MANUAL' ? 'var(--text)' : 'transparent',
+              color: feedMethod === 'MANUAL' ? 'var(--bg)' : 'var(--text)',
+              border: 'none', padding: '0 16px', cursor: 'pointer',
+              fontSize: 13, fontWeight: 'bold', transition: 'all 0.2s'
+            }}
+          >
+            MANUAL
+          </button>
+          <button
+            onClick={() => setFeedMethod(feedMethod === 'FINGERPRINT' ? 'ALL' : 'FINGERPRINT')}
+            style={{
+              background: feedMethod === 'FINGERPRINT' ? 'var(--text)' : 'transparent',
+              color: feedMethod === 'FINGERPRINT' ? 'var(--bg)' : 'var(--text)',
+              border: 'none', padding: '0 16px', cursor: 'pointer',
+              fontSize: 13, fontWeight: 'bold', transition: 'all 0.2s'
+            }}
+          >
+            HUELLAS
+          </button>
+        </div>
+      </div>
+
       {/* Tabla Central de Consumos */}
       <div className="kiosk-feed-container">
         <div 
@@ -485,71 +545,47 @@ export default function Kiosk() {
           REGISTROS DE HOY {showTable ? '▲' : '▼'}
         </div>
         
-        {showTable && (
-          <div className="kiosk-feed-table-wrapper">
-            <table className="kiosk-feed-table">
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>NOMBRE</th>
-                  <th>HORA</th>
-                  <th>TIPO</th>
-                </tr>
-              </thead>
-              <tbody>
-                {feed.length === 0 ? (
+        {showTable && (() => {
+          const filteredFeed = feedMethod === 'ALL' ? feed : feed.filter(e => e.method === feedMethod);
+          const totalAlmuerzos = filteredFeed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
+          const totalMeriendas = filteredFeed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
+
+          return (
+            <div className="kiosk-feed-table-wrapper">
+              <table className="kiosk-feed-table">
+                <thead>
                   <tr>
-                    <td colSpan="4" className="kiosk-feed-empty">Sin registros aún</td>
+                    <th>#</th>
+                    <th>NOMBRE</th>
+                    <th>HORA</th>
+                    <th>TIPO</th>
                   </tr>
-                ) : (
-                  feed.map((e, i) => (
-                    <tr key={i}>
-                      <td>{feed.length - i}</td>
-                      <td>{e.employeeName}</td>
-                      <td>{e.time}</td>
-                      <td>{e.mealName}</td>
+                </thead>
+                <tbody>
+                  {filteredFeed.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="kiosk-feed-empty">Sin registros aún</td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-            <div className="kiosk-feed-summary">
-              <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
-              <div>Meriendas: <strong>{totalMeriendas}</strong></div>
-              <div>Total: <strong>{feed.length}</strong></div>
+                  ) : (
+                    filteredFeed.map((e, i) => (
+                      <tr key={i}>
+                        <td>{filteredFeed.length - i}</td>
+                        <td>{e.employeeName}</td>
+                        <td>{e.time}</td>
+                        <td>{e.mealName}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+              <div className="kiosk-feed-summary">
+                <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
+                <div>Meriendas: <strong>{totalMeriendas}</strong></div>
+                <div>Total: <strong>{filteredFeed.length}</strong></div>
+              </div>
             </div>
-            <div style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-              gap: 8, padding: '10px 0 0', borderTop: '1px solid var(--border)'
-            }}>
-              <select
-                value={reportFormat}
-                onChange={(e) => setReportFormat(e.target.value)}
-                style={{
-                  background: 'var(--panel-2)', color: 'var(--text)',
-                  border: '1px solid var(--border)', borderRadius: 6,
-                  padding: '6px 10px', fontSize: 13, cursor: 'pointer'
-                }}
-              >
-                <option value="pdf">PDF</option>
-                <option value="excel">Excel</option>
-                <option value="csv">CSV</option>
-              </select>
-              <button
-                onClick={downloadReport}
-                disabled={downloading}
-                style={{
-                  background: downloading ? 'var(--muted)' : 'var(--ok)',
-                  color: 'white', border: 'none', borderRadius: 6,
-                  padding: '6px 16px', fontSize: 13, cursor: downloading ? 'not-allowed' : 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600
-                }}
-              >
-                {downloading ? '⏳ Generando...' : '📥 Descargar Reporte'}
-              </button>
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       <button

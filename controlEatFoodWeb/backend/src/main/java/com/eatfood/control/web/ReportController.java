@@ -33,8 +33,12 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Long restaurantId,
-            @RequestParam(required = false) Long employeeId) {
-        return reportService.consumptions(from, to, restaurantId, employeeId);
+            @RequestParam(required = false) Long employeeId,
+            @RequestParam(required = false) List<String> method) {
+        List<String> methods = (method == null || method.stream().allMatch(String::isBlank))
+                ? null
+                : method.stream().filter(s -> !s.isBlank()).toList();
+        return reportService.consumptions(from, to, restaurantId, employeeId, methods);
     }
 
     @GetMapping("/dashboard")
@@ -63,9 +67,13 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Long restaurantId,
-            @RequestParam(required = false) Long employeeId) {
+            @RequestParam(required = false) Long employeeId,
+            @RequestParam(required = false) List<String> method) {
 
-        List<ConsumptionRow> rows = reportService.consumptions(from, to, restaurantId, employeeId);
+        List<String> methods = (method == null || method.stream().allMatch(String::isBlank))
+                ? null
+                : method.stream().filter(s -> !s.isBlank()).toList();
+        List<ConsumptionRow> rows = reportService.consumptions(from, to, restaurantId, employeeId, methods);
         String title = buildTitle(restaurantId, from, to);
         byte[] body;
         String filename;

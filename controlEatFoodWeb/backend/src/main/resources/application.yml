@@ -42,12 +42,13 @@ spring:
   flyway:
     enabled: true
     # baseline-on-migrate=true permite convivir con los scripts del instalador
-    # (RunWindowns\db\01_esquema.sql + 02_datos.sql):
-    #  - BD vacía: Flyway migra normalmente desde V1 (baseline no aplica).
-    #  - BD con estructura creada por los scripts (sin flyway_schema_history):
+    # (RunWindowns\db\01_esquema.sql + 02_datos.sql). Solo hay dos migraciones:
+    # V1 (esquema completo) y V2 (seed):
+    #  - BD vacía: Flyway migra normalmente V1 y V2 (baseline no aplica).
+    #  - BD con estructura+datos creados por los scripts (sin flyway_schema_history):
     #    Flyway la "baselinea" en la versión 2 y NO re-ejecuta V1..V2.
     #  - BD con historial Flyway existente: se comporta igual que siempre.
-    # baseline-version debe subir cuando se agregue una migración que los
+    # baseline-version debe subir solo si se agrega una migración nueva que los
     # scripts del instalador ya incluyan consolidada.
     baseline-on-migrate: true
     baseline-version: 2

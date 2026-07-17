@@ -51,19 +51,34 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public List<ConsumptionRow> consumptions(LocalDate from, LocalDate to, Long restaurantId,
-                                             Long employeeId) {
+                                             Long employeeId, List<String> methods) {
         validateRange(from, to);
-        return consumptionRepository.report(from, to, restaurantId, employeeId).stream()
-                .map(this::toRow).toList();
+        List<com.eatfood.control.domain.Method> methodEnums = null;
+        if (methods != null && !methods.isEmpty()) {
+            methodEnums = new ArrayList<>();
+            for (String m : methods) {
+                if (m == null || m.isBlank()) continue;
+                try {
+                    methodEnums.add(com.eatfood.control.domain.Method.valueOf(m.toUpperCase()));
+                } catch (IllegalArgumentException ignored) {
+                }
+            }
+            if (methodEnums.isEmpty()) methodEnums = null;
+        }
+        return consumptionRepository.report(from, to, restaurantId, employeeId, methodEnums)
+                .stream().map(this::toRow).toList();
     }
 
     private ConsumptionRow toRow(Consumption c) {
         Employee e = c.getEmployee();
+        Employee p = c.getProxyEmployee();
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                 e.getFullName(), e.getIdentityCard(),
                 c.getRestaurant().getName(), c.getMealName(),
-                c.getObservation(), c.isOffline());
+                c.getObservation(), c.isOffline(),
+                c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),
+                p != null ? p.getFullName() : null);
     }
 
     @Transactional(readOnly = true)

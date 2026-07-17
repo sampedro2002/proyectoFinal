@@ -114,4 +114,8 @@ interface ApiService {
 
     @POST("manual-consumptions/external")
     suspend fun manualScanExternal(@Body body: ExternalScanRequest): ManualScanResponse
+
+    /** Comidas permitidas y aún no consumidas hoy por el empleado (para pre-seleccionar en el registro manual). */
+    @GET("manual-consumptions/availability/{employeeId}")
+    suspend fun mealAvailability(@Path("employeeId") employeeId: Long): MealAvailabilityResponse
 }

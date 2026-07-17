@@ -116,6 +116,7 @@ public class ScanService {
                 .offline(offline)
                 .syncStatus(SyncStatus.SYNCED)
                 .mealName(mealName)
+                .method(Method.FINGERPRINT)
                 .clientUuid(clientUuid)
                 .build();
         try {
@@ -206,7 +207,8 @@ public class ScanService {
                 .map(c -> new TodayEntry(
                         c.getEmployee().getFullName(),
                         c.getMealName(),
-                        c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm"))))
+                        c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),
+                        c.getMethod() != null ? c.getMethod().name() : "FINGERPRINT"))
                 .collect(Collectors.toList());
         return new TodayFeedResponse(device.getRestaurant().getName(), entries);
     }
@@ -221,11 +223,14 @@ public class ScanService {
         List<ConsumptionRow> rows = consumptions.stream()
                 .map(c -> {
                     Employee e = c.getEmployee();
+                    Employee p = c.getProxyEmployee();
                     return new ConsumptionRow(
                             c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                             e.getFullName(), e.getIdentityCard(),
                             c.getRestaurant().getName(), c.getMealName(),
-                            c.getObservation(), c.isOffline());
+                            c.getObservation(), c.isOffline(),
+                            c.getMethod() != null ? c.getMethod().name() : Method.FINGERPRINT.name(),
+                            p != null ? p.getFullName() : null);
                 })
                 .toList();
 
@@ -251,43 +256,138 @@ public class ScanService {
             List<ConsumptionRow> rows,
             Map<String, Long> plateCounts) {}
 
+    /**
+     * Registro manual de tipo "retira por otro" (solo ADMIN).
+     *
+     * El empleado {@code proxyEmployeeId} (Pepe) retira comidas a nombre de
+     * una lista de titulares (Juan, Luis, Maria...). Para cada titular se crea
+     * una fila de {@code consumption} por cada codigo de comida pedido, con
+     * {@code method='MANUAL'}, {@code proxy_employee_id=Pepe} y
+     * {@code observation="Pepe retira de Juan"} autogenerada (el admin no
+     * necesita capturarla en la UI). No se valida horario, permisos ni
+     * duplicados de los titulares: el manual es un override administrativo.
+     */
     @Transactional
     public ManualScanResponse manualScan(ManualScanRequest req) {
-        log.info("[MANUAL] Registro manual: employeeId={}, restaurantId={}",
-                req.employeeId(), req.restaurantId());
+        log.info("[MANUAL] Retira-por-otro: proxyEmployeeId={}, restaurantId={}, titulares={}",
+                req.proxyEmployeeId(), req.restaurantId(),
+                req.titulars() != null ? req.titulars().size() : 0);
 
-        Employee employee = employeeRepository.findById(req.employeeId())
-                .orElse(null);
-        if (employee == null || employee.isDeleted()) {
-            return new ManualScanResponse("NOT_FOUND", "Empleado no encontrado", null, null);
+        if (req.titulars() == null || req.titulars().isEmpty()) {
+            return new ManualScanResponse("ERROR",
+                    "Debe indicar al menos un titular", null, null, 0);
         }
 
-        Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
+        Employee proxy = employeeRepository.findById(req.proxyEmployeeId())
+                .orElse(null);
+        if (proxy == null || proxy.isDeleted()) {
+            return new ManualScanResponse("NOT_FOUND",
+                    "Empleado que retira no encontrado", null, null, 0);
+        }
+
+        Restaurant restaurant = restaurantRepository.findById(req.restaurantId())
+                .orElse(null);
         if (restaurant == null) {
             return new ManualScanResponse("ERROR", "Restaurant no encontrado",
-                    employee.getFullName(), null);
+                    proxy.getFullName(), null, 0);
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
-        String mealName = mealNameForCode(req.mealTypeCode());
+        OffsetDateTime now = OffsetDateTime.now(BUSINESS_ZONE);
+        String proxyName = proxy.getFullName();
+        int created = 0;
+        String lastMealName = null;
+        // Motivos por los que se omitió un plato (no permitido / ya registrado), para
+        // devolverlos en el mensaje y que la UI explique qué no se creó y por qué.
+        List<String> skipped = new ArrayList<>();
 
-        Consumption consumption = Consumption.builder()
-                .employee(employee)
-                .restaurant(restaurant)
-                .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
-                .businessDate(businessDate)
-                .observation(blankToNull(req.observation()))
-                .offline(false)
-                .syncStatus(SyncStatus.SYNCED)
-                .mealName(mealName)
-                .clientUuid(UUID.randomUUID())
-                .build();
-        consumptionRepository.save(consumption);
+        for (ManualScanItem item : req.titulars()) {
+            // Lock pesimista igual que el escaneo por huella: serializa registros
+            // concurrentes del mismo empleado (manual + kiosco a la vez) para que el
+            // chequeo "ya consumió este plato hoy" no compita con otra transacción.
+            Employee titular = employeeRepository.findByIdForUpdate(item.employeeId())
+                    .orElse(null);
+            if (titular == null || titular.isDeleted()) {
+                log.warn("[MANUAL] Titular no encontrado o eliminado: id={}",
+                        item.employeeId());
+                continue;
+            }
+            if (item.mealTypeCodes() == null || item.mealTypeCodes().isEmpty()) {
+                continue;
+            }
+            // Comidas ya registradas hoy para este titular. Se usa un Set mutable para
+            // también bloquear duplicados dentro de la MISMA petición (código repetido).
+            Set<String> consumedToday = new HashSet<>(
+                    consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), businessDate));
+            String observation = proxyName + " retira de " + titular.getFullName();
+            for (String code : item.mealTypeCodes()) {
+                String mealName = mealNameForCode(code);
+                // Permiso del empleado: Merienda requiere allowsSnack; Almuerzo, allowsLunch.
+                boolean allowed = "Merienda".equals(mealName) ? titular.effectiveSnack() : titular.isAllowsLunch();
+                if (!allowed) {
+                    skipped.add(titular.getFullName() + ": " + mealName + " (no permitido)");
+                    log.info("[MANUAL] omitido (no permitido): '{}' comida='{}'", titular.getFullName(), mealName);
+                    continue;
+                }
+                // No permitir volver a registrar un plato ya consumido hoy (huella o manual).
+                if (consumedToday.contains(mealName)) {
+                    skipped.add(titular.getFullName() + ": " + mealName + " (ya registrada)");
+                    log.info("[MANUAL] omitido (duplicado): '{}' comida='{}'", titular.getFullName(), mealName);
+                    continue;
+                }
+                Consumption consumption = Consumption.builder()
+                        .employee(titular)
+                        .restaurant(restaurant)
+                        .proxyEmployee(proxy)
+                        .consumedAt(now)
+                        .businessDate(businessDate)
+                        .observation(observation)
+                        .method(Method.MANUAL)
+                        .offline(false)
+                        .syncStatus(SyncStatus.SYNCED)
+                        .mealName(mealName)
+                        .clientUuid(UUID.randomUUID())
+                        .build();
+                consumptionRepository.save(consumption);
+                consumedToday.add(mealName);
+                created++;
+                lastMealName = mealName;
+                log.info("[MANUAL] ✓ '{}' retira de '{}' (comida='{}')",
+                        proxyName, titular.getFullName(), mealName);
+            }
+        }
 
-        log.info("[MANUAL] ✓ SUCCESS → empleado='{}', restaurant='{}', comida='{}'",
-                employee.getFullName(), restaurant.getName(), mealName);
-        return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), mealName);
+        if (created == 0) {
+            String msg = skipped.isEmpty()
+                    ? "No se creó ningún consumo (titulares inválidos)"
+                    : "No se registró nada. " + String.join("; ", skipped);
+            String status = skipped.stream().anyMatch(s -> s.contains("ya registrada")) ? "DUPLICATE" : "ERROR";
+            return new ManualScanResponse(status, msg, proxyName, null, 0);
+        }
+        String msg = created + " registro(s) creado(s) por " + proxyName;
+        if (!skipped.isEmpty()) msg += ". Omitidos: " + String.join("; ", skipped);
+        return new ManualScanResponse("SUCCESS", msg, proxyName, lastMealName, created);
+    }
+
+    /**
+     * Disponibilidad de comidas del empleado para el registro manual de HOY: qué platos
+     * tiene permitidos y cuáles aún no consumió. Lo usan las UIs (web y móvil) para mostrar
+     * y pre-seleccionar solo las comidas registrables.
+     */
+    @Transactional(readOnly = true)
+    public MealAvailabilityResponse mealAvailability(Long employeeId) {
+        Employee e = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new BusinessException("NOT_FOUND", "Empleado no encontrado."));
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        List<String> consumed = consumptionRepository
+                .findMealNamesByEmployeeIdAndBusinessDate(employeeId, today);
+        boolean hadAlmuerzo = consumed.contains("Almuerzo");
+        boolean hadMerienda = consumed.contains("Merienda");
+        List<String> available = new ArrayList<>();
+        if (e.isAllowsLunch() && !hadAlmuerzo) available.add("BREAKFAST");
+        if (e.effectiveSnack() && !hadMerienda) available.add("LUNCH");
+        return new MealAvailabilityResponse(employeeId, e.isAllowsLunch(), e.effectiveSnack(),
+                hadAlmuerzo, hadMerienda, available);
     }
 
     /**
@@ -326,7 +426,7 @@ public class ScanService {
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
         if (restaurant == null) {
-            return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null);
+            return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null, 0);
         }
 
         Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(identityCard)
@@ -347,12 +447,23 @@ public class ScanService {
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         String mealName = mealNameForCode(req.mealTypeCode());
+        // No permitir registrar dos veces el mismo plato el mismo día para esta persona
+        // externa (misma cédula/pasaporte). En un externo recién creado la lista está vacía.
+        List<String> consumedToday = consumptionRepository
+                .findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), businessDate);
+        if (consumedToday.contains(mealName)) {
+            log.info("[EXTERNAL] omitido (duplicado): '{}' comida='{}'", employee.getFullName(), mealName);
+            return new ManualScanResponse("DUPLICATE",
+                    mealName + " ya fue registrado hoy para " + employee.getFullName(),
+                    employee.getFullName(), mealName, 0);
+        }
         Consumption consumption = Consumption.builder()
                 .employee(employee)
                 .restaurant(restaurant)
                 .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
                 .businessDate(businessDate)
                 .observation(blankToNull(req.observation()))
+                .method(Method.EXTERNAL)
                 .offline(false)
                 .syncStatus(SyncStatus.SYNCED)
                 .mealName(mealName)
@@ -363,7 +474,7 @@ public class ScanService {
         log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}', comida='{}'",
                 employee.getFullName(), restaurant.getName(), mealName);
         return new ManualScanResponse("SUCCESS", "REGISTRO EXITOSO",
-                employee.getFullName(), mealName);
+                employee.getFullName(), mealName, 1);
     }
 
     private static String blankToNull(String v) {

@@ -877,6 +877,62 @@ fun SchedulesScreen() {
 }
 
 // ───────────────────────────── Platos Extra ─────────────────────────────────
+// Registro manual de consumo (solo ADMIN). Réplica de la página web ManualScan.jsx:
+// dos modos —"Retira por otro" (un empleado retira comidas a nombre de uno o varios
+// titulares) y "Persona externa"— con selección de comidas permitidas/no consumidas.
+
+/** Un titular del modo "retira por otro": empleado + disponibilidad de hoy + comidas elegidas. */
+private data class TitularUi(
+    val employee: EmployeeResponse,
+    val allowsLunch: Boolean,
+    val allowsSnack: Boolean,
+    val hadAlmuerzo: Boolean,
+    val hadMerienda: Boolean,
+    val mealCodes: List<String>
+)
+
+/**
+ * Campo de búsqueda de empleados con autosugerencias (debounce 300 ms, mínimo 2
+ * caracteres), espejo del buscador de la web. Al elegir uno invoca onPick y se limpia.
+ */
+@Composable
+private fun EmployeeSearchField(
+    label: String,
+    api: com.eatfood.control.mobile.data.remote.ApiService,
+    onPick: (EmployeeResponse) -> Unit
+) {
+    var term by remember { mutableStateOf("") }
+    var suggestions by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
+    LaunchedEffect(term) {
+        val q = term.trim()
+        if (q.length < 2) { suggestions = emptyList(); return@LaunchedEffect }
+        delay(300)
+        suggestions = runCatching { api.employees(q, 0, 8).content ?: emptyList() }.getOrDefault(emptyList())
+    }
+    Column(Modifier.fillMaxWidth()) {
+        OutlinedTextField(
+            value = term, onValueChange = { term = it },
+            label = { Text(label) }, singleLine = true,
+            trailingIcon = { Icon(Icons.Default.Search, null) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        if (suggestions.isNotEmpty()) {
+            Card(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Column {
+                    suggestions.forEach { e ->
+                        RowItem(
+                            title = e.fullName,
+                            subtitle = "CI ${e.identityCard}" + if (e.status != "ACTIVE") " · ${e.status}" else "",
+                            onClick = { onPick(e); term = ""; suggestions = emptyList() }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExtraMealsScreen() {
     val context = LocalContext.current
@@ -884,31 +940,27 @@ fun ExtraMealsScreen() {
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    // Catálogo cargado al inicio: restaurants
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
 
-    // Búsqueda de empleado existente
-    var employees by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
-    var term by remember { mutableStateOf("") }
-    var selectedEmployee by remember { mutableStateOf<EmployeeResponse?>(null) }
+    // "proxy" = retira por otro; "external" = persona externa (mismas dos pestañas de la web).
+    var mode by remember { mutableStateOf("proxy") }
+
+    // Retira por otro
+    var proxy by remember { mutableStateOf<EmployeeResponse?>(null) }
+    var titulars by remember { mutableStateOf<List<TitularUi>>(emptyList()) }
 
     // Persona externa
-    var isExternal by remember { mutableStateOf(false) }
     var extName by remember { mutableStateOf("") }
     var extCard by remember { mutableStateOf("") }
     var isPassport by remember { mutableStateOf(false) }
-
-    // Comidas a registrar (BREAKFAST = Almuerzo / LUNCH = Merienda)
-    var almuerzo by remember { mutableStateOf(false) }
-    var merienda by remember { mutableStateOf(false) }
+    var extAlmuerzo by remember { mutableStateOf(false) }
+    var extMerienda by remember { mutableStateOf(false) }
     var observation by remember { mutableStateOf("") }
 
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
-    var isEditing by remember { mutableStateOf(false) }
 
-    // Carga inicial de restaurants
     LaunchedEffect(Unit) {
         runCatching { api.restaurants() }.onSuccess { list ->
             restaurants = list
@@ -916,226 +968,281 @@ fun ExtraMealsScreen() {
         }
     }
 
-    suspend fun searchEmployees() {
-        if (term.isBlank()) { employees = emptyList(); return }
-        employees = runCatching { api.employees(term, 0, 20).content ?: emptyList() }.getOrDefault(emptyList())
+    // Agrega un titular consultando su disponibilidad y pre-seleccionando lo registrable
+    // (permitido y no consumido hoy). Si el endpoint no existe aún, cae a sus flags.
+    suspend fun addTitular(e: EmployeeResponse) {
+        if (titulars.any { it.employee.id == e.id }) return
+        val av = runCatching { api.mealAvailability(e.id) }.getOrNull()
+        val allowsLunch = av?.allowsLunch ?: e.allowsLunch
+        val allowsSnack = av?.allowsSnack ?: e.effectiveSnack
+        val hadAlmuerzo = av?.hadAlmuerzo ?: false
+        val hadMerienda = av?.hadMerienda ?: false
+        val codes = av?.availableCodes ?: buildList {
+            if (allowsLunch) add("BREAKFAST")
+            if (allowsSnack) add("LUNCH")
+        }
+        titulars = titulars + TitularUi(e, allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, codes)
+        results = emptyList()
+    }
+
+    fun toggleTitularMeal(id: Long, code: String, checked: Boolean) {
+        titulars = titulars.map { t ->
+            if (t.employee.id != id) t
+            else t.copy(mealCodes = if (checked) t.mealCodes + code else t.mealCodes - code)
+        }
     }
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Column(
-            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+            Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)
         ) {
-            Text("Gestión de Platos Extra", style = MaterialTheme.typography.titleLarge)
+            Text("Registro manual de consumo", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (mode == "proxy")
+                    "Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. No se valida horario; sí se evita duplicar un plato ya registrado."
+                else
+                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de empleados.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+
+            // Pestañas de modo (equivalen a los botones "Retira por otro" / "Persona externa").
+            Row(Modifier.fillMaxWidth()) {
+                FilterChip(
+                    selected = mode == "proxy",
+                    onClick = { mode = "proxy"; results = emptyList() },
+                    label = { Text("Retira por otro") },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                FilterChip(
+                    selected = mode == "external",
+                    onClick = { mode = "external"; results = emptyList() },
+                    label = { Text("Persona externa") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
             Spacer(Modifier.height(16.dp))
 
-            if (!isEditing) {
-                // Selector de restaurant (el backend lo exige @NotNull)
-                Text("Restaurante:", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(4.dp))
-                Box {
-                    var catMenu by remember { mutableStateOf(false) }
-                    OutlinedTextField(
-                        value = restaurants.firstOrNull { it.id == selectedRestaurantId }?.name
-                            ?: "Seleccione restaurante",
-                        onValueChange = {},
-                        readOnly = true,
-                        enabled = restaurants.isNotEmpty(),
-                        modifier = Modifier.fillMaxWidth().clickable { catMenu = true }
-                    )
-                    DropdownMenu(catMenu, { catMenu = false }) {
-                        restaurants.forEach { c ->
-                            DropdownMenuItem(
-                                text = { Text(c.name) },
-                                onClick = { selectedRestaurantId = c.id; catMenu = false }
-                            )
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
+            // Restaurante (obligatorio en el backend). Selector con ExposedDropdownMenuBox.
+            Text("Restaurante:", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            var catMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = catMenu,
+                onExpandedChange = { if (restaurants.isNotEmpty()) catMenu = !catMenu },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 OutlinedTextField(
-                    value = term, onValueChange = { term = it },
-                    label = { Text("Buscar por identificación o nombre") }, singleLine = true,
-                    trailingIcon = { IconButton(onClick = { scope.launch { searchEmployees() } }) { Icon(Icons.Default.Search, null) } },
-                    modifier = Modifier.fillMaxWidth()
+                    value = restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "Seleccione restaurante",
+                    onValueChange = {},
+                    readOnly = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
+                ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                    restaurants.forEach { c ->
+                        DropdownMenuItem(
+                            text = { Text(c.name) },
+                            onClick = { selectedRestaurantId = c.id; catMenu = false }
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(16.dp))
 
-                if (employees.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
+            if (mode == "proxy") {
+                // ── Empleado que retira ────────────────────────────────────────────
+                Text("Empleado que retira", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                if (proxy == null) {
+                    EmployeeSearchField("Busque por nombre o cédula a quien retira…", api) { proxy = it }
+                } else {
                     Card(Modifier.fillMaxWidth()) {
-                        Column {
-                            employees.forEach { e ->
-                                RowItem(
-                                    title = e.fullName,
-                                    subtitle = "CI ${e.identityCard}",
-                                    onClick = {
-                                        selectedEmployee = e
-                                        isExternal = false
-                                        isEditing = true
-                                        employees = emptyList()
-                                        term = ""
-                                    }
-                                )
+                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(proxy!!.fullName, fontWeight = FontWeight.Bold)
+                                Text("CI ${proxy!!.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
+                            TextButton(onClick = { proxy = null }) { Text("Cambiar") }
                         }
                     }
                 }
 
                 Spacer(Modifier.height(16.dp))
-                Button(
-                    onClick = {
-                        selectedEmployee = null
-                        extName = ""
-                        extCard = ""
-                        isPassport = false
-                        isExternal = true
-                        isEditing = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                ) {
-                    Icon(Icons.Default.Add, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Agregar persona externa")
+                // ── Titulares ──────────────────────────────────────────────────────
+                Text("Agregar titular", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                EmployeeSearchField("Busque y seleccione titulares para agregar…", api) { e ->
+                    scope.launch { addTitular(e) }
                 }
-            } else {
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(
-                            if (isExternal) "Nueva Persona Externa" else "Registrar para Empleado",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.height(12.dp))
 
-                        // Restaurant seleccionado (sólo lectura en modo edición)
-                        Text(
-                            "Restaurant: ${restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "—"}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(12.dp))
-
-                        if (isExternal) {
-                            OutlinedTextField(
-                                value = extName, onValueChange = { extName = it },
-                                label = { Text("Nombre completo") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Switch(isPassport, { isPassport = it })
-                                Spacer(Modifier.width(8.dp))
-                                Text("Es Pasaporte")
-                            }
-                            OutlinedTextField(
-                                value = extCard, onValueChange = { extCard = it },
-                                label = { Text(if (isPassport) "Pasaporte" else "Cédula") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            // Empleado seleccionado: mostrar datos (sólo lectura)
-                            OutlinedTextField(
-                                value = selectedEmployee?.fullName ?: "",
-                                onValueChange = {},
-                                label = { Text("Nombre") },
-                                readOnly = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            OutlinedTextField(
-                                value = selectedEmployee?.identityCard ?: "",
-                                onValueChange = {},
-                                label = { Text("Cédula") },
-                                readOnly = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
-
-                        Spacer(Modifier.height(16.dp))
-                        Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(almuerzo, { almuerzo = it })
-                            Text("Almuerzo", Modifier.clickable { almuerzo = !almuerzo })
-                            Spacer(Modifier.width(20.dp))
-                            Checkbox(merienda, { merienda = it })
-                            Text("Merienda", Modifier.clickable { merienda = !merienda })
-                        }
-
-                        Spacer(Modifier.height(12.dp))
-                        OutlinedTextField(
-                            value = observation, onValueChange = { observation = it },
-                            label = { Text("Observación (opcional)") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(Modifier.height(20.dp))
-                        val canSubmit = !busy && (almuerzo || merienda) &&
-                            selectedRestaurantId != null &&
-                            if (isExternal) extName.isNotBlank() && extCard.isNotBlank()
-                            else selectedEmployee != null
-
-                        Button(
-                            enabled = canSubmit,
-                            onClick = {
-                                val card = extCard.trim()
-                                if (isExternal && !isPassport && !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
-                                    scope.launch { snackbar.showSnackbar("La cédula no es válida (10 dígitos con verificador).") }
-                                    return@Button
+                if (titulars.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("Titulares (${titulars.size})", style = MaterialTheme.typography.labelLarge)
+                    titulars.forEach { t ->
+                        Spacer(Modifier.height(8.dp))
+                        Card(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(t.employee.fullName, fontWeight = FontWeight.Bold)
+                                        Text("CI ${t.employee.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(onClick = {
+                                        titulars = titulars.filterNot { it.employee.id == t.employee.id }
+                                    }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
                                 }
-                                busy = true
-                                scope.launch {
-                                    val codes = mutableListOf<String>()
-                                    if (almuerzo) codes.add("BREAKFAST")
-                                    if (merienda) codes.add("LUNCH")
-                                    val res = mutableListOf<String>()
-                                    val restaurantId = selectedRestaurantId!!
-                                    val obs = observation.trim().ifBlank { null }
-                                    for (code in codes) {
-                                        if (isExternal) {
-                                            runCatching {
-                                                api.manualScanExternal(
-                                                    ExternalScanRequest(extCard.trim(), extName.trim(), code, restaurantId, obs, isPassport)
-                                                )
-                                            }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
-                                             .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
-                                        } else {
-                                            runCatching {
-                                                api.manualScan(
-                                                    ManualScanRequest(selectedEmployee!!.id, code, restaurantId, obs)
-                                                )
-                                            }.onSuccess { r -> res.add("${r.mealName ?: code}: ${r.message ?: r.status}") }
-                                             .onFailure { e -> res.add("$code: ${e.apiMessage("Error")}") }
+                                if (!t.allowsLunch && !t.allowsSnack) {
+                                    Text("Sin comidas habilitadas para este empleado.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                } else {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (t.allowsLunch) {
+                                            Checkbox(
+                                                checked = t.mealCodes.contains("BREAKFAST"),
+                                                onCheckedChange = { toggleTitularMeal(t.employee.id, "BREAKFAST", it) },
+                                                enabled = !t.hadAlmuerzo
+                                            )
+                                            Text("Almuerzo" + if (t.hadAlmuerzo) " (ya registrado)" else "")
+                                            Spacer(Modifier.width(16.dp))
+                                        }
+                                        if (t.allowsSnack) {
+                                            Checkbox(
+                                                checked = t.mealCodes.contains("LUNCH"),
+                                                onCheckedChange = { toggleTitularMeal(t.employee.id, "LUNCH", it) },
+                                                enabled = !t.hadMerienda
+                                            )
+                                            Text("Merienda" + if (t.hadMerienda) " (ya registrada)" else "")
                                         }
                                     }
-                                    results = res
-                                    if (res.none { it.contains("Error") }) {
-                                        snackbar.showSnackbar("Registros guardados con éxito")
-                                        isEditing = false
-                                        almuerzo = false; merienda = false
-                                        selectedEmployee = null
-                                        extName = ""; extCard = ""; observation = ""
-                                    }
-                                    busy = false
                                 }
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (busy) "Guardando…" else "Confirmar Registro") }
-
-                        TextButton(
-                            onClick = {
-                                isEditing = false
-                                results = emptyList()
-                                selectedEmployee = null
-                                extName = ""; extCard = ""
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) { Text("Cancelar") }
+                            }
+                        }
                     }
                 }
+
+                Spacer(Modifier.height(20.dp))
+                val canSubmit = !busy && proxy != null && selectedRestaurantId != null &&
+                    titulars.any { it.mealCodes.isNotEmpty() }
+                Button(
+                    enabled = canSubmit,
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            val items = titulars.filter { it.mealCodes.isNotEmpty() }
+                                .map { ManualScanItem(it.employee.id, it.mealCodes) }
+                            val res = mutableListOf<String>()
+                            var ok = false
+                            runCatching {
+                                api.manualScan(
+                                    ManualScanRequest(
+                                        proxyEmployeeId = proxy!!.id,
+                                        restaurantId = selectedRestaurantId!!,
+                                        titulars = items
+                                    )
+                                )
+                            }.onSuccess { r ->
+                                res.add(r.message ?: r.status)
+                                ok = r.status == "SUCCESS"
+                            }.onFailure { e -> res.add(e.apiMessage("Error")) }
+                            results = res
+                            if (ok) {
+                                snackbar.showSnackbar("Registros guardados con éxito")
+                                proxy = null; titulars = emptyList()
+                            } else {
+                                snackbar.showSnackbar("No se registró todo. Revise el detalle abajo.")
+                            }
+                            busy = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
+
+            } else {
+                // ── Persona externa ────────────────────────────────────────────────
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(isPassport, { isPassport = it })
+                    Spacer(Modifier.width(8.dp))
+                    Text("Es Pasaporte")
+                }
+                OutlinedTextField(
+                    value = extCard, onValueChange = { extCard = it },
+                    label = { Text(if (isPassport) "Pasaporte" else "Cédula") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = extName, onValueChange = { extName = it },
+                    label = { Text("Nombre completo") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(12.dp))
+                Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(extAlmuerzo, { extAlmuerzo = it })
+                    Text("Almuerzo", Modifier.clickable { extAlmuerzo = !extAlmuerzo })
+                    Spacer(Modifier.width(20.dp))
+                    Checkbox(extMerienda, { extMerienda = it })
+                    Text("Merienda", Modifier.clickable { extMerienda = !extMerienda })
+                }
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = observation, onValueChange = { observation = it },
+                    label = { Text("Observación (opcional)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(Modifier.height(20.dp))
+                val canSubmit = !busy && (extAlmuerzo || extMerienda) &&
+                    extName.isNotBlank() && extCard.isNotBlank() && selectedRestaurantId != null
+                Button(
+                    enabled = canSubmit,
+                    onClick = {
+                        val card = extCard.trim()
+                        if (!isPassport && !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
+                            scope.launch { snackbar.showSnackbar("La cédula no es válida (10 dígitos con verificador).") }
+                            return@Button
+                        }
+                        busy = true
+                        scope.launch {
+                            val codes = buildList {
+                                if (extAlmuerzo) add("BREAKFAST")
+                                if (extMerienda) add("LUNCH")
+                            }
+                            val obs = observation.trim().ifBlank { null }
+                            val res = mutableListOf<String>()
+                            var anyCreated = false
+                            var anyError = false
+                            for (code in codes) {
+                                runCatching {
+                                    api.manualScanExternal(
+                                        ExternalScanRequest(card, extName.trim(), code, selectedRestaurantId!!, obs, isPassport)
+                                    )
+                                }.onSuccess { r ->
+                                    res.add("${r.mealName ?: code}: ${r.message ?: r.status}")
+                                    if (r.status == "SUCCESS") anyCreated = true else anyError = true
+                                }.onFailure { e -> res.add("$code: ${e.apiMessage("Error")}"); anyError = true }
+                            }
+                            results = res
+                            if (anyCreated && !anyError) {
+                                snackbar.showSnackbar("Registros guardados con éxito")
+                                extName = ""; extCard = ""; observation = ""
+                                extAlmuerzo = false; extMerienda = false; isPassport = false
+                            } else if (anyCreated) {
+                                snackbar.showSnackbar("Registrado parcialmente. Revise el detalle abajo.")
+                            } else {
+                                snackbar.showSnackbar("No se registró nada. Revise el detalle abajo.")
+                            }
+                            busy = false
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
             }
 
             if (results.isNotEmpty()) {

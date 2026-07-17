@@ -15,7 +15,19 @@ public final class ReportDtos {
             String restaurantName,
             String mealName,
             String observation,
-            boolean offline) {}
+            boolean offline,
+            String method,
+            String proxyEmployeeName) {}
+
+    /** Etiqueta legible del método de registro, para UIs y reportes. */
+    public static String methodLabel(String method) {
+        if (method == null) return "Huella";
+        return switch (method) {
+            case "MANUAL"  -> "Manual";
+            case "EXTERNAL" -> "Externo";
+            default        -> "Huella";
+        };
+    }
 
     public record DashboardStats(
             LocalDate date,

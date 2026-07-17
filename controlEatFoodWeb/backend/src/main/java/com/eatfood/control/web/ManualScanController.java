@@ -30,4 +30,11 @@ public class ManualScanController {
     public ManualScanResponse registerExternal(@Valid @RequestBody ExternalScanRequest req) {
         return scanService.registerExternal(req);
     }
+
+    @Operation(summary = "Comidas permitidas y aún no consumidas hoy por un empleado (solo ADMIN)")
+    @GetMapping("/availability/{employeeId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public MealAvailabilityResponse availability(@PathVariable Long employeeId) {
+        return scanService.mealAvailability(employeeId);
+    }
 }

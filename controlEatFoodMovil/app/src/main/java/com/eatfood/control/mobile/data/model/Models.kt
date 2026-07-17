@@ -153,7 +153,8 @@ data class SyncBatchResponse(
 data class TodayFeedEntry(
     val employeeName: String?,
     val mealName: String?,
-    val time: String?
+    val time: String?,
+    val method: String?
 )
 
 /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
@@ -172,7 +173,9 @@ data class ConsumptionRow(
     val restaurantName: String?,
     val mealName: String?,
     val observation: String?,
-    val offline: Boolean
+    val offline: Boolean,
+    val method: String? = null,
+    val proxyEmployeeName: String? = null
 )
 
 data class DashboardStats(
@@ -211,11 +214,22 @@ data class ApiError(
     val message: String? = null
 )
 
+/**
+ * Registro manual "retira por otro" (solo ADMIN). Debe coincidir EXACTAMENTE con el
+ * DTO del backend (ScanDtos.ManualScanRequest): proxyEmployeeId + restaurantId + titulars,
+ * todos @NotNull. En el móvil no hay selector de "quién retira", así que el empleado
+ * seleccionado es a la vez el proxy y el único titular.
+ */
 data class ManualScanRequest(
-    val employeeId: Long,
-    val mealTypeCode: String,
+    val proxyEmployeeId: Long,
     val restaurantId: Long,
-    val observation: String? = null
+    val titulars: List<ManualScanItem>
+)
+
+/** Un titular y los códigos de comida que se le registran (BREAKFAST=Almuerzo, LUNCH=Merienda). */
+data class ManualScanItem(
+    val employeeId: Long,
+    val mealTypeCodes: List<String>
 )
 
 data class ExternalScanRequest(
@@ -232,4 +246,18 @@ data class ManualScanResponse(
     val message: String?,
     val employeeName: String?,
     val mealName: String?
+)
+
+/**
+ * Disponibilidad de comidas del empleado para el registro manual de hoy.
+ * availableCodes trae los códigos aún registrables (permitidos y no consumidos):
+ * "BREAKFAST" = Almuerzo, "LUNCH" = Merienda.
+ */
+data class MealAvailabilityResponse(
+    val employeeId: Long,
+    val allowsLunch: Boolean = false,
+    val allowsSnack: Boolean = false,
+    val hadAlmuerzo: Boolean = false,
+    val hadMerienda: Boolean = false,
+    val availableCodes: List<String> = emptyList()
 )

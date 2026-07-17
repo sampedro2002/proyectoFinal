@@ -58,25 +58,52 @@ public final class ScanDtos {
     public record TodayEntry(
             String employeeName,
             String mealName,
-            String time) {}
+            String time,
+            String method) {}
 
     /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
     public record TodayFeedResponse(
             String restaurantName,
             List<TodayEntry> entries) {}
 
-    /** Registro manual de consumo (sin huella) — solo ADMIN. */
+    /**
+     * Registro manual de consumo (sin huella) — solo ADMIN.
+     * Modelo "retira por otro": el empleado {@code proxyEmployeeId} (p. ej.
+     * Pepe) retira uno o varios titulares. Se generara una fila de
+     * {@code consumption} por cada titular x codigo de comida, con
+     * {@code method='MANUAL'}, {@code proxy_employee_id=Pepe} y
+     * {@code observation="Pepe retira de Juan"} autogenerada.
+     */
     public record ManualScanRequest(
-            @NotNull Long employeeId,
-            @NotBlank String mealTypeCode,
+            @NotNull Long proxyEmployeeId,
             @NotNull Long restaurantId,
-            String observation) {}
+            @NotNull List<ManualScanItem> titulars) {}
+
+    /** Un titular y los tipos de comida que el proxy retira por el. */
+    public record ManualScanItem(
+            @NotNull Long employeeId,
+            @NotNull List<String> mealTypeCodes) {}
 
     public record ManualScanResponse(
             String status,
             String message,
             String employeeName,
-            String mealName) {}
+            String mealName,
+            Integer created) {}
+
+    /**
+     * Disponibilidad de comidas de un empleado para el registro manual de HOY.
+     * Sirve para que las UIs (web y móvil) muestren/pre-seleccionen solo las comidas
+     * que el empleado tiene permitidas y que aún no consumió en el día.
+     * Códigos: BREAKFAST=Almuerzo (requiere allowsLunch), LUNCH=Merienda (requiere allowsSnack).
+     */
+    public record MealAvailabilityResponse(
+            Long employeeId,
+            boolean allowsLunch,
+            boolean allowsSnack,
+            boolean hadAlmuerzo,
+            boolean hadMerienda,
+            List<String> availableCodes) {}
 
     public record ExternalScanRequest(
             @NotBlank String identityCard,

@@ -220,12 +220,132 @@ function Get-DevJwtSecret {
     return $secret
 }
 
+function Get-ServerIPs {
+    # Deteccion ordenada de IPs IPv4 del host. Pensado para entornos con
+    # maquinas virtuales, donde hay varias redes activas a la vez (Hyper-V,
+    # VMware, VirtualBox, WSL, VPN, Docker, TAP...). Si simplemente se agarra
+    # la primera IPv4 no loopback (como hacia la version anterior), casi
+    # siempre se termina recomendando la IP del adaptador virtual
+    # (vEthernet / VMware / WSL) en lugar de la de la tarjeta fisica real.
+    #
+    # Orden de prioridad (menor puntaje = mejor):
+    #   0 = IP estatica (PrefixOrigin = Manual) en tarjeta fisica
+    #   1 = IP estatica en adaptador no virtual
+    #   2 = IP por DHCP en tarjeta fisica
+    #   3 = IP por DHCP en adaptador no virtual
+    #   4 = IP estatica en adaptador virtual
+    #   5 = IP por DHCP en adaptador virtual
+    #   6 = cualquier otra IPv4 no loopback
+    # Devuelve un array de strings (IPs unicas) ordenadas de mejor a peor;
+    # puede estar vacio si no hay ninguna IPv4 util.
+    $virtualHints = @(
+        'Hyper-V','VMware','VirtualBox','vEthernet','WSL','TAP-Windows',
+        'OpenVPN','WireGuard','Hamachi','ZeroTier','Docker','Tunnel','Loopback'
+    )
+
+    # Mapeo InterfaceIndex -> adaptador, para llegar a InterfaceDescription
+    # (mas fiable que InterfaceAlias para detectar adaptadores virtuales).
+    $adapters = @{}
+    try {
+        Get-NetAdapter -ErrorAction SilentlyContinue | ForEach-Object {
+            $adapters[$_.InterfaceIndex] = $_
+        }
+    } catch { }
+
+    $entries = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.IPAddress -ne '127.0.0.1' -and
+            $_.IPAddress -notlike '169.254.*' -and
+            $_.PrefixOrigin -ne 'WellKnown'
+        })
+
+    $ranked = foreach ($e in $entries) {
+        $adapter = $adapters[$e.InterfaceIndex]
+        $desc    = if ($adapter) { $adapter.InterfaceDescription } else { $e.InterfaceAlias }
+        $alias   = $e.InterfaceAlias
+
+        $isVirtual = $false
+        foreach ($h in $virtualHints) {
+            if ($desc -like "*$h*" -or $alias -like "*$h*") { $isVirtual = $true; break }
+        }
+        # En Windows se puede clasificar fisico vs virtual con dos senales:
+        #   1) Las propiedades booleanas Physical / Virtual de Get-NetAdapter
+        #      (NO existen en todas las versiones de Windows/PS 5.1; si faltan,
+        #      hay que caer a 2).
+        #   2) La decripcion del adaptador: las tarjetas fisicas reales suelen
+        #      traer 'PCI', 'USB', 'Ethernet' / el fabricante (Intel, Realtek,
+        #      Broadcom, Qualcomm), mientras que los virtuales dicen Hyper-V,
+        #      VMware, VirtualBox, TAP, etc. (ya cubiertos por $virtualHints).
+        $isPhysical = $false
+        if ($adapter) {
+            $hasPhysicalProp = $null -ne $adapter.PSObject.Properties['Physical']
+            $hasVirtualProp  = $null -ne $adapter.PSObject.Properties['Virtual']
+            if ($hasPhysicalProp -and $hasVirtualProp) {
+                $isPhysical = [bool]$adapter.Physical -and -not [bool]$adapter.Virtual
+            } else {
+                $isPhysical = -not $isVirtual
+            }
+        }
+        $isStatic = ($e.PrefixOrigin -eq 'Manual')
+
+        $score = 6
+        if     ($isStatic -and $isPhysical)    { $score = 0 }
+        elseif ($isStatic -and -not $isVirtual) { $score = 1 }
+        elseif (-not $isStatic -and $isPhysical) { $score = 2 }
+        elseif (-not $isStatic -and -not $isVirtual) { $score = 3 }
+        elseif ($isStatic)                      { $score = 4 }
+        else                                   { $score = 5 }
+
+        [PSCustomObject]@{ Ip = $e.IPAddress; Score = $score; Alias = $alias; Origin = $e.PrefixOrigin }
+    }
+
+    # Deduplica por IP (un mismo IP puede aparecer en varias interfaces) y
+    # ordena por puntaje. Devuelve solo el array de IPs.
+    $ordered = @($ranked | Sort-Object Score | ForEach-Object { $_.Ip } | Select-Object -Unique)
+    return $ordered
+}
+
 function Get-ServerIP {
-    $ip = (Get-NetIPAddress -AddressFamily IPv4 |
-        Where-Object { $_.IPAddress -ne '127.0.0.1' -and $_.PrefixOrigin -ne 'WellKnown' } |
-        Select-Object -First 1).IPAddress
-    if (-not $ip) { $ip = 'localhost' }
-    return $ip
+    # Mantiene la API original: devuelve UNA sola IP (la mejor candidata),
+    # o 'localhost' si no se detecto ninguna.
+    $ips = Get-ServerIPs
+    if ($ips.Count -gt 0) { return $ips[0] }
+    return 'localhost'
+}
+
+function Read-ServerIP {
+    # Pregunta al usuario la IP del servidor y recomienda la detectada por
+    # Get-ServerIP (estatica en tarjeta fisica tiene prioridad en entornos con
+    # VMs / varias redes). Si se presiona ENTER se acepta la recomendada; si se
+    # escribe un valor, se usa ese de forma manual. Muestra todas las IPs
+    # detectadas para que el usuario pueda elegir la correcta cuando hay varias
+    # redes activas.
+    param([string]$Default)
+
+    $recommended = if ($Default) { $Default } else { Get-ServerIP }
+    $candidates = Get-ServerIPs
+    if (-not $candidates -or $candidates.Count -eq 0) { $candidates = @($recommended) }
+    if ($candidates -notcontains $recommended) { $candidates = @($recommended) + $candidates }
+
+    Write-Host ""
+    Write-Host "  --- IP del servidor ---" -ForegroundColor Yellow
+    Write-Host "    IPs detectadas en esta maquina:" -ForegroundColor DarkGray
+    foreach ($c in $candidates) {
+        $marker = if ($c -eq $recommended) { '  (recomendada)' } else { '' }
+        Write-Host "      $c$marker" -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    Write-Host "    Si hay varias redes (VMs, VPN, Hyper-V, WSL, Docker)," -ForegroundColor DarkGray
+    Write-Host "    elige la IP que los clientes usaran para llegar a este servidor." -ForegroundColor DarkGray
+    Write-Host "    Presiona ENTER para usar la recomendada, o escribe la IP manualmente." -ForegroundColor DarkGray
+    Write-Host ""
+    do {
+        $val = Read-Host "  IP del servidor [$recommended]"
+        if ([string]::IsNullOrWhiteSpace($val)) { return $recommended }
+        $val = $val.Trim()
+        if ($val -match '^\d{1,3}(\.\d{1,3}){3}$') { return $val }
+        Write-Host "    Formato invalido. Ingresa una IPv4 (ej. 192.168.1.10) o ENTER para la recomendada." -ForegroundColor Red
+    } while ($true)
 }
 
 function Test-IsAdmin {
@@ -1071,9 +1191,16 @@ function Step-ConfigureProduction {
         BackendPort = '3000'; ServerIP = (Get-ServerIP)
     }
 
+    # Se pregunta primero la IP del servidor (muy relevante en entornos con
+    # VMs / varias redes): recomienda la estatica de la tarjeta fisica si la
+    # hay. ENTER acepta la recomendada; si el usuario escribe otra, se usa
+    # esa manualmente. El resto de la config (CORS, URL publica, resumen
+    # final) depende de esta IP, por eso va al principio del paso.
+    $prodConfig.ServerIP = Read-ServerIP -Default $prodConfig.ServerIP
+    Write-Log "IP del servidor configurada: $($prodConfig.ServerIP)" 'SUCCESS'
+
     Write-Host ""
     Write-Host "  --- Puerto ---" -ForegroundColor Yellow
-    Write-Host "    IP detectada del servidor: $($prodConfig.ServerIP)" -ForegroundColor DarkGray
     $prodConfig.BackendPort = "3000"
     Write-Log "Puerto configurado por defecto: $($prodConfig.BackendPort)" 'SUCCESS'
 

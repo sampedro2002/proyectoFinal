@@ -40,6 +40,24 @@ public class Consumption {
     @Column(length = 500)
     private String observation;
 
+    /**
+     * Origen del registro: {@link Method#FINGERPRINT} (escaneo de huella),
+     * {@link Method#MANUAL} (registro admin "retira por otro") o
+     * {@link Method#EXTERNAL} (persona externa).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "method", nullable = false, length = 12)
+    @Builder.Default
+    private Method method = Method.FINGERPRINT;
+
+    /**
+     * Empleado que retira por el titular cuando {@code method=MANUAL} ("retira
+     * por otro"). {@code null} para FINGERPRINT y EXTERNAL.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "proxy_employee_id")
+    private Employee proxyEmployee;
+
     @Column(nullable = false)
     @Builder.Default
     private boolean offline = false;

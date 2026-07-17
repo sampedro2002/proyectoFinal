@@ -1,10 +1,13 @@
 -- ============================================================================
 -- Control de Alimentos Club Castillo Amaguaña — Huella Digital (ZK9500)
--- Esquema relacional MySQL — estado final consolidado (reemplaza V1..V4:
--- incluye ya el renombre de platos Almuerzo/Merienda y la eliminación del
--- código público de empleado; el identificador del empleado es su id
--- autoincremental). Debe mantenerse idéntico en estructura a
--- RunWindowns\db\01_esquema.sql (los scripts del instalador).
+-- Esquema relacional MySQL — estado final consolidado. Es el esquema COMPLETO
+-- y único: incluye el renombre de platos Almuerzo/Merienda, la eliminación del
+-- código público de empleado (el identificador es su id autoincremental) y la
+-- distinción de método de registro (consumption.method = FINGERPRINT/MANUAL/
+-- EXTERNAL) con el proxy de "retira por otro" (consumption.proxy_employee_id),
+-- que antes vivían en una migración V3 aparte, ahora fusionada aquí.
+-- Debe mantenerse idéntico en estructura a RunWindowns\db\01_esquema.sql
+-- (los scripts del instalador).
 --
 -- Todas las tablas usan CREATE TABLE IF NOT EXISTS para poder correr esta
 -- migración contra una base de datos ya creada (por ejemplo, por los scripts
@@ -142,6 +145,12 @@ CREATE TABLE IF NOT EXISTS consumption (
     business_date   DATE NOT NULL,
     offline         BOOLEAN NOT NULL DEFAULT FALSE,
     sync_status     VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (sync_status IN ('SYNCED','PENDING','CONFLICT')),
+    -- method: origen del registro. FINGERPRINT = escaneo de huella del propio
+    -- empleado; MANUAL = registro manual "retira por otro" (proxy_employee_id
+    -- indica quién retira); EXTERNAL = persona externa creada al vuelo.
+    method          VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
+                        CHECK (method IN ('FINGERPRINT','MANUAL','EXTERNAL')),
+    proxy_employee_id BIGINT,               -- empleado que retira (solo method='MANUAL')
     meal_name       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
     observation     VARCHAR(500),
     client_uuid     VARCHAR(36) NOT NULL,
@@ -150,9 +159,12 @@ CREATE TABLE IF NOT EXISTS consumption (
     KEY idx_consumption_date (business_date),
     KEY idx_consumption_restaurant_date (restaurant_id, business_date),
     KEY idx_consumption_employee_date (employee_id, business_date),
+    KEY idx_consumption_method (method),
+    KEY idx_consumption_proxy (proxy_employee_id),
     FOREIGN KEY (employee_id) REFERENCES employee(id),
     FOREIGN KEY (restaurant_id) REFERENCES restaurant(id),
-    FOREIGN KEY (device_id) REFERENCES device(id)
+    FOREIGN KEY (device_id) REFERENCES device(id),
+    FOREIGN KEY (proxy_employee_id) REFERENCES employee(id) ON DELETE SET NULL
 );
 
 -- Nota: no hay índice único por (empleado, día): el tope de comidas por día

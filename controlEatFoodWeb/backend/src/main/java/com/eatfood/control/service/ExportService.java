@@ -60,6 +60,15 @@ public class ExportService {
     private static final Color BRAND_COLOR = new Color(33, 102, 172);   // #2166AC
     private static final Color BRAND_INK = new Color(31, 41, 55);        // #1F2937
     private static final Color BRAND_MUTED = new Color(120, 132, 148);
+
+    /** Colores de marca por metodo de registro (usados en fila de reportes). */
+    private static final Color MANUAL_BG  = new Color(254, 243, 199);  // #FEF3C7 (amarillo claro)
+    private static final Color MANUAL_INK = new Color(180, 83, 9);     // #B45309 (ambar)
+    private static final Color EXTERNAL_BG = new Color(255, 237, 213); // #FFEDD5 (naranja claro)
+    private static final Color EXTERNAL_INK = new Color(194, 65, 12); // #C2410C
+    private static final Color FINGERPRINT_BG = new Color(244, 247, 251);
+    private static final Color FINGERPRINT_INK = new Color(31, 41, 55);
+
     private static final String LOGO_PATH = "images/logo.png";
 
     /** Logo cargado una sola vez desde el classpath; null si no se encuentra. */
@@ -76,7 +85,8 @@ public class ExportService {
     }
 
     private static final String[] HEADERS =
-            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
+            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida",
+             "Tipo", "Descripción"};
     private static final String[] EMP_HEADERS =
             {"Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
@@ -92,12 +102,13 @@ public class ExportService {
         int n = 1;
         for (ConsumptionRow r : rows) {
             sb.append(n++).append(';')
-              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+              .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
               .append(csv(r.restaurantName())).append(';')
               .append(csv(r.mealName())).append(';')
-              .append(csv(r.observation())).append('\n');
+              .append(methodLabel(r.method())).append(';')
+              .append(csv(buildDescription(r))).append('\n');
         }
         sb.append("\n");
         sb.append("RESUMEN DE PLATOS").append("\n");
@@ -212,6 +223,13 @@ public class ExportService {
             }
             int rn = headerRowIdx + 1;
             int n = 1;
+            // Un estilo por método para pintar la fila con su color de marca.
+            XSSFCellStyle manualStyle   = (XSSFCellStyle) wb.createCellStyle();
+            manualStyle.setFillForegroundColor(new XSSFColor(MANUAL_BG, null));
+            manualStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            XSSFCellStyle externalStyle = (XSSFCellStyle) wb.createCellStyle();
+            externalStyle.setFillForegroundColor(new XSSFColor(EXTERNAL_BG, null));
+            externalStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
                 row.createCell(0).setCellValue(n++);
@@ -220,7 +238,16 @@ public class ExportService {
                 row.createCell(3).setCellValue(safe(r.employeeName()));
                 row.createCell(4).setCellValue(safe(r.restaurantName()));
                 row.createCell(5).setCellValue(safe(r.mealName()));
-                row.createCell(6).setCellValue(safe(r.observation()));
+                row.createCell(6).setCellValue(methodLabel(r.method()));
+                row.createCell(7).setCellValue(safe(buildDescription(r)));
+                if ("MANUAL".equals(r.method()) || "EXTERNAL".equals(r.method())) {
+                    XSSFCellStyle style = "MANUAL".equals(r.method()) ? manualStyle : externalStyle;
+                    for (int i = 0; i < HEADERS.length; i++) {
+                        Cell c = row.getCell(i);
+                        if (c == null) c = row.createCell(i);
+                        c.setCellStyle(style);
+                    }
+                }
             }
 
             // Resumen de platos
@@ -266,22 +293,22 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(HEADERS.length);
             table.setWidthPercentage(100);
-            // N° angosta; el resto reparte el ancho como antes.
-            table.setWidths(new float[]{5f, 14f, 12f, 20f, 16f, 11f, 22f});
+            table.setWidths(new float[]{5f, 12f, 10f, 18f, 15f, 10f, 10f, 20f});
             table.setHeaderRows(1);
             addHeaderRow(table, HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
             int n = 1;
             for (ConsumptionRow r : rows) {
-                Color bg = (zebra = !zebra) ? new Color(244, 247, 251) : Color.WHITE;
+                Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
                 addBodyCell(table, String.valueOf(n++), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);
                 addBodyCell(table, safe(r.restaurantName()), cf, bg);
                 addBodyCell(table, safe(r.mealName()), cf, bg);
-                addBodyCell(table, safe(r.observation()), cf, bg);
+                addBodyCell(table, methodLabel(r.method()), cf, bg);
+                addBodyCell(table, safe(buildDescription(r)), cf, bg);
             }
             doc.add(table);
             doc.add(new Paragraph(" "));
@@ -472,7 +499,8 @@ public class ExportService {
     // Reporte diario del Kiosk (con conteo de platos al final)
     // ------------------------------------------------------------------------
     private static final String[] KIOSK_HEADERS =
-            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
+            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida",
+             "Tipo", "Descripción"};
 
     public byte[] kioskDailyCsv(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
@@ -484,12 +512,13 @@ public class ExportService {
         int n = 1;
         for (ConsumptionRow r : rows) {
             sb.append(n++).append(';')
-              .append(csv(r.consumedAt() != null ? r.consumedAt().format(DT) : "")).append(';')
+              .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
               .append(csv(restaurantName)).append(';')
               .append(csv(r.mealName())).append(';')
-              .append(csv(r.observation())).append('\n');
+              .append(methodLabel(r.method())).append(';')
+              .append(csv(buildDescription(r))).append('\n');
         }
         sb.append("\n");
         sb.append("RESUMEN DE PLATOS").append("\n");
@@ -520,6 +549,12 @@ public class ExportService {
             }
             int rn = headerRowIdx + 1;
             int n = 1;
+            XSSFCellStyle kManualStyle   = (XSSFCellStyle) wb.createCellStyle();
+            kManualStyle.setFillForegroundColor(new XSSFColor(MANUAL_BG, null));
+            kManualStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            XSSFCellStyle kExternalStyle = (XSSFCellStyle) wb.createCellStyle();
+            kExternalStyle.setFillForegroundColor(new XSSFColor(EXTERNAL_BG, null));
+            kExternalStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
                 row.createCell(0).setCellValue(n++);
@@ -528,7 +563,16 @@ public class ExportService {
                 row.createCell(3).setCellValue(safe(r.employeeName()));
                 row.createCell(4).setCellValue(safe(restaurantName));
                 row.createCell(5).setCellValue(safe(r.mealName()));
-                row.createCell(6).setCellValue(safe(r.observation()));
+                row.createCell(6).setCellValue(methodLabel(r.method()));
+                row.createCell(7).setCellValue(safe(buildDescription(r)));
+                if ("MANUAL".equals(r.method()) || "EXTERNAL".equals(r.method())) {
+                    XSSFCellStyle style = "MANUAL".equals(r.method()) ? kManualStyle : kExternalStyle;
+                    for (int i = 0; i < KIOSK_HEADERS.length; i++) {
+                        Cell c = row.getCell(i);
+                        if (c == null) c = row.createCell(i);
+                        c.setCellStyle(style);
+                    }
+                }
             }
 
             rn += 1;
@@ -575,22 +619,22 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(KIOSK_HEADERS.length);
             table.setWidthPercentage(100);
-            // N° angosta; el resto reparte el ancho como antes.
-            table.setWidths(new float[]{5f, 14f, 12f, 20f, 16f, 11f, 22f});
+            table.setWidths(new float[]{5f, 12f, 10f, 18f, 15f, 10f, 10f, 20f});
             table.setHeaderRows(1);
             addHeaderRow(table, KIOSK_HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
             int n = 1;
             for (ConsumptionRow r : rows) {
-                Color bg = (zebra = !zebra) ? new Color(244, 247, 251) : Color.WHITE;
+                Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
                 addBodyCell(table, String.valueOf(n++), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);
                 addBodyCell(table, safe(restaurantName), cf, bg);
                 addBodyCell(table, safe(r.mealName()), cf, bg);
-                addBodyCell(table, safe(r.observation()), cf, bg);
+                addBodyCell(table, methodLabel(r.method()), cf, bg);
+                addBodyCell(table, safe(buildDescription(r)), cf, bg);
             }
             doc.add(table);
             doc.add(new Paragraph(" "));
@@ -708,6 +752,40 @@ public class ExportService {
 
     private String safe(String v) {
         return v == null ? "" : v.replace(";", ",");
+    }
+
+    /** Color de fondo del cuerpo según el método de registro. */
+    private Color rowColor(String method, Color fallback) {
+        if (method == null) return fallback;
+        return switch (method) {
+            case "MANUAL"   -> MANUAL_BG;
+            case "EXTERNAL" -> EXTERNAL_BG;
+            default         -> fallback;
+        };
+    }
+
+    private String methodLabel(String method) {
+        if (method == null) return "Huella";
+        return switch (method) {
+            case "MANUAL"   -> "Manual";
+            case "EXTERNAL" -> "Externo";
+            default         -> "Huella";
+        };
+    }
+
+    /** Descripción compuesta para los reportes: prioriza observation si existe;
+     *  si es MANUAL y no tiene observation (la data histórica), muestra
+     *  "X retira de Y" cuando proxyEmployeeName está disponible. */
+    private String buildDescription(ConsumptionRow r) {
+        String obs = r.observation();
+        if (obs != null && !obs.isBlank()) return obs;
+        String proxy = r.proxyEmployeeName();
+        if (proxy != null && !proxy.isBlank()
+                && r.method() != null && "MANUAL".equals(r.method())
+                && r.employeeName() != null && !r.employeeName().isBlank()) {
+            return proxy + " retira de " + r.employeeName();
+        }
+        return "";
     }
 
     /**

@@ -137,6 +137,12 @@ CREATE TABLE IF NOT EXISTS consumption (
     business_date   DATE NOT NULL,
     offline         BOOLEAN NOT NULL DEFAULT FALSE,
     sync_status     VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (sync_status IN ('SYNCED','PENDING','CONFLICT')),
+    -- method: origen del registro. FINGERPRINT = escaneo de huella del propio
+    -- empleado; MANUAL = registro manual "retira por otro" (proxy_employee_id
+    -- indica quién retira); EXTERNAL = persona externa creada al vuelo.
+    method          VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
+                        CHECK (method IN ('FINGERPRINT','MANUAL','EXTERNAL')),
+    proxy_employee_id BIGINT,               -- empleado que retira (solo method='MANUAL')
     meal_name       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
     observation     VARCHAR(500),
     client_uuid     VARCHAR(36) NOT NULL,
@@ -145,9 +151,12 @@ CREATE TABLE IF NOT EXISTS consumption (
     KEY idx_consumption_date (business_date),
     KEY idx_consumption_restaurant_date (restaurant_id, business_date),
     KEY idx_consumption_employee_date (employee_id, business_date),
+    KEY idx_consumption_method (method),
+    KEY idx_consumption_proxy (proxy_employee_id),
     FOREIGN KEY (employee_id) REFERENCES employee(id),
     FOREIGN KEY (restaurant_id) REFERENCES restaurant(id),
-    FOREIGN KEY (device_id) REFERENCES device(id)
+    FOREIGN KEY (device_id) REFERENCES device(id),
+    FOREIGN KEY (proxy_employee_id) REFERENCES employee(id) ON DELETE SET NULL
 );
 
 -- Nota: no hay índice único por (empleado, día): el tope de comidas por día

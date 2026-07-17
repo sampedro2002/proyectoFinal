@@ -4,8 +4,18 @@ import EmployeeSelect from '../components/EmployeeSelect.jsx';
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
+const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'Externo' };
+const METHOD_OPTIONS = [
+  { value: 'FINGERPRINT', label: 'Huella' },
+  { value: 'MANUAL', label: 'Manual' },
+  { value: 'EXTERNAL', label: 'Externo' },
+];
+
 export default function Reports() {
-  const [filters, setFilters] = useState({ from: today(), to: today(), restaurantId: '', employeeId: '' });
+  const [filters, setFilters] = useState({
+    from: today(), to: today(),
+    restaurantId: '', employeeId: '', method: 'ALL',
+  });
   const [rows, setRows] = useState([]);
   const [restaurants, setRestaurants] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -14,7 +24,6 @@ export default function Reports() {
   useEffect(() => {
     Promise.all([
       api.get('/restaurants').then((r) => setRestaurants(r.data)).catch(() => {}),
-
       api.get('/employees', { params: { size: 2000, status: 'ACTIVE' } }).then((r) => setEmployees(r.data.content || r.data)).catch(() => {}),
     ]);
   }, []);
@@ -23,6 +32,7 @@ export default function Reports() {
     const p = { from: filters.from, to: filters.to };
     if (filters.restaurantId) p.restaurantId = filters.restaurantId;
     if (filters.employeeId) p.employeeId = filters.employeeId;
+    if (filters.method && filters.method !== 'ALL') p.method = filters.method;
     return p;
   }
 
@@ -49,11 +59,24 @@ export default function Reports() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      // Retrasar el revoke para que Firefox no interrumpa la descarga.
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
       setError(err.response?.data?.message || 'No se pudo exportar el reporte');
     }
+  }
+
+  function rowClass(method) {
+    if (method === 'MANUAL') return 'row-manual';
+    if (method === 'EXTERNAL') return 'row-external';
+    return '';
+  }
+
+  function buildDescription(r) {
+    if (r.observation && r.observation.trim() !== '') return r.observation;
+    if (r.method === 'MANUAL' && r.proxyEmployeeName && r.employeeName) {
+      return `${r.proxyEmployeeName} retira de ${r.employeeName}`;
+    }
+    return '—';
   }
 
   return (
@@ -73,11 +96,17 @@ export default function Reports() {
             </select></div>
 
           <div className="field" style={{ flex: 1, minWidth: '220px' }}><label>Empleado</label>
-            <EmployeeSelect 
-              employees={employees} 
-              value={filters.employeeId} 
-              onChange={(id) => setFilters({ ...filters, employeeId: id })} 
+            <EmployeeSelect
+              employees={employees}
+              value={filters.employeeId}
+              onChange={(id) => setFilters({ ...filters, employeeId: id })}
             />
+          </div>
+          <div className="field"><label>Tipo</label>
+            <select value={filters.method} onChange={(e) => setFilters({ ...filters, method: e.target.value })}>
+              <option value="ALL">Todos</option>
+              {METHOD_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
           </div>
           <button onClick={search}>Consultar</button>
         </div>
@@ -93,11 +122,11 @@ export default function Reports() {
         <table>
           <thead><tr>
             <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
-            <th>Restaurante</th><th>Comida</th><th>Observación</th><th>Modo</th>
+            <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Descripción</th>
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (
-              <tr key={r.id}>
+              <tr key={r.id} className={rowClass(r.method)}>
                 <td>{i + 1}</td>
                 <td>{r.businessDate}</td>
                 <td>{new Date(r.consumedAt).toLocaleTimeString()}</td>
@@ -105,8 +134,12 @@ export default function Reports() {
                 <td>{r.employeeName}</td>
                 <td>{r.restaurantName}</td>
                 <td>{r.mealName}</td>
-                <td>{r.observation || '—'}</td>
-                <td>{r.offline ? <span className="badge off">offline</span> : <span className="badge ok">online</span>}</td>
+                <td>
+                  <span className={`badge ${r.method === 'MANUAL' ? 'manual' : r.method === 'EXTERNAL' ? 'external' : 'ok'}`}>
+                    {METHOD_LABEL[r.method] || r.method}
+                  </span>
+                </td>
+                <td>{buildDescription(r)}</td>
               </tr>
             ))}
           </tbody>

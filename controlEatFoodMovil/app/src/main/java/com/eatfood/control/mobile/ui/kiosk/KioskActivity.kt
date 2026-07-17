@@ -64,6 +64,9 @@ import com.eatfood.control.mobile.data.remote.isConnectivityError
 import com.eatfood.control.mobile.ui.ReaderStatusPill
 import com.eatfood.control.mobile.ui.theme.*
 import com.eatfood.control.mobile.util.ToneFeedback
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -103,7 +106,22 @@ private fun KioskRoot() {
 private fun ConnectPanel(onConnected: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
-    val scanApi = remember(store.serverUrl) { ApiClient.scanApi(context) }
+    // KioskActivity es singleTask: al volver desde "Acceso Admin" (p. ej. tras escanear un QR
+    // nuevo en Configuración) esta pantalla se RESUME en vez de recrearse, así que este
+    // Composable nunca vuelve a ejecutarse por su cuenta y `remember(store.serverUrl)` se queda
+    // con el cliente construido para la URL que había la primera vez que se mostró el kiosco.
+    // El admin, en cambio, sí ve la URL nueva porque su pantalla se compone de cero. Se fuerza
+    // una relectura de store.serverUrl en cada onResume para que ambos queden sincronizados.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTick by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val scanApi = remember(store.serverUrl, resumeTick) { ApiClient.scanApi(context) }
     val scope = rememberCoroutineScope()
     var user by remember { mutableStateOf("") }
     var pass by remember { mutableStateOf("") }
@@ -187,7 +205,19 @@ private fun ConnectPanel(onConnected: () -> Unit) {
 private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SessionStore.get(context) }
-    val scanApi = remember(store.serverUrl) { ApiClient.scanApi(context) }
+    // Mismo caso que ConnectPanel: KioskActivity es singleTask y esta pantalla puede
+    // quedar en pausa (no recompuesta) mientras el admin reconfigura el servidor por
+    // QR desde otra Activity. Sin esto, al volver seguiría pegándole al servidor viejo.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeTick by remember { mutableStateOf(0) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeTick++
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    val scanApi = remember(store.serverUrl, resumeTick) { ApiClient.scanApi(context) }
     val dao = remember { AppDatabase.get(context).pendingScanDao() }
     val scope = rememberCoroutineScope()
 
@@ -557,28 +587,16 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                         painter = painterResource(com.eatfood.control.mobile.R.drawable.ic_logo),
                         contentDescription = "Club Castillo Amaguaña",
                         modifier = Modifier
-                            .size(140.dp)
+                            .size(105.dp)
                             .padding(vertical = 20.dp)
                             .alpha(if (readerStatus == ReaderStatus.READY) 1f else 0.25f)
                     )
                     
                     Text(
-                        when (readerStatus) {
-                            ReaderStatus.CONNECTING -> "Conectando lector…"
-                            ReaderStatus.ERROR -> "Error: $lastError"
-                            ReaderStatus.NO_DEVICE -> "Conecte el lector por USB-OTG"
-                            ReaderStatus.DISCONNECTED -> "Reconectando…"
-                            else -> "Coloque su dedo en el lector…"
-                        },
-                        style = MaterialTheme.typography.headlineSmall,
+                        "Coloque su dedo en el lector...",
+                        style = MaterialTheme.typography.titleLarge,
                         textAlign = TextAlign.Center,
                         color = Primary
-                    )
-                    Text(
-                        "Asegúrese de colocar la huella completa",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Muted,
-                        modifier = Modifier.padding(top = 8.dp)
                     )
                 } else {
                     // Pantalla de Resultado (Éxito o Error)
@@ -649,7 +667,72 @@ private fun TodayFeedPanel(
     downloading: Boolean,
     modifier: Modifier = Modifier
 ) {
+    var feedMethod by remember { mutableStateOf("ALL") } // ALL, MANUAL, FINGERPRINT
+    val filteredFeed = if (feedMethod == "ALL") feed else feed.filter { it.method == feedMethod }
+
     Column(modifier.fillMaxWidth()) {
+        // Barra de controles (Descarga y Filtros)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Sección Descarga
+            Row(
+                Modifier.border(1.dp, SurfaceVariant, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.background(SurfaceVariant).clickable(enabled = !downloading) { onDownload() }.padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    if (downloading) {
+                        CircularProgressIndicator(Modifier.size(16.dp), color = OnSurface, strokeWidth = 2.dp)
+                    } else {
+                        Text("📥", fontSize = 14.sp)
+                    }
+                }
+                var expanded by remember { mutableStateOf(false) }
+                Box {
+                    Row(
+                        modifier = Modifier.clickable { expanded = true }.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(reportFormat.uppercase(), color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(4.dp))
+                        Text("▼", color = OnSurface, fontSize = 10.sp)
+                    }
+                    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                        DropdownMenuItem(text = { Text("PDF") }, onClick = { onFormatChange("pdf"); expanded = false })
+                        DropdownMenuItem(text = { Text("Excel") }, onClick = { onFormatChange("excel"); expanded = false })
+                        DropdownMenuItem(text = { Text("CSV") }, onClick = { onFormatChange("csv"); expanded = false })
+                    }
+                }
+            }
+
+            // Sección Filtros
+            Row(
+                Modifier.border(1.dp, SurfaceVariant, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp)),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(if (feedMethod == "MANUAL") OnSurface else Color.Transparent)
+                        .clickable { feedMethod = if (feedMethod == "MANUAL") "ALL" else "MANUAL" }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("MANUAL", color = if (feedMethod == "MANUAL") MaterialTheme.colorScheme.surface else OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Box(
+                    modifier = Modifier
+                        .background(if (feedMethod == "FINGERPRINT") OnSurface else Color.Transparent)
+                        .clickable { feedMethod = if (feedMethod == "FINGERPRINT") "ALL" else "FINGERPRINT" }
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text("HUELLAS", color = if (feedMethod == "FINGERPRINT") MaterialTheme.colorScheme.surface else OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // Título de sección con líneas (clickeable para colapsar/expandir)
         Row(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).clickable { onToggle() }.padding(vertical = 2.dp),
@@ -684,18 +767,18 @@ private fun TodayFeedPanel(
 
                     HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
 
-                    if (feed.isEmpty()) {
+                    if (filteredFeed.isEmpty()) {
                         Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) {
                             Text("No hay registros hoy", color = Muted, style = MaterialTheme.typography.bodySmall)
                         }
                     } else {
                         LazyColumn(Modifier.heightIn(max = 180.dp)) {
-                            itemsIndexed(feed) { index, e ->
+                            itemsIndexed(filteredFeed) { index, e ->
                                 Row(
                                     Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("${feed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
+                                    Text("${filteredFeed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
                                     Text(e.employeeName ?: "—", Modifier.weight(1f), color = OnSurface, fontSize = 13.sp, maxLines = 1)
                                     Text(
                                         e.time?.substringAfter('T')?.take(5) ?: "--:--",
@@ -714,7 +797,7 @@ private fun TodayFeedPanel(
                         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("Total: ${feed.size}", color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text("Total: ${filteredFeed.size}", color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         if (queued > 0) {
                             Text("Pendientes: $queued", color = Warning, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
@@ -722,65 +805,6 @@ private fun TodayFeedPanel(
                         val statusText = if (apiError) "○ Error servidor" else if (online) "● En línea" else "○ Offline"
                         val statusColor = if (apiError) ErrorRed else if (online) Success else Warning
                         Text(statusText, color = statusColor, fontSize = 12.sp)
-                    }
-
-                    HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
-
-                    // Sección de descarga de reporte
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        // Selector de formato
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("Formato:", color = OnSurface, fontSize = 12.sp, modifier = Modifier.padding(end = 8.dp))
-                            var expanded by remember { mutableStateOf(false) }
-                            Box {
-                                Surface(
-                                    modifier = Modifier.clickable { expanded = true },
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = SurfaceVariant
-                                ) {
-                                    Row(
-                                        Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(reportFormat.uppercase(), color = OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                                        Spacer(Modifier.width(4.dp))
-                                        Text("▼", color = OnSurface, fontSize = 10.sp)
-                                    }
-                                }
-                                DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                    DropdownMenuItem(text = { Text("PDF") }, onClick = { onFormatChange("pdf"); expanded = false })
-                                    DropdownMenuItem(text = { Text("Excel") }, onClick = { onFormatChange("excel"); expanded = false })
-                                    DropdownMenuItem(text = { Text("CSV") }, onClick = { onFormatChange("csv"); expanded = false })
-                                }
-                            }
-                        }
-
-                        // Botón de descarga
-                        Button(
-                            onClick = onDownload,
-                            enabled = !downloading,
-                            colors = ButtonDefaults.buttonColors(containerColor = Success),
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp)
-                        ) {
-                            if (downloading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    color = Color.White,
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(Modifier.width(8.dp))
-                            }
-                            Text(
-                                if (downloading) "Generando..." else "📥 Descargar",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
                     }
                 }
             }
