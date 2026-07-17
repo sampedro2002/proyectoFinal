@@ -426,7 +426,7 @@ function Test-MavenInstalled {
 # Prod -> siempre remoto: se conecta directo a un servidor, sin Docker
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-# --- Helpers del contenedor Docker 'control-mysql' (MySQL 5.6, solo modo Pruebas) ---
+# --- Helpers del contenedor Docker 'control-mysql' (MySQL 8.0, solo modo Pruebas) ---
 function Get-ControlMysqlImage {
     # Devuelve el tag de imagen del contenedor 'control-mysql' (exista corriendo o
     # detenido), o $null si no existe / docker no responde.
@@ -453,36 +453,30 @@ function Test-MySqlAuth {
 
 function Wait-MySqlReady {
     param([hashtable]$DbConfig, [int]$MaxSeconds = 90)
-    Write-Log "Esperando a que MySQL 5.6 acepte conexiones (el primer arranque tarda ~15-30s)..."
+    Write-Log "Esperando a que MySQL 8 acepte conexiones (el primer arranque tarda ~20-60s)..."
     $deadline = (Get-Date).AddSeconds($MaxSeconds)
     while ((Get-Date) -lt $deadline) {
-        if (Test-MySqlAuth -DbConfig $DbConfig) { Write-Log "MySQL 5.6 listo para aceptar conexiones." 'SUCCESS'; return $true }
+        if (Test-MySqlAuth -DbConfig $DbConfig) { Write-Log "MySQL 8 listo para aceptar conexiones." 'SUCCESS'; return $true }
         Start-Sleep -Seconds 3
     }
     return $false
 }
 
-function New-ControlMysql56Container {
+function New-ControlMysql8Container {
     param([hashtable]$DbConfig)
-    # Se usa el tag "mysql:5.6" (que resuelve a 5.6.51, la ultima de la serie 5.6) y
-    # NO "mysql:5.6.26": el tag de parche 5.6.26 en Docker Hub quedo con un manifest
-    # schema v1 legacy que Docker moderno (containerd v2.1+) ya NO puede descargar
-    # ("media type ...manifest.v1+prettyjws is no longer supported"). Para probar
-    # compatibilidad da igual el parche: 5.6.51 y 5.6.26 comparten exactamente las
-    # mismas features de SQL; el servidor de produccion real sigue siendo 5.6.26.
-    #
-    # Ademas la imagen mysql:5.6 usa latin1 por defecto (a diferencia de mysql:8.0 que
-    # ya traia utf8mb4). Se fuerza utf8mb4 a nivel de servidor para que la BD y las
-    # tablas que crea Flyway soporten acentos/enies correctamente.
-    Write-Log "Descargando imagen MySQL 5.6 (5.6.51, serie 5.6)..."
-    & docker pull mysql:5.6 2>&1 | Out-Null
-    Write-Log "Creando contenedor Docker MySQL 5.6..."
+    # Tag "mysql:8.0" (serie LTS de la 8): el sistema esta homologado a MySQL 8.
+    # La imagen ya usa utf8mb4 por defecto, pero se fija la collation
+    # utf8mb4_unicode_ci explicitamente para que coincida con la que usan los
+    # scripts de RunWindowns\db y el aprovisionamiento de MySQL local.
+    Write-Log "Descargando imagen MySQL 8.0..."
+    & docker pull mysql:8.0 2>&1 | Out-Null
+    Write-Log "Creando contenedor Docker MySQL 8.0..."
     & docker run --name control-mysql -p 3306:3306 `
         -e "MYSQL_ROOT_PASSWORD=$($DbConfig.Password)" `
         -e "MYSQL_DATABASE=$($DbConfig.Name)" `
         -e "MYSQL_USER=$($DbConfig.User)" `
         -e "MYSQL_PASSWORD=$($DbConfig.Password)" `
-        -d mysql:5.6 `
+        -d mysql:8.0 `
         --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log "Error al crear contenedor Docker." 'ERROR'; return $false }
     Write-Log "Contenedor Docker creado." 'SUCCESS'
@@ -492,37 +486,37 @@ function New-ControlMysql56Container {
     return $true
 }
 
-function Ensure-ControlMysql56 {
-    # Deja listo un contenedor 'control-mysql' basado en mysql:5.6 con la BD/usuario/
+function Ensure-ControlMysql8 {
+    # Deja listo un contenedor 'control-mysql' basado en mysql:8.0 con la BD/usuario/
     # password dados. Maneja tres casos:
     #   - No existe             -> lo crea.
-    #   - Existe con otra imagen (p.ej. una vieja mysql:8.0) -> avisa y ofrece recrearlo
+    #   - Existe con otra imagen (p.ej. la vieja mysql:5.6) -> avisa y ofrece recrearlo
     #     (borra los datos del contenedor viejo; es un entorno de pruebas local).
-    #   - Existe en mysql:5.6   -> lo inicia; si la password de 'admin' no valida, ofrece
+    #   - Existe en mysql:8     -> lo inicia; si la password de 'admin' no valida, ofrece
     #     recrearlo desde cero con la password ingresada.
     param([hashtable]$DbConfig)
 
     $img = Get-ControlMysqlImage
-    if (-not $img) { return (New-ControlMysql56Container -DbConfig $DbConfig) }
+    if (-not $img) { return (New-ControlMysql8Container -DbConfig $DbConfig) }
 
-    if ($img -notmatch '^mysql:5\.6') {
-        Write-Log "El contenedor 'control-mysql' usa la imagen '$img', no MySQL 5.6." 'WARN'
-        Write-Host "    Para probar contra MySQL 5.6 hay que recrearlo. Esto BORRA los datos de" -ForegroundColor Yellow
-        Write-Host "    ese contenedor viejo (es un entorno de pruebas local)." -ForegroundColor Yellow
-        if ((Read-Host "  Recrear 'control-mysql' como MySQL 5.6? (s/n, ENTER = s)") -eq 'n') {
+    if ($img -notmatch '^mysql:8') {
+        Write-Log "El contenedor 'control-mysql' usa la imagen '$img', no MySQL 8." 'WARN'
+        Write-Host "    El sistema esta homologado a MySQL 8: hay que recrearlo. Esto BORRA los" -ForegroundColor Yellow
+        Write-Host "    datos de ese contenedor viejo (es un entorno de pruebas local)." -ForegroundColor Yellow
+        if ((Read-Host "  Recrear 'control-mysql' como MySQL 8.0? (s/n, ENTER = s)") -eq 'n') {
             Write-Log "Se conserva el contenedor '$img'; la app se conectara a esa version." 'WARN'
             & docker start control-mysql 2>&1 | Out-Null
             return $true
         }
         & docker rm -f control-mysql 2>&1 | Out-Null
-        return (New-ControlMysql56Container -DbConfig $DbConfig)
+        return (New-ControlMysql8Container -DbConfig $DbConfig)
     }
 
-    Write-Log "Contenedor 'control-mysql' (MySQL 5.6) ya existe. Iniciandolo..."
+    Write-Log "Contenedor 'control-mysql' (MySQL 8) ya existe. Iniciandolo..."
     & docker start control-mysql 2>&1 | Out-Null
     if (Wait-MySqlReady -DbConfig $DbConfig) { return $true }
 
-    Write-Log "El contenedor 5.6 existe pero la password del usuario '$($DbConfig.User)' no coincide con la ingresada." 'WARN'
+    Write-Log "El contenedor MySQL 8 existe pero la password del usuario '$($DbConfig.User)' no coincide con la ingresada." 'WARN'
     Write-Host "    (La password del usuario se fija al crear el contenedor y no se puede cambiar" -ForegroundColor Yellow
     Write-Host "     con variables de entorno al reiniciarlo.)" -ForegroundColor Yellow
     if ((Read-Host "  Recrear el contenedor desde cero con la password ingresada? (s/n, ENTER = s)") -eq 'n') {
@@ -530,7 +524,7 @@ function Ensure-ControlMysql56 {
         return $true
     }
     & docker rm -f control-mysql 2>&1 | Out-Null
-    return (New-ControlMysql56Container -DbConfig $DbConfig)
+    return (New-ControlMysql8Container -DbConfig $DbConfig)
 }
 
 # ---------------------------------------------------------------------------
@@ -558,7 +552,7 @@ function Invoke-MySqlClient {
         "--port=$($DbConfig.Port)",
         "--user=$($DbConfig.User)",
         "--password=$($DbConfig.Password)",
-        '--default-character-set=utf8'
+        '--default-character-set=utf8mb4'
     )
     if ($Silent)   { $mysqlArgs += @('-N', '-s') }
     if ($Query)    { $mysqlArgs += @('-e', $Query) }
@@ -664,22 +658,22 @@ function Step-ConfigureDatabase {
         $dbConfig.Type = 'local'
 
         # Se consulta la imagen del contenedor 'control-mysql' ANTES de mirar el puerto.
-        # Un contenedor viejo (p. ej. mysql:8.0) tambien abre el 3306, y antes eso hacia
-        # que se asumiera "MySQL OK" y se corriera contra la version equivocada, dando
-        # luego "Access denied for user 'admin'". Ahora se detecta y se ofrece recrearlo.
+        # Un contenedor viejo (p. ej. la antigua mysql:5.6) tambien abre el 3306, y antes
+        # eso hacia que se asumiera "MySQL OK" y se corriera contra la version equivocada,
+        # dando luego "Access denied for user 'admin'". Ahora se detecta y se ofrece recrearlo.
         $controlImage = if (Test-CommandExists 'docker') { Get-ControlMysqlImage } else { $null }
         $portOpen = Test-TcpPort -HostName 'localhost' -Port 3306
 
-        if ($controlImage -and ($controlImage -notmatch '^mysql:5\.6')) {
-            Write-Log "Contenedor 'control-mysql' con imagen '$controlImage' (no es MySQL 5.6)." 'WARN'
+        if ($controlImage -and ($controlImage -notmatch '^mysql:8')) {
+            Write-Log "Contenedor 'control-mysql' con imagen '$controlImage' (no es MySQL 8)." 'WARN'
             $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
             $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
-            Ensure-ControlMysql56 -DbConfig $dbConfig | Out-Null
+            Ensure-ControlMysql8 -DbConfig $dbConfig | Out-Null
         }
         elseif ($portOpen) {
             Write-Log "Se detecto un servicio en el puerto 3306 (MySQL ya esta corriendo)." 'SUCCESS'
-            if ($controlImage -match '^mysql:5\.6') {
-                Write-Log "Contenedor Docker 'control-mysql' (MySQL 5.6) en ejecucion." 'SUCCESS'
+            if ($controlImage -match '^mysql:8') {
+                Write-Log "Contenedor Docker 'control-mysql' (MySQL 8) en ejecucion." 'SUCCESS'
             } else {
                 Write-Log "Asumiendo MySQL local/externo. Verifica que la BD y el usuario existan." 'WARN'
             }
@@ -688,7 +682,7 @@ function Step-ConfigureDatabase {
         }
         else {
             Show-Menu "Como deseas levantar MySQL local?" @(
-                "Docker (contenedor control-mysql, MySQL 5.6)",
+                "Docker (contenedor control-mysql, MySQL 8.0)",
                 "MySQL instalado localmente (requiere mysql en PATH)",
                 "Omitir (lo configuro despues)"
             )
@@ -702,7 +696,7 @@ function Step-ConfigureDatabase {
                     }
                     $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
                     $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
-                    Ensure-ControlMysql56 -DbConfig $dbConfig | Out-Null
+                    Ensure-ControlMysql8 -DbConfig $dbConfig | Out-Null
                 }
                 2 {
                     if (-not (Test-CommandExists 'mysql')) {
@@ -713,10 +707,11 @@ function Step-ConfigureDatabase {
                         $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
                         $rootPass = Read-Host "  Contrasena de root en MySQL local (ENTER para omitir)"
                         if ($rootPass) {
-                            # MySQL 5.6 no soporta "CREATE USER IF NOT EXISTS" (llego en 5.7.6).
-                        # En 5.6 el idioma clasico es GRANT ... IDENTIFIED BY, que crea el
-                        # usuario si no existe y fija su password en una sola sentencia.
-                        & mysql -u root -p"$rootPass" -e "CREATE DATABASE IF NOT EXISTS $($dbConfig.Name) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; GRANT ALL PRIVILEGES ON $($dbConfig.Name).* TO '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; FLUSH PRIVILEGES;" 2>&1 | Out-Null
+                            # Sintaxis de MySQL 8: "GRANT ... IDENTIFIED BY" (idioma de 5.6)
+                            # fue eliminado; el usuario se crea/actualiza con CREATE USER IF
+                            # NOT EXISTS + ALTER USER (fija la password aunque ya existiera)
+                            # y el GRANT va aparte.
+                            & mysql -u root -p"$rootPass" -e "CREATE DATABASE IF NOT EXISTS $($dbConfig.Name) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; ALTER USER '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; GRANT ALL PRIVILEGES ON $($dbConfig.Name).* TO '$($dbConfig.User)'@'localhost'; FLUSH PRIVILEGES;" 2>&1 | Out-Null
                             if ($LASTEXITCODE -eq 0) { Write-Log "Base de datos y usuario configurados localmente." 'SUCCESS' }
                             else { Write-Log "Error al configurar MySQL local." 'ERROR' }
                         }
@@ -725,7 +720,9 @@ function Step-ConfigureDatabase {
                 3 { Write-Log "Configuracion de DB omitida. Configurala manualmente." 'WARN' }
             }
         }
-        $dbConfig.Url = "jdbc:mysql://localhost:$($dbConfig.Port)/$($dbConfig.Name)?createDatabaseIfNotExist=true&serverTimezone=America/Guayaquil"
+        # allowPublicKeyRetrieval=true: necesario con la autenticacion por defecto
+        # de MySQL 8 (caching_sha2_password) cuando la conexion no usa SSL.
+        $dbConfig.Url = "jdbc:mysql://localhost:$($dbConfig.Port)/$($dbConfig.Name)?createDatabaseIfNotExist=true&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
     }
     else {
         # ============ REMOTO (Pruebas -> remoto, o siempre en Produccion) ============
@@ -786,7 +783,7 @@ function Step-ConfigureDatabase {
         } until ($connSuccess)
 
         # Cifrado de la conexion a MySQL: se pregunta SIEMPRE que la conexion sea
-        # remota (tanto en Pruebas como en Produccion). Muchos servidores MySQL 5.6
+        # remota (tanto en Pruebas como en Produccion). Muchos servidores MySQL
         # no tienen TLS configurado, asi que el usuario debe poder indicar 'n'.
         Write-Host ""
         Write-Host "  --- Cifrado de la conexion a MySQL (SSL/TLS) ---" -ForegroundColor Yellow
