@@ -116,8 +116,8 @@ class ScanServiceIdempotencyTest {
 
     @Test
     void scan_withDifferentClientUuids_createsSeparateConsumptions() {
-        // Primer escaneo: Desayuno. El empleado ya no tiene mas comidas disponibles hoy
-        // salvo Almuerzo, que tambien se agota en el segundo escaneo -- confirma que dos
+        // Primer escaneo: Almuerzo. El empleado ya no tiene mas comidas disponibles hoy
+        // salvo Merienda, que tambien se agota en el segundo escaneo -- confirma que dos
         // clientUuid DISTINTOS no se tratan como duplicados entre si.
         ScanResponse first = scanService.scan(requestWith(UUID.randomUUID()));
         ScanResponse second = scanService.scan(requestWith(UUID.randomUUID()));

@@ -26,6 +26,7 @@ import com.eatfood.control.mobile.data.model.*
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.data.prefs.SessionStore
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -54,8 +55,8 @@ fun DashboardScreen() {
         Spacer(Modifier.height(12.dp))
         val cards = listOf(
             "Consumos de hoy" to s.totalConsumptions.toString(),
-            "Desayunos" to s.desayunoCount.toString(),
             "Almuerzos" to s.almuerzoCount.toString(),
+            "Meriendas" to s.meriendaCount.toString(),
             "Empleados esperados" to s.expectedEmployees.toString(),
             "Consumieron" to s.employeesConsumed.toString(),
             "Pendientes" to s.employeesPending.toString(),
@@ -259,9 +260,9 @@ private fun EmployeeDialog(
                 OutlinedTextField(identity, { identity = it }, label = { Text(if (isPassport) "Pasaporte" else "Cédula") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(allowsLunch, { allowsLunch = it }); Text("Desayuno")
+                    Switch(allowsLunch, { allowsLunch = it }); Text("Almuerzo")
                     Spacer(Modifier.width(16.dp))
-                    Switch(allowsSnack, { allowsSnack = it }); Text("Almuerzo")
+                    Switch(allowsSnack, { allowsSnack = it }); Text("Merienda")
                 }
                 OutlinedTextField(observation, { observation = it }, label = { Text("Observación (opcional)") },
                     modifier = Modifier.fillMaxWidth())
@@ -315,6 +316,7 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     var status by remember { mutableStateOf("idle") }
     // Muestras ya capturadas del enrolamiento (0..3); -1 = aún inicializando el lector.
     var sample by remember { mutableStateOf(-1) }
+    var openMsg by remember { mutableStateOf("Iniciando lector…") }
 
     suspend fun reload() { fps = runCatching { api.fingerprints(employee.id) }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
@@ -363,28 +365,56 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                     Button(
                         enabled = status == "idle" && fps.size < 3,
                         onClick = {
-                            status = "capturing"; sample = -1
-                            val reader = BiometricReader.create(context)
+                            status = "capturing"; sample = -1; openMsg = "Iniciando lector…"
                             scope.launch {
+                                var reader: BiometricReader? = null
                                 try {
-                                    reader.open { }
+                                    // El primer open() tras enchufar el lector es inestable
+                                    // (diálogo de permiso USB en trámite, inicialización del
+                                    // SDK ZKFinger): el kiosco lo absorbe reintentando en
+                                    // bucle cada 5 s; aquí replicamos esa resiliencia con
+                                    // varios intentos en vez de rendirnos al primero.
+                                    var lastError: Exception? = null
+                                    for (attempt in 1..3) {
+                                        openMsg = if (attempt == 1) "Iniciando lector…"
+                                                  else "Reintentando conexión ($attempt/3)…"
+                                        val r = BiometricReader.create(context)
+                                        try {
+                                            r.open { }
+                                            reader = r
+                                            break
+                                        } catch (e: kotlinx.coroutines.CancellationException) {
+                                            r.close(); throw e
+                                        } catch (e: Exception) {
+                                            r.close()
+                                            lastError = e
+                                            if (attempt < 3) delay(2_000)
+                                        }
+                                    }
+                                    val rdr = reader
+                                        ?: throw (lastError ?: Exception("No se pudo abrir el lector"))
                                     // 3 muestras del mismo dedo fusionadas en una plantilla,
                                     // igual que el enrolamiento de la web.
-                                    val template = reader.captureForEnroll { s, _ -> sample = s }
-                                    reader.close()
+                                    val template = rdr.captureForEnroll { s, _ -> sample = s }
+                                    rdr.close()
                                     api.enroll(EnrollRequest(employee.id, fingerIndex, template))
                                     snackbar.showSnackbar("Huella registrada correctamente.")
                                     reload()
+                                } catch (e: kotlinx.coroutines.CancellationException) {
+                                    throw e
                                 } catch (e: Exception) {
-                                    reader.close(); snackbar.showSnackbar(e.apiMessage("Error al registrar"))
-                                } finally { status = "idle"; sample = -1 }
+                                    snackbar.showSnackbar(e.apiMessage("Error al registrar"))
+                                } finally {
+                                    runCatching { reader?.close() }
+                                    status = "idle"; sample = -1
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(when {
                             fps.size >= 3 -> "Máximo 3 huellas"
-                            status == "capturing" && sample < 0 -> "Iniciando lector…"
+                            status == "capturing" && sample < 0 -> openMsg
                             status == "capturing" && sample == 0 -> "Coloque el dedo… (0/3)"
                             status == "capturing" && sample >= 3 -> "Guardando… (3/3)"
                             status == "capturing" -> "Muestra $sample/3 registrada — levante y coloque de nuevo"
@@ -799,7 +829,7 @@ fun SchedulesScreen() {
     }
 }
 
-// ───────────────────────────── Almuerzos Extra ───────────────────────────────
+// ───────────────────────────── Platos Extra ─────────────────────────────────
 @Composable
 fun ExtraMealsScreen() {
     val context = LocalContext.current
@@ -822,9 +852,9 @@ fun ExtraMealsScreen() {
     var extCard by remember { mutableStateOf("") }
     var isPassport by remember { mutableStateOf(false) }
 
-    // Comidas a registrar (BREAKFAST / LUNCH)
-    var desayuno by remember { mutableStateOf(false) }
+    // Comidas a registrar (BREAKFAST = Almuerzo / LUNCH = Merienda)
     var almuerzo by remember { mutableStateOf(false) }
+    var merienda by remember { mutableStateOf(false) }
     var observation by remember { mutableStateOf("") }
 
     var busy by remember { mutableStateOf(false) }
@@ -849,7 +879,7 @@ fun ExtraMealsScreen() {
             Modifier.padding(padding).fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Gestión de Almuerzos Extra", style = MaterialTheme.typography.titleLarge)
+            Text("Gestión de Platos Extra", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(16.dp))
 
             if (!isEditing) {
@@ -981,11 +1011,11 @@ fun ExtraMealsScreen() {
                         Spacer(Modifier.height(16.dp))
                         Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(desayuno, { desayuno = it })
-                            Text("Desayuno", Modifier.clickable { desayuno = !desayuno })
-                            Spacer(Modifier.width(20.dp))
                             Checkbox(almuerzo, { almuerzo = it })
                             Text("Almuerzo", Modifier.clickable { almuerzo = !almuerzo })
+                            Spacer(Modifier.width(20.dp))
+                            Checkbox(merienda, { merienda = it })
+                            Text("Merienda", Modifier.clickable { merienda = !merienda })
                         }
 
                         Spacer(Modifier.height(12.dp))
@@ -996,7 +1026,7 @@ fun ExtraMealsScreen() {
                         )
 
                         Spacer(Modifier.height(20.dp))
-                        val canSubmit = !busy && (desayuno || almuerzo) &&
+                        val canSubmit = !busy && (almuerzo || merienda) &&
                             selectedRestaurantId != null &&
                             if (isExternal) extName.isNotBlank() && extCard.isNotBlank()
                             else selectedEmployee != null
@@ -1012,8 +1042,8 @@ fun ExtraMealsScreen() {
                                 busy = true
                                 scope.launch {
                                     val codes = mutableListOf<String>()
-                                    if (desayuno) codes.add("BREAKFAST")
-                                    if (almuerzo) codes.add("LUNCH")
+                                    if (almuerzo) codes.add("BREAKFAST")
+                                    if (merienda) codes.add("LUNCH")
                                     val res = mutableListOf<String>()
                                     val restaurantId = selectedRestaurantId!!
                                     val obs = observation.trim().ifBlank { null }
@@ -1038,7 +1068,7 @@ fun ExtraMealsScreen() {
                                     if (res.none { it.contains("Error") }) {
                                         snackbar.showSnackbar("Registros guardados con éxito")
                                         isEditing = false
-                                        desayuno = false; almuerzo = false
+                                        almuerzo = false; merienda = false
                                         selectedEmployee = null
                                         extName = ""; extCard = ""; observation = ""
                                     }

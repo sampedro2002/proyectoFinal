@@ -9,8 +9,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Control de Consumo de Alimentos',
-        short_name: 'EatFood',
+        name: 'Control de Alimentos Club Castillo Amaguaña',
+        short_name: 'Club Castillo',
         description: 'Control de consumo por huella digital (ZK9500)',
         theme_color: '#2166ac',
         background_color: '#0f172a',

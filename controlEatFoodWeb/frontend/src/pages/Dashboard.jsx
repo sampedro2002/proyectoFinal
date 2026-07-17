@@ -55,8 +55,8 @@ export default function Dashboard() {
       <h2 style={{ margin: 0 }}>Estadísticas de hoy</h2>
       <div className="grid cols-3">
         <Stat value={stats.totalConsumptions} label="Consumos de hoy" />
-        <Stat value={stats.desayunoCount} label="Desayunos" />
         <Stat value={stats.almuerzoCount} label="Almuerzos" />
+        <Stat value={stats.meriendaCount} label="Meriendas" />
       </div>
       <div className="grid cols-4">
         <Stat value={stats.expectedEmployees} label="Empleados esperados" />

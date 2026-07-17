@@ -20,8 +20,8 @@ public final class ReportDtos {
     public record DashboardStats(
             LocalDate date,
             long totalConsumptions,
-            long desayunoCount,
             long almuerzoCount,
+            long meriendaCount,
             long expectedEmployees,
             long employeesConsumed,
             long employeesPending,

@@ -311,7 +311,7 @@ export default function Employees() {
           <thead>
             <tr>
               <th>Código</th><th>Cédula</th><th>Nombre</th>
-              <th>Desayuno</th><th>Almuerzo</th><th>Huellas</th><th>Estado</th><th></th>
+              <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -404,12 +404,12 @@ export default function Employees() {
                   <label>
                     <input type="checkbox" checked={form.allowsLunch}
                       onChange={e => setForm({ ...form, allowsLunch: e.target.checked })} />
-                    {' '}Desayuno
+                    {' '}Almuerzo
                   </label>
                   <label>
                     <input type="checkbox" checked={form.allowsSnack}
                       onChange={e => setForm({ ...form, allowsSnack: e.target.checked })} />
-                    {' '}Almuerzo
+                    {' '}Merienda
                   </label>
                 </div>
 

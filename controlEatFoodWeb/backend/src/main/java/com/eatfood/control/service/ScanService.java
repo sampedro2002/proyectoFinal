@@ -92,7 +92,7 @@ public class ScanService {
 
         log.debug("[SCAN] Empleado identificado: id={}, nombre='{}'", employee.getId(), employee.getFullName());
 
-        // 2) Determinar la comida a registrar basada en el orden (Desayuno/Almuerzo).
+        // 2) Determinar la comida a registrar basada en el orden (Almuerzo/Merienda).
         // Se convierte SIEMPRE a BUSINESS_ZONE antes de leer fecha/hora: `when` puede traer
         // cualquier offset (dispositivo offline con reloj/zona distinta, backend con TZ de
         // JVM distinta a Ecuador), y calcular la fecha/hora de negocio con el offset "tal
@@ -165,20 +165,20 @@ public class ScanService {
         }
 
         // Se decide por las comidas YA registradas hoy (no solo por el conteo), para que un
-        // empleado autorizado únicamente a almuerzo (allowsLunch=false, allowsSnack=true) no
-        // reciba "Desayuno" en su primer escaneo y luego otro "Almuerzo" en el segundo: su
+        // empleado autorizado únicamente al segundo plato (allowsLunch=false, allowsSnack=true)
+        // no reciba "Almuerzo" en su primer escaneo y luego otra "Merienda" en el segundo: su
         // tope diario es 1 comida, no 2.
-        // Nota de nomenclatura: allows_lunch gobierna el "Desayuno" (primer plato) y
-        // allows_snack el "Almuerzo" (segundo plato); son los dos únicos platos del sistema.
+        // Nota de nomenclatura: allows_lunch gobierna el "Almuerzo" (primer plato) y
+        // allows_snack la "Merienda" (segundo plato); son los dos únicos platos del sistema.
         List<String> consumedToday = consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), date);
-        boolean hadBreakfast = consumedToday.contains("Desayuno");
-        boolean hadLunch = consumedToday.contains("Almuerzo");
+        boolean hadBreakfast = consumedToday.contains("Almuerzo");
+        boolean hadLunch = consumedToday.contains("Merienda");
 
         if (!hadBreakfast && employee.isAllowsLunch()) {
-            return MealSelection.ok("Desayuno");
+            return MealSelection.ok("Almuerzo");
         }
         if (!hadLunch && employee.effectiveSnack()) {
-            return MealSelection.ok("Almuerzo");
+            return MealSelection.ok("Merienda");
         }
         if (consumedToday.isEmpty()) {
             return MealSelection.fail("NOT_ALLOWED", "CONSUMO NO PERMITIDO", "NOT_ALLOWED");
@@ -234,13 +234,13 @@ public class ScanService {
                 })
                 .toList();
 
-        long desayunos = consumptions.stream().filter(c -> "Desayuno".equals(c.getMealName())).count();
         long almuerzos = consumptions.stream().filter(c -> "Almuerzo".equals(c.getMealName())).count();
-        long general = consumptions.stream().filter(c -> !"Desayuno".equals(c.getMealName()) && !"Almuerzo".equals(c.getMealName())).count();
+        long meriendas = consumptions.stream().filter(c -> "Merienda".equals(c.getMealName())).count();
+        long general = consumptions.stream().filter(c -> !"Almuerzo".equals(c.getMealName()) && !"Merienda".equals(c.getMealName())).count();
 
         Map<String, Long> plateCounts = new LinkedHashMap<>();
-        plateCounts.put("Desayunos", desayunos);
         plateCounts.put("Almuerzos", almuerzos);
+        plateCounts.put("Meriendas", meriendas);
         if (general > 0) plateCounts.put("Otros", general);
 
         return new KioskReport(
@@ -297,14 +297,15 @@ public class ScanService {
 
     /**
      * Traduce el código de tipo de comida al nombre usado en los reportes.
-     * Solo existen dos platos: Desayuno (BREAKFAST) y Almuerzo (LUNCH).
-     * SNACK se acepta por compatibilidad con clientes antiguos y equivale a Almuerzo.
+     * Solo existen dos platos: Almuerzo (BREAKFAST, 1er plato) y Merienda (LUNCH, 2º plato).
+     * Los códigos se conservan por compatibilidad con los clientes existentes;
+     * SNACK se acepta por compatibilidad con clientes antiguos y equivale a Merienda.
      */
     private static String mealNameForCode(String mealTypeCode) {
         if ("LUNCH".equalsIgnoreCase(mealTypeCode) || "SNACK".equalsIgnoreCase(mealTypeCode)) {
-            return "Almuerzo";
+            return "Merienda";
         }
-        return "Desayuno";
+        return "Almuerzo";
     }
 
     /**

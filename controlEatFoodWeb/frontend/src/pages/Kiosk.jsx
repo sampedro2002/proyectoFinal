@@ -321,7 +321,7 @@ export default function Kiosk() {
       <div className="login-wrap">
         <form className="card login-card" onSubmit={connect} style={{ width: 400 }}>
           <div className="login-brand">
-            <img src="/logo.png" alt="EatFood" className="login-logo" />
+            <img src="/logo.png" alt="Club Castillo Amaguaña" className="login-logo" />
             <h1 style={{ fontSize: 22, letterSpacing: 2 }}>RESTAURANTE</h1>
           </div>
           <p style={{ textAlign: 'center', color: '#94a3b8', marginTop: 0 }}>
@@ -407,8 +407,8 @@ export default function Kiosk() {
 
   const rInfo = readerStatusLabel[readerStatus] || readerStatusLabel[READER_STATUS.DISCONNECTED];
 
-  const totalDesayunos = feed.filter(e => e.mealName?.toLowerCase().includes('desayuno')).length;
   const totalAlmuerzos = feed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
+  const totalMeriendas = feed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
 
   return (
     <div className={`kiosk ${cls}`}>
@@ -437,7 +437,7 @@ export default function Kiosk() {
       {/* Elementos Estáticos Principales */}
       <div className="title" style={{ marginTop: '20px' }}>{session.restaurantName?.toUpperCase()}</div>
       
-      <img src="/logo.png" alt="EatFood" className="fingerprint-icon" style={{
+      <img src="/logo.png" alt="Club Castillo Amaguaña" className="fingerprint-icon" style={{
         opacity: readerStatus === READER_STATUS.READY ? 1 : 0.25,
         margin: '20px 0'
       }} />
@@ -514,8 +514,8 @@ export default function Kiosk() {
               </tbody>
             </table>
             <div className="kiosk-feed-summary">
-              <div>Desayunos: <strong>{totalDesayunos}</strong></div>
               <div>Almuerzos: <strong>{totalAlmuerzos}</strong></div>
+              <div>Meriendas: <strong>{totalMeriendas}</strong></div>
               <div>Total: <strong>{feed.length}</strong></div>
             </div>
             <div style={{

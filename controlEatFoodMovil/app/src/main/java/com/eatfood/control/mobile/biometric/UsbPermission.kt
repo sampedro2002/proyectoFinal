@@ -131,7 +131,12 @@ object UsbPermission {
 
             val filter = IntentFilter(ACTION_USB_PERMISSION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+                // RECEIVER_EXPORTED: la respuesta al diálogo de permiso la envía el SISTEMA
+                // (UsbService), no esta app; con NOT_EXPORTED en Android 13/14 el broadcast
+                // no se entrega en muchos dispositivos y la corrutina queda esperando hasta
+                // el timeout de 60 s aunque el usuario haya aceptado. El intent lleva
+                // setPackage propio, así que exportar el receiver no abre nada sensible.
+                context.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 @Suppress("UnspecifiedRegisterReceiverFlag")
                 context.registerReceiver(receiver, filter)

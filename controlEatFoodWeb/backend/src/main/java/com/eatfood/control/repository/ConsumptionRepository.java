@@ -15,10 +15,10 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    /** "First" porque un empleado puede tener hasta 2 consumos el mismo día (desayuno y almuerzo). */
+    /** "First" porque un empleado puede tener hasta 2 consumos el mismo día (almuerzo y merienda). */
     Optional<Consumption> findFirstByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
-    /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Desayuno", "Almuerzo"). */
+    /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Almuerzo", "Merienda"). */
     @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date")
     List<String> findMealNamesByEmployeeIdAndBusinessDate(@Param("employeeId") Long employeeId, @Param("date") LocalDate date);
 

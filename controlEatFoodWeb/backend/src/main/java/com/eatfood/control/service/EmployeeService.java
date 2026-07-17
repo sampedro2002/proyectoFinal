@@ -142,7 +142,7 @@ public class EmployeeService {
     }
 
     private String snapshot(Employee e) {
-        return "%s|%s|desayuno=%s|almuerzo=%s|estado=%s".formatted(
+        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
                 e.getIdentityCard(), e.getFullName(),
                 e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus());
     }

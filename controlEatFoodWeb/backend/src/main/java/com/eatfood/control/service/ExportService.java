@@ -55,8 +55,8 @@ public class ExportService {
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
     /** Identidad de marca del sistema (usada en cabeceras y pie de los reportes). */
-    private static final String BRAND_NAME = "EatFood";
-    private static final String BRAND_TAGLINE = "Control de Consumo de Alimentos";
+    private static final String BRAND_NAME = "Club Castillo Amaguaña";
+    private static final String BRAND_TAGLINE = "Control de Alimentos";
     private static final Color BRAND_COLOR = new Color(33, 102, 172);   // #2166AC
     private static final Color BRAND_INK = new Color(31, 41, 55);        // #1F2937
     private static final Color BRAND_MUTED = new Color(120, 132, 148);
@@ -78,7 +78,7 @@ public class ExportService {
     private static final String[] HEADERS =
             {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida", "Observación"};
     private static final String[] EMP_HEADERS =
-            {"Código", "Cédula", "Nombre", "Desayuno", "Almuerzo", "Estado",
+            {"Código", "Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
 
     public byte[] toCsv(List<ConsumptionRow> rows, String title) {

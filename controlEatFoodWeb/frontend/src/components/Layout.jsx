@@ -10,9 +10,9 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <img src="/logo.png" alt="EatFood" className="brand-logo" />
+          <img src="/logo.png" alt="Club Castillo Amaguaña" className="brand-logo" />
           <div className="brand-text">
-            <span className="brand-name">EatFood</span>
+            <span className="brand-name">Club Castillo Amaguaña</span>
             <span className="brand-tag">Control de Alimentos</span>
           </div>
         </div>

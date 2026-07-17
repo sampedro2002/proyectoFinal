@@ -119,7 +119,7 @@ private fun ConnectPanel(onConnected: () -> Unit) {
             ) {
                 Image(
                     painter = painterResource(com.eatfood.control.mobile.R.drawable.ic_logo),
-                    contentDescription = "EatFood",
+                    contentDescription = "Club Castillo Amaguaña",
                     modifier = Modifier.size(72.dp)
                 )
                 Spacer(Modifier.height(8.dp))
@@ -554,7 +554,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                     
                     Image(
                         painter = painterResource(com.eatfood.control.mobile.R.drawable.ic_logo),
-                        contentDescription = "EatFood",
+                        contentDescription = "Club Castillo Amaguaña",
                         modifier = Modifier
                             .size(140.dp)
                             .padding(vertical = 20.dp)

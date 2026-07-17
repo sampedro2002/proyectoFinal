@@ -179,8 +179,8 @@ data class ConsumptionRow(
 data class DashboardStats(
     val date: String?,
     val totalConsumptions: Long,
-    val desayunoCount: Long,
     val almuerzoCount: Long,
+    val meriendaCount: Long,
     val expectedEmployees: Long,
     val employeesConsumed: Long,
     val employeesPending: Long,

@@ -136,12 +136,12 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                 ) {
                     Image(
                         painter = painterResource(R.drawable.ic_logo),
-                        contentDescription = "EatFood",
+                        contentDescription = "Club Castillo Amaguaña",
                         modifier = Modifier.size(40.dp)
                     )
                     Spacer(Modifier.width(12.dp))
                     Column {
-                        Text("EatFood", style = MaterialTheme.typography.titleLarge)
+                        Text("Club Castillo Amaguaña", style = MaterialTheme.typography.titleLarge)
                         Text("Control de Alimentos", style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -226,12 +226,12 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
             Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Image(
                     painter = painterResource(R.drawable.ic_logo),
-                    contentDescription = "EatFood",
+                    contentDescription = "Club Castillo Amaguaña",
                     modifier = Modifier.size(88.dp)
                 )
                 Spacer(Modifier.height(8.dp))
-                Text("EatFood", style = MaterialTheme.typography.headlineSmall)
-                Text("Control de Consumo de Alimentos",
+                Text("Club Castillo Amaguaña", style = MaterialTheme.typography.headlineSmall)
+                Text("Control de Alimentos",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center)

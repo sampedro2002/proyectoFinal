@@ -29,9 +29,9 @@ export default function Login() {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
         <div className="login-brand">
-          <img src="/logo.png" alt="EatFood" className="login-logo" />
-          <h1>EatFood</h1>
-          <p className="login-sub">Control de Consumo de Alimentos</p>
+          <img src="/logo.png" alt="Club Castillo Amaguaña" className="login-logo" />
+          <h1>Club Castillo Amaguaña</h1>
+          <p className="login-sub">Control de Alimentos</p>
         </div>
         <div className="field">
           <label>Usuario</label>
