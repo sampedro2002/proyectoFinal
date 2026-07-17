@@ -1693,6 +1693,13 @@ function Uninstall-App {
         Write-Log "Directorio config/ eliminado." 'SUCCESS'
     }
 
+    # Eliminar el lock del SDK biométrico para que una reinstalación vuelva
+    # a ejecutar setup.exe y reinstale correctamente las librerías del ZK9500.
+    if (Test-Path $LockFile) {
+        Remove-Item -Path $LockFile -Force
+        Write-Log "Lock del SDK biométrico (.setup_completado.lock) eliminado." 'SUCCESS'
+    }
+
     Write-Host ""
     Write-Host "  ============================================================" -ForegroundColor Green
     Write-Host "  DESINSTALACION COMPLETADA" -ForegroundColor Green
