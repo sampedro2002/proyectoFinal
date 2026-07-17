@@ -61,6 +61,7 @@ import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiError
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.data.remote.isConnectivityError
+import com.eatfood.control.mobile.ui.ReaderStatusPill
 import com.eatfood.control.mobile.ui.theme.*
 import com.eatfood.control.mobile.util.ToneFeedback
 import kotlinx.coroutines.delay
@@ -529,7 +530,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
             // ── Fila superior: Estado del Lector (Pill centralizada) ───────────────
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                ReaderPill(readerStatus, Modifier)
+                ReaderStatusPill(readerStatus)
             }
 
             Spacer(Modifier.height(40.dp))
@@ -629,33 +630,6 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                     Text("Cerrar Sesión de Restaurante", color = Muted) 
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun ReaderPill(status: ReaderStatus, modifier: Modifier) {
-    val (text, color) = when (status) {
-        ReaderStatus.CONNECTING -> "Conectando…" to Warning
-        ReaderStatus.READY -> "ZKTeco Conectado ✓" to Success
-        ReaderStatus.NO_DEVICE -> "Lector no detectado" to ErrorRed
-        ReaderStatus.ERROR -> "Error de Hardware" to ErrorRed
-        ReaderStatus.DISCONNECTED -> "Desconectado" to ErrorRed
-        ReaderStatus.SIM -> "Modo Simulado" to Sim
-    }
-    
-    Surface(
-        modifier = modifier.clip(CircleShape),
-        color = Color.Black.copy(alpha = 0.3f),
-        border = androidx.compose.foundation.BorderStroke(1.dp, color.copy(alpha = 0.5f))
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(Modifier.size(8.dp).clip(CircleShape).background(color))
-            Spacer(Modifier.width(8.dp))
-            Text(text, color = OnSurface, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
     }
 }

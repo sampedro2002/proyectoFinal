@@ -177,13 +177,15 @@ class ZkBiometricReader(private val context: Context) : BiometricReader {
         onProgress(0, total)   // listo para la primera muestra
         for (i in 1..total) {
             if (i > 1) {
-                // Pausa para que el usuario levante el dedo y descarte de la cola cualquier
-                // extracción residual del apoyo anterior (el sensor puede seguir emitiendo
-                // plantillas mientras el dedo sigue puesto). Equivale al waitForFingerLift
-                // del modo register de la web.
+                // Pausa para que el usuario levante el dedo entre muestras. Equivale al
+                // waitForFingerLift del modo register de la web.
                 delay(1_200)
-                while (templates.tryReceive().isSuccess) { /* drenar */ }
             }
+            // Drenar SIEMPRE antes de capturar (también en la muestra 1): el lector puede
+            // llevar tiempo abierto en espera (pantalla de huellas del admin con detección
+            // activa) y la cola CONFLATED guardaría la última plantilla de un apoyo viejo,
+            // que se colaría como primera muestra del enrolamiento.
+            while (templates.tryReceive().isSuccess) { /* drenar */ }
             val tpl = Base64.decode(capture(timeoutMs), Base64.NO_WRAP)
             // Las 3 muestras deben ser del mismo dedo; si no, la fusión produciría una
             // plantilla inservible. Mismo chequeo que hace el demo oficial de ZKTeco.

@@ -49,6 +49,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+
+        <!-- Trampolín invisible para USB_DEVICE_ATTACHED: concede el permiso USB
+             a la app y abre el kiosco SOLO si la app estaba cerrada. Si el admin
+             (u otra pantalla) está abierto, no lo interrumpe: su detección activa
+             del lector muestra "Conectando… → Conectado" sin cambiar de pantalla. -->
+        <activity
+            android:name=".ui.UsbAttachActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>

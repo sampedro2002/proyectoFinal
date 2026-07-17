@@ -1,5 +1,11 @@
 package com.eatfood.control.mobile.ui
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.hardware.usb.UsbManager
+import android.os.Build
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -22,13 +28,16 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.eatfood.control.mobile.biometric.BiometricReader
+import com.eatfood.control.mobile.biometric.ReaderStatus
 import com.eatfood.control.mobile.data.model.*
 import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.data.prefs.SessionStore
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.concurrent.atomic.AtomicBoolean
 
 // ───────────────────────────── Dashboard ─────────────────────────────────────
 @Composable
@@ -314,12 +323,67 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
     var fingerIndex by remember { mutableStateOf(1) }
     var fingerMenu by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("idle") }
-    // Muestras ya capturadas del enrolamiento (0..3); -1 = aún inicializando el lector.
+    // Muestras ya capturadas del enrolamiento (0..3); -1 = aún inicializando.
     var sample by remember { mutableStateOf(-1) }
-    var openMsg by remember { mutableStateOf("Iniciando lector…") }
+
+    // Detección activa del lector (misma funcionalidad que la pill del kiosco):
+    // el lector se abre al entrar a esta pantalla y queda en espera; la pill
+    // muestra el estado en vivo y el botón de captura solo se habilita con el
+    // lector listo. Si el open falla se reintenta cada 5 s, y la desconexión
+    // USB se detecta al instante por broadcast.
+    var readerStatus by remember { mutableStateOf(ReaderStatus.CONNECTING) }
+    var currentReader by remember { mutableStateOf<BiometricReader?>(null) }
+    val usbDisconnected = remember { AtomicBoolean(false) }
 
     suspend fun reload() { fps = runCatching { api.fingerprints(employee.id) }.getOrDefault(emptyList()) }
     LaunchedEffect(Unit) { reload() }
+
+    // Bucle de conexión (adaptado del bucle de captura de KioskActivity, pero sin
+    // capturar en continuo: aquí la captura la dispara el botón de enrolamiento).
+    LaunchedEffect(Unit) {
+        while (isActive) {
+            usbDisconnected.set(false)
+            readerStatus = ReaderStatus.CONNECTING
+            val reader = BiometricReader.create(context)
+            try {
+                try {
+                    reader.open { st -> if (!usbDisconnected.get()) readerStatus = st }
+                } catch (e: Exception) {
+                    if (readerStatus == ReaderStatus.CONNECTING) readerStatus = ReaderStatus.NO_DEVICE
+                    runCatching { reader.close() }
+                    delay(5_000); continue
+                }
+                currentReader = reader
+                // Mantener el lector abierto mientras la pantalla siga activa y el
+                // USB conectado; el finally lo libera siempre (incluida la salida
+                // de la pantalla a mitad de una captura).
+                while (isActive && !usbDisconnected.get()) delay(500)
+            } finally {
+                currentReader = null
+                runCatching { reader.close() }
+            }
+        }
+    }
+
+    // Detección inmediata de desconexión USB (igual que el kiosco).
+    DisposableEffect(Unit) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context, intent: Intent) {
+                if (intent.action == UsbManager.ACTION_USB_DEVICE_DETACHED) {
+                    usbDisconnected.set(true)
+                    readerStatus = ReaderStatus.DISCONNECTED
+                }
+            }
+        }
+        val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            context.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("UnspecifiedRegisterReceiverFlag")
+            context.registerReceiver(receiver, filter)
+        }
+        onDispose { runCatching { context.unregisterReceiver(receiver) } }
+    }
 
     // Auto-seleccionar el siguiente dedo disponible si el actual ya está registrado
     // (mismo comportamiento que la web en Employees.jsx).
@@ -340,6 +404,10 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().padding(16.dp)) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                ReaderStatusPill(readerStatus)
+            }
+            Spacer(Modifier.height(12.dp))
             Card {
                 Column(Modifier.padding(16.dp)) {
                     Box {
@@ -362,41 +430,20 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                         }
                     }
                     Spacer(Modifier.height(12.dp))
+                    val readerReady = readerStatus == ReaderStatus.READY || readerStatus == ReaderStatus.SIM
                     Button(
-                        enabled = status == "idle" && fps.size < 3,
+                        enabled = status == "idle" && fps.size < 3 && readerReady,
                         onClick = {
-                            status = "capturing"; sample = -1; openMsg = "Iniciando lector…"
+                            // El lector ya está abierto y verificado por el bucle de
+                            // conexión: la captura arranca al instante, igual que en
+                            // el kiosco (sin abrir/cerrar por cada intento).
+                            val rdr = currentReader ?: return@Button
+                            status = "capturing"; sample = -1
                             scope.launch {
-                                var reader: BiometricReader? = null
                                 try {
-                                    // El primer open() tras enchufar el lector es inestable
-                                    // (diálogo de permiso USB en trámite, inicialización del
-                                    // SDK ZKFinger): el kiosco lo absorbe reintentando en
-                                    // bucle cada 5 s; aquí replicamos esa resiliencia con
-                                    // varios intentos en vez de rendirnos al primero.
-                                    var lastError: Exception? = null
-                                    for (attempt in 1..3) {
-                                        openMsg = if (attempt == 1) "Iniciando lector…"
-                                                  else "Reintentando conexión ($attempt/3)…"
-                                        val r = BiometricReader.create(context)
-                                        try {
-                                            r.open { }
-                                            reader = r
-                                            break
-                                        } catch (e: kotlinx.coroutines.CancellationException) {
-                                            r.close(); throw e
-                                        } catch (e: Exception) {
-                                            r.close()
-                                            lastError = e
-                                            if (attempt < 3) delay(2_000)
-                                        }
-                                    }
-                                    val rdr = reader
-                                        ?: throw (lastError ?: Exception("No se pudo abrir el lector"))
                                     // 3 muestras del mismo dedo fusionadas en una plantilla,
                                     // igual que el enrolamiento de la web.
                                     val template = rdr.captureForEnroll { s, _ -> sample = s }
-                                    rdr.close()
                                     api.enroll(EnrollRequest(employee.id, fingerIndex, template))
                                     snackbar.showSnackbar("Huella registrada correctamente.")
                                     reload()
@@ -405,7 +452,6 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                                 } catch (e: Exception) {
                                     snackbar.showSnackbar(e.apiMessage("Error al registrar"))
                                 } finally {
-                                    runCatching { reader?.close() }
                                     status = "idle"; sample = -1
                                 }
                             }
@@ -414,10 +460,11 @@ fun FingerprintsScreen(employee: EmployeeResponse, onBack: () -> Unit) {
                     ) {
                         Text(when {
                             fps.size >= 3 -> "Máximo 3 huellas"
-                            status == "capturing" && sample < 0 -> openMsg
+                            status == "capturing" && sample < 0 -> "Preparando captura…"
                             status == "capturing" && sample == 0 -> "Coloque el dedo… (0/3)"
                             status == "capturing" && sample >= 3 -> "Guardando… (3/3)"
                             status == "capturing" -> "Muestra $sample/3 registrada — levante y coloque de nuevo"
+                            !readerReady -> "Conecte el lector para capturar"
                             else -> "Capturar huella (${fps.size}/3)"
                         })
                     }
