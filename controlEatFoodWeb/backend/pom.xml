@@ -53,11 +53,11 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
-        <!-- MySQL: Connector/J 8.0.33 fijado explicitamente porque es la ultima
-             linea con soporte oficial para MySQL 5.6 (el servidor de produccion es
-             5.6.26). Las versiones 8.1+/9.x administradas por Spring Boot solo
-             garantizan 5.7 y 8.x. Los parametros de la URL (sslMode, serverTimezone,
-             allowPublicKeyRetrieval) siguen siendo validos en 8.0.33. -->
+        <!-- MySQL: Connector/J 8.0.33 fijado explicitamente. Compatible tanto con
+             MySQL 8.x (servidor de produccion actual) como con 5.6/5.7 si hiciera
+             falta conectar a un servidor mas antiguo. Los parametros de la URL
+             (sslMode, serverTimezone, allowPublicKeyRetrieval) son validos en
+             8.0.33 para cualquiera de esas versiones. -->
         <dependency>
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>

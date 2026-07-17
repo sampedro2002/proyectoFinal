@@ -89,26 +89,42 @@ public class ServerInfoController {
                 : proto + "://" + name + ":" + p;
     }
 
+    // Nombres de adaptadores de red virtuales (hipervisores/VPN/contenedores) que
+    // NetworkInterface#isVirtual() no detecta de forma fiable en Windows: los
+    // adaptadores de VirtualBox, VMware, Hyper-V/WSL o Docker aparecen como
+    // interfaces "normales" (up, no loopback, no isVirtual), y si la laptop
+    // tiene alguna de estas herramientas instaladas su IP puede colarse antes
+    // que la del Wi-Fi/Ethernet real, apuntando al admin a la máquina virtual
+    // en vez de a la laptop física.
+    private static final List<String> VIRTUAL_ADAPTER_HINTS = List.of(
+            "virtualbox", "vmware", "hyper-v", "hyperv", "vethernet", "virtual switch",
+            "wsl", "docker", "npcap", "tap-", "teredo", "loopback", "isatap", "ppp", "bluetooth"
+    );
+
     private List<String> lanUrls() {
         List<String> urls = new ArrayList<>();
-        
-        // 1. Intentar descubrir la IP principal (LAN activa) usando el routing del SO.
+
+        // 1. Intentar descubrir la IP principal (LAN activa) usando el routing del SO,
+        //    validando que la interfaz dueña de esa IP no sea un adaptador virtual.
         try (java.net.DatagramSocket socket = new java.net.DatagramSocket()) {
             socket.connect(InetAddress.getByName("8.8.8.8"), 10002);
-            String primaryIp = socket.getLocalAddress().getHostAddress();
-            if (primaryIp != null && !primaryIp.startsWith("127.") && !primaryIp.startsWith("0.")) {
+            InetAddress primary = socket.getLocalAddress();
+            String primaryIp = primary.getHostAddress();
+            if (primaryIp != null && !primaryIp.startsWith("127.") && !primaryIp.startsWith("0.")
+                    && !isVirtualAdapterAddress(primary)) {
                 urls.add("http://" + primaryIp + ":" + port);
             }
         } catch (Exception ignored) {
             // Si falla (ej. sin internet), pasamos a enumerar interfaces.
         }
 
-        // 2. Agregar también las demás IPs locales por si acaso.
+        // 2. Agregar también las demás IPs locales por si acaso, descartando
+        //    adaptadores de hipervisor/VPN por nombre.
         try {
             var ifaces = NetworkInterface.getNetworkInterfaces();
             while (ifaces.hasMoreElements()) {
                 NetworkInterface ni = ifaces.nextElement();
-                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+                if (!ni.isUp() || ni.isLoopback() || ni.isVirtual() || looksVirtual(ni)) continue;
                 var addrs = ni.getInetAddresses();
                 while (addrs.hasMoreElements()) {
                     InetAddress addr = addrs.nextElement();
@@ -122,6 +138,23 @@ public class ServerInfoController {
             // Sin interfaces enumerables: el admin escribe la URL a mano.
         }
         return urls;
+    }
+
+    private static boolean isVirtualAdapterAddress(InetAddress addr) {
+        try {
+            NetworkInterface ni = NetworkInterface.getByInetAddress(addr);
+            return ni != null && looksVirtual(ni);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private static boolean looksVirtual(NetworkInterface ni) {
+        String name = (ni.getName() + " " + ni.getDisplayName()).toLowerCase();
+        for (String hint : VIRTUAL_ADAPTER_HINTS) {
+            if (name.contains(hint)) return true;
+        }
+        return false;
     }
 
     private static String firstHeaderValue(String header) {

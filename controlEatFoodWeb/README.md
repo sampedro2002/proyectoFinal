@@ -67,7 +67,7 @@ controlEatFood/
 |-----------|---------|-------|
 | JDK | **21** | requerido por el backend |
 | Maven | 3.9+ | build del backend |
-| MySQL | 5.6.26 | base de datos (Connector/J 8.0.33; Docker `mysql:5.6` = 5.6.51 en Pruebas) |
+| MySQL | 8.0+ | base de datos (Connector/J 8.0.33; Docker `mysql:8.0` en Pruebas) |
 | Node.js | 18+ | build del frontend |
 | SDK ZKFinger | v10 | DLL/.so del ZK9500 (solo para biometría real) |
 
