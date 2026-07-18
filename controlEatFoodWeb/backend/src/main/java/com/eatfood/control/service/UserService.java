@@ -73,6 +73,15 @@ public class UserService {
     public UserResponse update(Long id, UserRequest req) {
         AppUser user = find(id);
         String before = snapshot(user);
+        
+        String newUsername = req.username().trim();
+        if (!user.getUsername().equals(newUsername)) {
+            if (userRepository.existsByUsername(newUsername)) {
+                throw new BusinessException("DUPLICATE_USER", "Ya existe un usuario con ese nombre.");
+            }
+            user.setUsername(newUsername);
+        }
+        
         user.setFullName(req.fullName());
         user.setEmail(blankToNull(req.email()));
         if (req.enabled() != null) {

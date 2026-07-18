@@ -699,7 +699,7 @@ fun UsersScreen() {
                 Column(Modifier.verticalScroll(rememberScrollState())) {
                     // El username identifica la cuenta: no se cambia al editar (igual que la web).
                     OutlinedTextField(username, { username = it }, label = { Text("Usuario") },
-                        singleLine = true, enabled = u == null)
+                        singleLine = true)
                     OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true)
                     OutlinedTextField(email, { email = it }, label = { Text("Email (opcional)") }, singleLine = true)
                     OutlinedTextField(password, { password = it },

@@ -128,8 +128,8 @@ export default function Users() {
                   </span>
                 </td>
                 <td className="row">
-                  {isAdmin && u.username !== 'admin' && <button className="ghost" onClick={() => openEdit(u)}>Editar</button>}
-                  {isAdmin && u.username !== 'admin' && (
+                  {isAdmin && <button className="ghost" onClick={() => openEdit(u)}>Editar</button>}
+                  {isAdmin && (
                     <button className="ghost" onClick={() => toggleEnabled(u)}>
                       {u.enabled ? 'Desactivar' : 'Activar'}
                     </button>
@@ -156,7 +156,7 @@ export default function Users() {
             </div>
 
             <div className="field"><label>Usuario</label>
-              <input value={form.username} required disabled={!!form.id}
+              <input value={form.username} required
                 onChange={(e) => setForm({ ...form, username: e.target.value })} /></div>
 
             <div className="field"><label>Nombre completo</label>
