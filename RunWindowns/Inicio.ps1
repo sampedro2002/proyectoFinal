@@ -221,18 +221,24 @@ function Get-DevJwtSecret {
 }
 
 function Get-ServerIPs {
-    # Deteccion ordenada de IPs IPv4 del host. Pensado para entornos con
-    # maquinas virtuales, donde hay varias redes activas a la vez (Hyper-V,
-    # VMware, VirtualBox, WSL, VPN, Docker, TAP...). Si simplemente se agarra
-    # la primera IPv4 no loopback (como hacia la version anterior), casi
-    # siempre se termina recomendando la IP del adaptador virtual
-    # (vEthernet / VMware / WSL) en lugar de la de la tarjeta fisica real.
+    # Deteccion ordenada de IPs IPv4 del host, siguiendo la politica pedida:
+    #   1) IP ESTATICA por cable (Ethernet)            <- primera opcion
+    #   2) Si no hay lo anterior, IP por DHCP,
+    #      ya sea por cable o por Wireless              <- respaldo
+    #   3) Cualquier otra IPv4 util como ultimo recurso
+    #      (estatica en Wireless, adaptadores virtuales, etc.)
+    #
+    # Pensado para entornos con maquinas virtuales, donde hay varias redes
+    # activas a la vez (Hyper-V, VMware, VirtualBox, WSL, VPN, Docker, TAP...).
+    # Si simplemente se agarra la primera IPv4 no loopback, casi siempre se
+    # termina recomendando la IP del adaptador virtual (vEthernet / VMware /
+    # WSL) en lugar de la de la tarjeta fisica real.
     #
     # Orden de prioridad (menor puntaje = mejor):
-    #   0 = IP estatica (PrefixOrigin = Manual) en tarjeta fisica
-    #   1 = IP estatica en adaptador no virtual
-    #   2 = IP por DHCP en tarjeta fisica
-    #   3 = IP por DHCP en adaptador no virtual
+    #   0 = IP estatica (PrefixOrigin = Manual) en tarjeta de RED CABLEADA
+    #   1 = IP por DHCP en tarjeta de RED CABLEADA
+    #   2 = IP por DHCP en tarjeta INALAMBRICA (Wi-Fi)
+    #   3 = IP estatica en tarjeta INALAMBRICA
     #   4 = IP estatica en adaptador virtual
     #   5 = IP por DHCP en adaptador virtual
     #   6 = cualquier otra IPv4 no loopback
@@ -242,6 +248,7 @@ function Get-ServerIPs {
         'Hyper-V','VMware','VirtualBox','vEthernet','WSL','TAP-Windows',
         'OpenVPN','WireGuard','Hamachi','ZeroTier','Docker','Tunnel','Loopback'
     )
+    $wirelessHints = @('Wi-Fi','WiFi','Wireless','WLAN','802.11')
 
     # Mapeo InterfaceIndex -> adaptador, para llegar a InterfaceDescription
     # (mas fiable que InterfaceAlias para detectar adaptadores virtuales).
@@ -252,11 +259,22 @@ function Get-ServerIPs {
         }
     } catch { }
 
+    # OJO: una IP estatica (Manual) queda asignada al adaptador aunque el cable
+    # este desconectado -- Get-NetIPAddress la sigue devolviendo igual. Sin
+    # cruzar esto con el Status real del adaptador, se termina recomendando
+    # una IP fija de una red que ni siquiera esta conectada ahora mismo, en
+    # vez de la IP DHCP de la red que si esta activa (ej. Wi-Fi conectado).
+    # Si no se encuentra el adaptador (caso raro), se conserva la entrada por
+    # seguridad en vez de descartarla a ciegas.
     $entries = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object {
             $_.IPAddress -ne '127.0.0.1' -and
             $_.IPAddress -notlike '169.254.*' -and
             $_.PrefixOrigin -ne 'WellKnown'
+        } |
+        Where-Object {
+            $a = $adapters[$_.InterfaceIndex]
+            (-not $a) -or ($a.Status -eq 'Up')
         })
 
     $ranked = foreach ($e in $entries) {
@@ -288,13 +306,31 @@ function Get-ServerIPs {
         }
         $isStatic = ($e.PrefixOrigin -eq 'Manual')
 
+        # Cable vs Wireless: PhysicalMediaType/MediaType de Get-NetAdapter es la
+        # senal mas fiable ('802.3' = Ethernet cableado, 'Native 802.11' = Wi-Fi).
+        # Si el adaptador no trae esa propiedad (o es virtual), se cae a mirar
+        # nombre/descripcion contra $wirelessHints; si tampoco matchea nada
+        # inalambrico, se asume cableado (Ethernet es el caso mas comun).
+        $isWireless = $false
+        if ($adapter) {
+            $mediaType = [string]$adapter.PhysicalMediaType
+            if (-not $mediaType) { $mediaType = [string]$adapter.MediaType }
+            if ($mediaType -match '802\.11') { $isWireless = $true }
+        }
+        if (-not $isWireless) {
+            foreach ($h in $wirelessHints) {
+                if ($desc -like "*$h*" -or $alias -like "*$h*") { $isWireless = $true; break }
+            }
+        }
+        $isWired = (-not $isVirtual) -and (-not $isWireless)
+
         $score = 6
-        if     ($isStatic -and $isPhysical)    { $score = 0 }
-        elseif ($isStatic -and -not $isVirtual) { $score = 1 }
-        elseif (-not $isStatic -and $isPhysical) { $score = 2 }
-        elseif (-not $isStatic -and -not $isVirtual) { $score = 3 }
-        elseif ($isStatic)                      { $score = 4 }
-        else                                   { $score = 5 }
+        if     ($isStatic -and $isWired)          { $score = 0 }
+        elseif (-not $isStatic -and $isWired)      { $score = 1 }
+        elseif (-not $isStatic -and -not $isVirtual -and $isWireless) { $score = 2 }
+        elseif ($isStatic -and -not $isVirtual -and $isWireless)      { $score = 3 }
+        elseif ($isStatic -and $isVirtual)         { $score = 4 }
+        elseif (-not $isStatic -and $isVirtual)    { $score = 5 }
 
         [PSCustomObject]@{ Ip = $e.IPAddress; Score = $score; Alias = $alias; Origin = $e.PrefixOrigin }
     }

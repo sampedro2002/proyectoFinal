@@ -128,8 +128,8 @@ export default function Users() {
                   </span>
                 </td>
                 <td className="row">
-                  {isAdmin && <button className="ghost" onClick={() => openEdit(u)}>Editar</button>}
-                  {isAdmin && (
+                  {isAdmin && u.username !== 'admin' && <button className="ghost" onClick={() => openEdit(u)}>Editar</button>}
+                  {isAdmin && u.username !== 'admin' && (
                     <button className="ghost" onClick={() => toggleEnabled(u)}>
                       {u.enabled ? 'Desactivar' : 'Activar'}
                     </button>
