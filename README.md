@@ -15,7 +15,7 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 | Archivo | Propósito |
 |---------|-----------|
 | `Inicio.bat` | **Punto de entrada único** (doble clic): lanza `Inicio.ps1` sin bloqueos de política de ejecución |
-| `Inicio.ps1` | Toda la lógica: menú con dos caminos, **Pruebas** y **Producción** |
+| `Inicio.ps1` | Toda la lógica: menú **Pruebas**, **Instalación nueva**, **Reinstalación** (conserva claves/huellas), actualizar, reparar, desinstalar y diagnósticos |
 | `setup.exe` | Instalador del SDK del lector biométrico ZK9500 (se ejecuta una sola vez, desde cualquiera de los dos caminos) |
 | `config/` | Configuración generada en modo Producción (install_config.json, application-prod.yml) |
 | `logs/` | Logs de instalación y del servicio |
@@ -23,7 +23,7 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 **Pruebas (Modo Desarrollo):** no requiere permisos de Administrador. Verifica/instala Java 21, Node.js y Maven; configura la base de datos (te pregunta si es **local**, detectando/creando Docker `control-mysql` o MySQL local automáticamente, o **remota**, pidiendo host/usuario/password); instala dependencias del frontend; y opcionalmente arranca backend y frontend en ventanas separadas.
 
 **Producción:** requiere Administrador (se auto-eleva con UAC al elegir esta opción). Ya no ofrece Docker: se conecta **siempre directo a un servidor MySQL remoto** (host/usuario/password), con opción de crear la BD/usuario ahí mismo si hace falta. Además:
-- Genera claves de seguridad (JWT, AES) automáticamente
+- Genera claves de seguridad (JWT, AES) y las **persiste protegidas (DPAPI)** en `C:\ProgramData\ControlEatFood\`, reutilizándolas en reinstalaciones para no invalidar las huellas ya cifradas
 - Compila y empaqueta para producción
 - Registra como servicio de Windows (NSSM)
 - Configura firewall
@@ -89,7 +89,7 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
 
 ## 🔐 Seguridad y Privacidad
 
-- **Cifrado Biométrico**: Las plantillas de huellas digitales de los empleados se cifran usando AES-128/CBC antes de almacenarse en la base de datos.
+- **Cifrado Biométrico**: Las plantillas de huellas digitales de los empleados se cifran usando **AES-256/GCM** (con verificación de integridad) antes de almacenarse en la base de datos. La clave se **persiste protegida con DPAPI** en `C:\ProgramData\ControlEatFood\` para sobrevivir a reinstalaciones (ver [Clave de cifrado y reinstalaciones](#-clave-de-cifrado-y-reinstalaciones-importante)).
 - **Autenticación**: Todos los accesos se validan y aseguran con tokens JWT (JSON Web Tokens).
 - **Roles y Auditoría**: El acceso está particionado en roles (Administrador, Catering) y todas las acciones críticas (cambios, altas, bajas) quedan registradas en un log de auditoría inmutable.
 
@@ -119,6 +119,25 @@ Inicio.bat
 - ✅ Actualizar, reparar o desinstalar
 
 El instalador guarda la configuración en `RunWindowns/config/install_config.json` para futuras actualizaciones.
+
+### 🔑 Clave de cifrado y reinstalaciones (IMPORTANTE)
+
+Las huellas se guardan **cifradas** en la base de datos. Si la clave de cifrado cambia, esas huellas quedan **ilegibles** (`HUELLA NO ENCONTRADA` / `AEADBadTagException`). Como la base de datos **sobrevive** a una desinstalación pero antes la clave se regeneraba en cada instalación, reinstalar rompía todas las huellas. Para evitarlo:
+
+- La clave de cifrado (AES) y el `JWT_SECRET` se **persisten de forma protegida (DPAPI) en `C:\ProgramData\ControlEatFood\`**, **fuera** de `RunWindowns/config/` (que sí se borra al desinstalar). Así **sobreviven a reinstalaciones**.
+- El instalador **reutiliza** esa clave si ya existe; solo genera una nueva cuando no hay ninguna. Verás en el log `Clave de cifrado biometrico reutilizada`.
+- Se guarda un **respaldo legible** en `C:\ProgramData\ControlEatFood\biometric-key-RESPALDO-NO-BORRAR.txt`. **Cópialo a un lugar seguro (fuera del equipo).** Es tu única recuperación si cambias de máquina o borras `ProgramData`.
+
+**Menú del instalador:**
+
+| Opción | Cuándo usarla |
+|--------|---------------|
+| **[2] Instalación nueva** | Equipo/BD nuevos. Genera claves nuevas si no existen. |
+| **[3] Reinstalación (conservar datos y claves)** | Reinstalar sobre una BD con huellas ya registradas. Reutiliza la clave persistida; si no la encuentra (equipo nuevo), **pide pegar** la clave del respaldo. |
+
+**Recuperación en otro equipo:** elige **[3] Reinstalación** y pega el contenido de la clave del archivo de respaldo cuando el instalador lo solicite. Dejar en blanco genera una clave nueva y las huellas viejas quedarán ilegibles (habría que re-enrolarlas).
+
+**Migración de una instalación anterior:** si ya tenías huellas de antes de esta mejora, siembra tu clave actual (la de `RunWindowns/config/install_config.json`, campo `production.biometricEncryptionKey`) en `C:\ProgramData\ControlEatFood\biometric.key` **antes** de reinstalar, o simplemente usa **[3] Reinstalación** y pégala. Una clave equivocada ya **no tumba** el sistema: la huella ilegible se omite (queda registrado en `GET /api/fingerprints/biometric-status` con `indexMatchesDb=false`) y se puede re-enrolar.
 
 ### 2. Base de Datos
 - Utiliza una instancia dedicada de MySQL 8.

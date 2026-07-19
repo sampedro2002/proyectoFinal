@@ -3,15 +3,14 @@ package com.eatfood.control.security;
 import com.eatfood.control.config.AppProperties;
 import org.junit.jupiter.api.Test;
 
-import javax.crypto.AEADBadTagException;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Cubre el round-trip de cifrado de plantillas biométricas (AES-256-GCM) y su
  * propiedad de seguridad clave frente al esquema CBC anterior: detección de
- * manipulación del ciphertext (autenticación GCM).
+ * manipulación del ciphertext (autenticación GCM). Ante manipulación o clave
+ * incorrecta, el converter degrada devolviendo {@code null} (huella ilegible)
+ * en vez de lanzar, para no tumbar el listado del admin ni abortar el índice.
  */
 class AesFingerprintConverterTest {
 
@@ -53,17 +52,19 @@ class AesFingerprintConverterTest {
         byte[] stored = converter.convertToDatabaseColumn("dato-original".getBytes());
         stored[stored.length - 1] ^= 0x01; // corrompe el último byte del tag/ciphertext
 
-        assertThatThrownBy(() -> converter.convertToEntityAttribute(stored))
-                .isInstanceOf(IllegalStateException.class)
-                .hasCauseInstanceOf(AEADBadTagException.class);
+        // La autenticación GCM detecta la manipulación: el converter devuelve null
+        // (dato ilegible) en vez de entregarlo como válido. Lo esencial de seguridad
+        // se mantiene: el dato manipulado NUNCA se acepta.
+        assertThat(converter.convertToEntityAttribute(stored)).isNull();
     }
 
     @Test
     void differentKeys_cannotDecryptEachOthersData() {
         byte[] stored = converterWithKey("clave-A").convertToDatabaseColumn("secreto".getBytes());
 
-        assertThatThrownBy(() -> converterWithKey("clave-B").convertToEntityAttribute(stored))
-                .isInstanceOf(IllegalStateException.class);
+        // Con otra clave, GCM falla la autenticación: se devuelve null (dato ilegible),
+        // nunca el plaintext cifrado con la clave original.
+        assertThat(converterWithKey("clave-B").convertToEntityAttribute(stored)).isNull();
     }
 
     @Test

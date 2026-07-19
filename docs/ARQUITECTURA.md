@@ -170,7 +170,8 @@ classDiagram
 | Identificación | **1:N en el servidor** con `libzkfp` (`ZKFPM_DBIdentify`) vía **JNA**. Índice en memoria de todas las plantillas activas, reconstruible. |
 | Umbral | Configurable (`app.biometric.match-threshold`, por defecto 70). |
 | Intercambiable | Interfaz `BiometricMatcher`: `zk` (SDK real) o `sim` (pruebas sin hardware). |
-| Resiliencia | Si el SDK nativo no carga, el servicio degrada a "HUELLA NO ENCONTRADA" sin caerse. |
+| Motor vs lector | El **matching 1:N no requiere lector conectado al servidor**: cargada la DLL, `ZKFPM_DBInit`/`DBIdentify` operan sin hardware. `engineReady` (validar) y `readerConnected` (capturar/enrolar desde la web) son estados independientes en `GET /api/fingerprints/biometric-status`. |
+| Resiliencia | Si el SDK nativo no carga, el servicio degrada a "HUELLA NO ENCONTRADA" sin caerse. Si una plantilla no se puede descifrar (clave cambiada), se **omite** esa huella y se refleja como `indexMatchesDb=false` en `biometric-status`, sin tumbar la petición. |
 
 ## 5. Estrategia offline
 
@@ -189,6 +190,7 @@ classDiagram
 
 - **JWT** (access 30 min + refresh 7 días con rotación y revocación en `login_session`).
 - **BCrypt** para contraseñas.
+- **Plantillas biométricas cifradas** con AES-256/GCM (integridad verificada). La clave se persiste protegida con **DPAPI** en `C:\ProgramData\ControlEatFood\` (fuera del repo y de la carpeta que se borra al desinstalar) y se reutiliza en reinstalaciones para no invalidar las huellas ya cifradas.
 - **Roles** `ADMIN`/`SUPERVISOR`/`CATERING` con `@PreAuthorize` por endpoint.
 - **Fuerza bruta:** bloqueo temporal tras N intentos (`app.security.brute-force`).
 - **Dispositivos simultáneos:** máx. 2 por catering (token de sesión de dispositivo).

@@ -155,8 +155,13 @@ public class FingerprintService {
     /** Devuelve el estado actual del motor biométrico y su índice en memoria. */
     public Map<String, Object> biometricStatus() {
         long activeInDb = fingerprintRepository.findByActiveTrue().size();
+        // engineReady = motor de matching 1:N listo (no requiere lector en este equipo).
+        // readerConnected = hay un ZK9500 en ESTE equipo para capturar/enrolar desde la web.
+        boolean readerConnected = matcher instanceof com.eatfood.control.biometric.ZkBiometricMatcher zk
+                && zk.isReaderReady();
         return Map.of(
                 "engineReady", matcher.isReady(),
+                "readerConnected", readerConnected,
                 "indexSize", matcher.indexSize(),
                 "activeInDb", activeInDb,
                 "indexMatchesDb", matcher.indexSize() == activeInDb

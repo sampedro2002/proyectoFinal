@@ -41,7 +41,25 @@ public class ZkBiometricMatcher implements BiometricMatcher {
 
     private ZkfpSdk sdk;
     private Pointer dbCache;
-    private boolean ready = false;
+
+    /**
+     * El motor de MATCHING (índice 1:N + {@code ZKFPM_DBIdentify}) está listo. Es puro
+     * algoritmo: una vez cargada la DLL y creada la caché con {@code ZKFPM_DBInit}, NO
+     * necesita ningún lector conectado a este equipo. Es lo que habilita la validación
+     * de huellas desde los kioscos/teléfonos aunque el servidor no tenga un ZK9500
+     * enchufado.
+     */
+    private boolean matchingReady = false;
+    /**
+     * Hay un lector ZK9500 disponible en ESTE equipo ({@code ZKFPM_Init} tuvo éxito).
+     * Solo se necesita para CAPTURAR/ENROLAR desde la web local; las validaciones 1:N
+     * no dependen de esto.
+     */
+    private volatile boolean readerReady = false;
+    /** {@code ZKFPM_Init} devolvió OK al menos una vez (para emparejar con {@code ZKFPM_Terminate}). */
+    private boolean sdkInitialized = false;
+    /** La caché de matching se creó sin lector ({@code ZKFPM_Init} aún no había tenido éxito). */
+    private boolean cacheBuiltWithoutReader = false;
     /**
      * Indica si el último intento de inicialización falló. Se usa para
      * emitir el WARN de "lector no disponible" UNA sola vez (transición
@@ -77,36 +95,97 @@ public class ZkBiometricMatcher implements BiometricMatcher {
                 }
             }
 
+            // ZKFPM_Init inicializa el entorno del SDK y, en este build, solo tiene éxito
+            // cuando hay un lector conectado. NO condicionamos el matching a esto: el motor
+            // 1:N funciona sin lector una vez cargada la DLL (ver comentario de matchingReady).
             int rc = sdk.ZKFPM_Init();
-            if (rc != ZKFP_ERR_OK) {
-                String hint = rc == -1 ? " (sin dispositivo o driver no instalado)" :
-                              rc == -2 ? " (driver USB no instalado o ZK9500 no conectado)" : "";
-                logInitFailure("ZKFPM_Init falló (código " + rc + ")" + hint);
-                scheduleRetry();
-                return;
+            boolean readerNow = (rc == ZKFP_ERR_OK);
+            if (readerNow) sdkInitialized = true;
+
+            // --- Motor de matching (independiente del lector) ---
+            if (!matchingReady) {
+                if (dbCache == null) {
+                    dbCache = sdk.ZKFPM_DBInit();
+                }
+                if (dbCache == null) {
+                    logInitFailure("ZKFPM_DBInit devolvió null — el motor de matching no pudo inicializarse"
+                            + (readerNow ? " (libzkfp corrupta o sensor en uso)."
+                                         : ". Este build del SDK podría requerir el ZK9500 conectado para arrancar."));
+                    scheduleRetry();
+                    return;
+                }
+                rebuildIndex();
+                matchingReady = true;
+                cacheBuiltWithoutReader = !readerNow;
+                if (readerNow) {
+                    log.info("Motor biométrico ZKFinger listo (matching + captura, umbral={}).", threshold);
+                } else {
+                    log.info("Motor de matching ZKFinger listo SIN lector — validación 1:N activa (umbral={}). " +
+                            "Conecte un ZK9500 a este equipo solo si necesita capturar/enrolar desde la web.", threshold);
+                }
             }
-            dbCache = sdk.ZKFPM_DBInit();
-            if (dbCache == null) {
-                logInitFailure("ZKFPM_DBInit devolvió null (libzkfp corrupta o sensor en uso).");
-                scheduleRetry();
-                return;
-            }
-            rebuildIndex();
-            ready = true;
-            cancelRetry();
-            if (lastInitFailed) {
-                log.info("ZKTeco9500 reconectado — motor listo tras reintentos.");
+
+            // --- Estado del lector físico (solo para captura/enrolamiento web) ---
+            if (readerNow) {
+                if (!readerReady) {
+                    if (cacheBuiltWithoutReader) {
+                        // El índice se armó antes de que ZKFPM_Init tuviera éxito. Ahora que el
+                        // entorno del SDK está plenamente inicializado, refrescamos la caché nativa
+                        // para no arrastrar un handle creado en ese estado.
+                        log.info("ZK9500 detectado tras un arranque sin lector — refrescando caché de matching.");
+                        refreshCache();
+                        cacheBuiltWithoutReader = false;
+                    } else {
+                        log.info("ZK9500 detectado — captura/enrolamiento web habilitado.");
+                    }
+                }
+                readerReady = true;
                 lastInitFailed = false;
+                cancelRetry();
+            } else {
+                readerReady = false;
+                logInitFailure("ZKFPM_Init rc=" + rc + describeInitRc(rc)
+                        + " — lector no disponible para captura/enrolamiento");
+                scheduleRetry();
             }
-            log.info("Motor biométrico ZKFinger inicializado correctamente (umbral={}).", threshold);
         } catch (UnsatisfiedLinkError e) {
             logInitFailure("No se pudo cargar el SDK nativo ZKFinger desde '" + nativeLibPath
                     + "'. Detalle: " + e.getMessage());
             scheduleRetry();
         } catch (Throwable e) {
-            ready = false;
+            matchingReady = false;
+            readerReady = false;
             logInitFailure("Error inesperado al inicializar el motor ZKFinger: " + e.getMessage());
             scheduleRetry();
+        }
+    }
+
+    /** Traduce el código de retorno de {@code ZKFPM_Init} en una pista legible. */
+    private static String describeInitRc(int rc) {
+        return rc == -1 ? " (sin dispositivo o driver no instalado)"
+             : rc == -2 ? " (driver USB no instalado o ZK9500 no conectado)"
+             : "";
+    }
+
+    /**
+     * Libera y recrea la caché nativa de matching y recarga el índice desde BD.
+     * Se usa cuando el lector aparece tras un arranque sin él, para partir de un
+     * estado del SDK limpio.
+     */
+    private void refreshCache() {
+        try {
+            if (dbCache != null) {
+                try { sdk.ZKFPM_DBFree(dbCache); } catch (Throwable ignored) {}
+            }
+            dbCache = sdk.ZKFPM_DBInit();
+            if (dbCache == null) {
+                log.error("refreshCache: ZKFPM_DBInit devolvió null — matching deshabilitado hasta el próximo reintento.");
+                matchingReady = false;
+                return;
+            }
+            rebuildIndex();
+        } catch (Throwable t) {
+            log.error("refreshCache: error al refrescar la caché de matching: {}", t.getMessage());
         }
     }
 
@@ -185,9 +264,14 @@ public class ZkBiometricMatcher implements BiometricMatcher {
     public synchronized void shutdown() {
         cancelRetry();
         retryScheduler.shutdownNow();
-        if (sdk != null && ready) {
-            if (dbCache != null) sdk.ZKFPM_DBFree(dbCache);
-            sdk.ZKFPM_Terminate();
+        if (sdk != null) {
+            if (dbCache != null) {
+                try { sdk.ZKFPM_DBFree(dbCache); } catch (Throwable ignored) {}
+            }
+            // ZKFPM_Terminate solo se llama si ZKFPM_Init llegó a tener éxito.
+            if (sdkInitialized) {
+                try { sdk.ZKFPM_Terminate(); } catch (Throwable ignored) {}
+            }
         }
     }
 
@@ -235,8 +319,8 @@ public class ZkBiometricMatcher implements BiometricMatcher {
 
     @Override
     public synchronized void enroll(long fingerprintId, long employeeId, byte[] template) {
-        if (!ready) {
-            log.warn("enroll: motor no disponible (ready=false) — huella id={} NO fue añadida al índice.", fingerprintId);
+        if (!matchingReady) {
+            log.warn("enroll: motor de matching no disponible (matchingReady=false) — huella id={} NO fue añadida al índice.", fingerprintId);
             return;
         }
         if (template == null || template.length == 0) {
@@ -291,7 +375,7 @@ public class ZkBiometricMatcher implements BiometricMatcher {
      * @return plantilla fusionada, o {@code null} si falla
      */
     public synchronized byte[] mergeTemplates(byte[] t1, byte[] t2, byte[] t3) {
-        if (!ready || sdk == null) return null;
+        if (!matchingReady || sdk == null) return null;
         log.info("ZKFPM_DBMerge: tamaños entrada t1={} t2={} t3={} bytes.",
                 t1 != null ? t1.length : -1,
                 t2 != null ? t2.length : -1,
@@ -327,15 +411,15 @@ public class ZkBiometricMatcher implements BiometricMatcher {
 
     @Override
     public synchronized void remove(long fingerprintId) {
-        if (!ready) return;
+        if (!matchingReady) return;
         sdk.ZKFPM_DBDel(dbCache, (int) fingerprintId);
         fidToEmployee.remove((int) fingerprintId);
     }
 
     @Override
     public synchronized Optional<MatchResult> identify(byte[] probeTemplate) {
-        if (!ready) {
-            log.warn("identify: motor biométrico no disponible (ready=false).");
+        if (!matchingReady) {
+            log.warn("identify: motor de matching no disponible (matchingReady=false).");
             return Optional.empty();
         }
         if (fidToEmployee.isEmpty()) {
@@ -385,7 +469,15 @@ public class ZkBiometricMatcher implements BiometricMatcher {
 
     @Override
     public boolean isReady() {
-        return ready;
+        return matchingReady;
+    }
+
+    /**
+     * True si hay un lector ZK9500 disponible en ESTE equipo para capturar/enrolar
+     * desde la web local. Las validaciones 1:N no dependen de esto.
+     */
+    public boolean isReaderReady() {
+        return readerReady;
     }
 
     public ZkfpSdk getSdk() {

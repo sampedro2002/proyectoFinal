@@ -95,7 +95,7 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
     private void handleOpen(WebSocketSession session) throws IOException {
         boolean result;
 
-        if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
+        if (zkBiometricMatcher != null && zkBiometricMatcher.isReaderReady()) {
             // Si hay una tarea de captura activa, el dispositivo está en uso = disponible.
             // Someter una tarea al executor cuando está ocupado provoca un timeout de 5 s.
             if (captureTask != null && !captureTask.isDone()) {
@@ -167,7 +167,7 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
         captureTask = executor.submit(() -> {
             try {
                 boolean registerMode = "register".equalsIgnoreCase(mode);
-                if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
+                if (zkBiometricMatcher != null && zkBiometricMatcher.isReaderReady()) {
                     captureWithDevice(session, mode);
                 } else {
                     log.warn("Intento de captura sin lector ZKTeco9500 conectado.");

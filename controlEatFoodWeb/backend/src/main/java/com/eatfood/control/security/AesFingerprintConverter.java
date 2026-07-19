@@ -93,13 +93,21 @@ public class AesFingerprintConverter implements AttributeConverter<byte[], byte[
         }
     }
 
+    /**
+     * Descifra una plantilla de la BD. Ante un fallo de descifrado <b>NO lanza excepción</b>:
+     * devuelve {@code null} para degradar con elegancia. Así una huella ilegible (típicamente
+     * porque la clave cambió tras una reinstalación) se omite del índice 1:N y de las respuestas,
+     * en lugar de propagar un 500 que tumba el listado del admin y aborta {@code rebuildIndex()}.
+     * El desajuste queda visible en {@code GET /api/fingerprints/biometric-status}
+     * ({@code indexMatchesDb=false}, {@code indexSize < activeInDb}) y en los WARN de arranque.
+     */
     @Override
     public byte[] convertToEntityAttribute(byte[] dbData) {
         if (dbData == null) return null;
         if (dbData.length <= IV_LENGTH) {
-            log.error("[CRYPT] Datos en BD demasiado cortos ({} bytes) para contener IV+ciphertext. " +
-                    "El registro puede estar cifrado con la versión anterior (CBC). Re-enrole la huella.", dbData.length);
-            throw new IllegalStateException("Fingerprint data too short to decrypt (expected IV + ciphertext)");
+            log.warn("[CRYPT] Registro biométrico demasiado corto ({} bytes) para contener IV+ciphertext " +
+                    "(posible cifrado con el esquema anterior). Se omite; re-enrole la huella.", dbData.length);
+            return null;
         }
         try {
             byte[] iv = Arrays.copyOfRange(dbData, 0, IV_LENGTH);
@@ -108,14 +116,13 @@ public class AesFingerprintConverter implements AttributeConverter<byte[], byte[
             cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
             return cipher.doFinal(ciphertext);
         } catch (AEADBadTagException e) {
-            log.error("[CRYPT] Verificación de integridad fallida al descifrar plantilla biométrica " +
-                    "(dato manipulado o clave incorrecta).");
-            throw new IllegalStateException("Fingerprint data failed authentication check (tampered or wrong key)", e);
+            // Clave distinta a la usada para cifrar (típico tras reinstalar con una clave nueva).
+            log.warn("[CRYPT] Huella ilegible: la clave actual no coincide con la usada para cifrarla " +
+                    "(app.biometric.encryption-key / BIOMETRIC_ENCRYPTION_KEY cambió). Se omite; re-enrole la huella.");
+            return null;
         } catch (Exception e) {
-            log.error("[CRYPT] Error al descifrar plantilla biométrica. " +
-                    "Verifique que la clave (app.biometric.encryption-key) sea la misma " +
-                    "con la que se cifró originalmente: {}", e.getMessage());
-            throw new IllegalStateException("Error decrypting template", e);
+            log.warn("[CRYPT] No se pudo descifrar una plantilla biométrica ({}). Se omite.", e.getMessage());
+            return null;
         }
     }
 }

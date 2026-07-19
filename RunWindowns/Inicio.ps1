@@ -60,6 +60,13 @@ $SetupExe     = Join-Path $ScriptRoot "setup.exe"
 $LockFile     = Join-Path $ScriptRoot ".setup_completado.lock"
 $ZkNativePath = Join-Path $ScriptRoot "native"
 
+# Secretos persistentes FUERA de RunWindowns\config (que se borra al desinstalar) y
+# fuera del repo: sobreviven a una reinstalacion para no invalidar las huellas ya
+# cifradas en la BD. Se guardan protegidos con DPAPI (alcance LocalMachine).
+$SecretsDir       = Join-Path $env:ProgramData "ControlEatFood"
+$BiometricKeyFile = Join-Path $SecretsDir "biometric.key"
+$JwtSecretFile    = Join-Path $SecretsDir "jwt.secret"
+
 @($ConfigDir, $LogsDir, $NssmDir) | ForEach-Object {
     if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
 }
@@ -1220,7 +1227,109 @@ function Start-TestSetup {
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # MODO PRODUCCION (equivalente a install.ps1 + uninstall.ps1)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+function Save-PersistedSecret {
+    param([string]$Path, [string]$Value)
+    $dir = Split-Path -Parent $Path
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $toWrite = $null
+    try {
+        Add-Type -AssemblyName System.Security -ErrorAction Stop
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Value)
+        $protected = [System.Security.Cryptography.ProtectedData]::Protect(
+            $bytes, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+        $toWrite = "DPAPI:" + [Convert]::ToBase64String($protected)
+    } catch {
+        Write-Log "DPAPI no disponible; el secreto se guarda en claro en $Path." 'WARN'
+        $toWrite = "PLAIN:" + $Value
+    }
+    [System.IO.File]::WriteAllText($Path, $toWrite)
+}
+
+function Read-PersistedSecret {
+    param([string]$Path)
+    if (-not (Test-Path $Path)) { return $null }
+    $raw = (Get-Content -Path $Path -Raw).Trim()
+    if (-not $raw) { return $null }
+    if ($raw.StartsWith("PLAIN:")) { return $raw.Substring(6) }
+    if ($raw.StartsWith("DPAPI:")) {
+        try {
+            Add-Type -AssemblyName System.Security -ErrorAction Stop
+            $protected = [Convert]::FromBase64String($raw.Substring(6))
+            $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect(
+                $protected, $null, [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+            return [System.Text.Encoding]::UTF8.GetString($bytes)
+        } catch {
+            Write-Log "No se pudo descifrar el secreto DPAPI en $Path (posible otro equipo)." 'WARN'
+            return $null
+        }
+    }
+    return $raw
+}
+
+function Save-BiometricKeyBackup {
+    param([string]$Value)
+    if (-not (Test-Path $SecretsDir)) { New-Item -ItemType Directory -Path $SecretsDir -Force | Out-Null }
+    $backup = Join-Path $SecretsDir "biometric-key-RESPALDO-NO-BORRAR.txt"
+    $lines = @(
+        "# ============================================================",
+        "#  CONTROL EAT FOOD - CLAVE DE CIFRADO DE HUELLAS (AES-256)",
+        "# ============================================================",
+        "#  GUARDE ESTE ARCHIVO EN LUGAR SEGURO. NO LO BORRE.",
+        "#",
+        "#  Esta clave descifra las huellas guardadas en la base de datos.",
+        "#  Si reinstala en OTRO equipo (o borra ProgramData), use la opcion",
+        "#  'Reinstalacion' y pegue esta clave para que las huellas existentes",
+        "#  sigan siendo validas. Si la pierde, habra que re-enrolar todas.",
+        "# ============================================================",
+        "",
+        $Value
+    )
+    Set-Content -Path $backup -Value $lines -Encoding UTF8
+    Write-Log "Respaldo legible de la clave guardado en: $backup" 'WARN'
+}
+
+function Get-OrCreateBiometricKey {
+    param([switch]$Reinstall)
+    $existing = Read-PersistedSecret -Path $BiometricKeyFile
+    if ($existing) {
+        Write-Log "Clave de cifrado biometrico reutilizada (las huellas existentes seguiran siendo legibles)." 'SUCCESS'
+        return $existing
+    }
+    if ($Reinstall) {
+        Write-Host ""
+        Write-Host "  [!] No se encontro la clave de cifrado guardada en este equipo." -ForegroundColor Yellow
+        Write-Host "      Si esta base de datos YA tiene huellas, pegue la clave del respaldo" -ForegroundColor Yellow
+        Write-Host "      (biometric-key-RESPALDO-NO-BORRAR.txt del equipo anterior)." -ForegroundColor Yellow
+        Write-Host "      ENTER en blanco genera una clave NUEVA: las huellas viejas quedaran" -ForegroundColor DarkGray
+        Write-Host "      ilegibles y habra que re-enrolarlas." -ForegroundColor DarkGray
+        $pasted = (Read-Host "  Clave de cifrado (base64) o ENTER para generar nueva").Trim()
+        if ($pasted) {
+            Save-PersistedSecret -Path $BiometricKeyFile -Value $pasted
+            Write-Log "Clave de cifrado ingresada manualmente y persistida." 'SUCCESS'
+            return $pasted
+        }
+    }
+    $key = Generate-RandomBase64 -Bytes 32
+    Save-PersistedSecret -Path $BiometricKeyFile -Value $key
+    Save-BiometricKeyBackup -Value $key
+    Write-Log "Nueva clave de cifrado biometrico generada y persistida en ProgramData." 'SUCCESS'
+    return $key
+}
+
+function Get-OrCreateJwtSecret {
+    $existing = Read-PersistedSecret -Path $JwtSecretFile
+    if ($existing) {
+        Write-Log "JWT Secret reutilizado (las sesiones existentes siguen validas)." 'SUCCESS'
+        return $existing
+    }
+    $secret = Generate-RandomBase64 -Bytes 32
+    Save-PersistedSecret -Path $JwtSecretFile -Value $secret
+    Write-Log "Nuevo JWT Secret generado y persistido." 'SUCCESS'
+    return $secret
+}
+
 function Step-ConfigureProduction {
+    param([switch]$Reinstall)
     $prodConfig = @{
         JwtSecret = ''; CorsOrigins = ''; PublicUrl = ''; BiometricEncryptionKey = ''
         RateLimitEnabled = 'true'; RateLimitAuth = '10'; RateLimitScan = '60'
@@ -1242,8 +1351,7 @@ function Step-ConfigureProduction {
 
     Write-Host ""
     Write-Host "  --- JWT Secret ---" -ForegroundColor Yellow
-    $prodConfig.JwtSecret = Generate-RandomBase64 -Bytes 32
-    Write-Log "JWT Secret generado automaticamente." 'SUCCESS'
+    $prodConfig.JwtSecret = Get-OrCreateJwtSecret
 
     Write-Host ""
     Write-Host "  --- CORS Origins ---" -ForegroundColor Yellow
@@ -1260,8 +1368,7 @@ function Step-ConfigureProduction {
 
     Write-Host ""
     Write-Host "  --- Biometric Encryption Key (AES-256) ---" -ForegroundColor Yellow
-    $prodConfig.BiometricEncryptionKey = Generate-RandomBase64 -Bytes 32
-    Write-Log "Biometric Encryption Key generada." 'SUCCESS'
+    $prodConfig.BiometricEncryptionKey = Get-OrCreateBiometricKey -Reinstall:$Reinstall
 
     Write-Host ""
     Write-Host "  --- Rate Limit ---" -ForegroundColor Yellow
@@ -1319,7 +1426,7 @@ app:
   public-url: "$($ProdConfig.PublicUrl)"
   security:
     jwt:
-      secret: "$($ProdConfig.JwtSecret)"
+      secret: `${JWT_SECRET}
       access-token-minutes: 30
       refresh-token-days: 7
     brute-force:
@@ -1330,7 +1437,7 @@ app:
   biometric:
     provider: zk
     match-threshold: 70
-    encryption-key: "$($ProdConfig.BiometricEncryptionKey)"
+    encryption-key: `${BIOMETRIC_ENCRYPTION_KEY}
     native-lib-path: "$($ZkNativePath -replace '\\', '/')"
   cors:
     allowed-origins: "$($ProdConfig.CorsOrigins)"
@@ -1629,10 +1736,15 @@ function Save-InstallConfig {
 }
 
 function Install-Full {
+    param([switch]$Reinstall)
     Write-Host ""
     Write-Host "  ============================================================" -ForegroundColor Green
-    Write-Host "  INICIANDO INSTALACION DE PRODUCCION" -ForegroundColor Green
+    Write-Host "  $(if($Reinstall){'REINSTALACION (conservando datos y claves)'}else{'INICIANDO INSTALACION DE PRODUCCION'})" -ForegroundColor Green
     Write-Host "  ============================================================" -ForegroundColor Green
+    if ($Reinstall) {
+        Write-Host "  Se conservaran las claves de cifrado existentes para que las" -ForegroundColor Cyan
+        Write-Host "  huellas ya registradas sigan siendo validas." -ForegroundColor Cyan
+    }
 
     $javaOk = Test-Java21
     $nodeOk = Test-NodeInstalled
@@ -1647,7 +1759,7 @@ function Install-Full {
     if ((Read-Host "  Continuar con la instalacion? (s/n)") -ne 's') { Write-Log "Instalacion cancelada por el usuario."; return }
 
     $dbConfig = Step-ConfigureDatabase -Mode 'Prod'
-    $prodConfig = Step-ConfigureProduction
+    $prodConfig = Step-ConfigureProduction -Reinstall:$Reinstall
 
     if (-not (Install-FrontendDependencies)) { Write-Log "Error en dependencias del frontend. Abortando." 'ERROR'; return }
 
@@ -1863,6 +1975,16 @@ function Uninstall-App {
         Write-Log "Lock del SDK biométrico (.setup_completado.lock) eliminado." 'SUCCESS'
     }
 
+    # La clave de cifrado (ProgramData\ControlEatFood) se CONSERVA a proposito: si
+    # la BD sobrevive, permite reinstalar sin invalidar las huellas ya registradas.
+    if (Test-Path $BiometricKeyFile) {
+        Write-Host ""
+        Write-Host "  NOTA: la clave de cifrado de huellas se conservo en:" -ForegroundColor Cyan
+        Write-Host "        $SecretsDir" -ForegroundColor Cyan
+        Write-Host "        (asi una reinstalacion no invalida las huellas existentes)." -ForegroundColor DarkGray
+        Write-Log "Clave de cifrado conservada en $SecretsDir (no se borra al desinstalar)." 'WARN'
+    }
+
     Write-Host ""
     Write-Host "  ============================================================" -ForegroundColor Green
     Write-Host "  DESINSTALACION COMPLETADA" -ForegroundColor Green
@@ -1913,6 +2035,7 @@ function Show-MainMenu {
         $options = @(
             "Pruebas (entorno de desarrollo local)",
             "Instalacion nueva (Produccion)",
+            "Reinstalacion (conservar datos y claves existentes)",
             "Actualizar aplicacion (rebuild + restart)",
             "Reparar configuracion",
             "Desinstalar",
@@ -1922,9 +2045,9 @@ function Show-MainMenu {
         
         Show-Menu "Que deseas hacer?" $options
         
-        $selection = Read-Choice "Seleccionar opcion" -Max 7
-        
-        $requiresAdmin = $selection -ge 2 -and $selection -le 6
+        $selection = Read-Choice "Seleccionar opcion" -Max 8
+
+        $requiresAdmin = $selection -ge 2 -and $selection -le 7
         
         if ($requiresAdmin -and -not (Test-IsAdmin)) {
             Write-Host ""
@@ -1939,11 +2062,12 @@ function Show-MainMenu {
         switch ($selection) {
             1 { Start-TestSetup }
             2 { Install-Full }
-            3 { Update-App }
-            4 { Repair-App }
-            5 { Uninstall-App }
-            6 { Show-Diagnostics }
-            7 { 
+            3 { Install-Full -Reinstall }
+            4 { Update-App }
+            5 { Repair-App }
+            6 { Uninstall-App }
+            7 { Show-Diagnostics }
+            8 {
                 Write-Host "  Saliendo... Hasta luego!" -ForegroundColor Yellow
                 $salir = $true
             }
