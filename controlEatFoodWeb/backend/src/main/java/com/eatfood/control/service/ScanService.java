@@ -208,7 +208,8 @@ public class ScanService {
                         c.getEmployee().getFullName(),
                         c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),
-                        c.getMethod() != null ? c.getMethod().name() : "FINGERPRINT"))
+                        c.getMethod() != null ? c.getMethod().name() : "FINGERPRINT",
+                        c.getProxyEmployee() != null ? c.getProxyEmployee().getFullName() : null))
                 .collect(Collectors.toList());
         return new TodayFeedResponse(device.getRestaurant().getName(), entries);
     }

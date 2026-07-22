@@ -59,7 +59,8 @@ public final class ScanDtos {
             String employeeName,
             String mealName,
             String time,
-            String method) {}
+            String method,
+            String proxyEmployeeName) {}
 
     /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
     public record TodayFeedResponse(

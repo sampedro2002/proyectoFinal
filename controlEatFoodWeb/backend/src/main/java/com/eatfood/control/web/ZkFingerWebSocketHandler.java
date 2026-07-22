@@ -203,26 +203,9 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
         ZkfpSdk sdk = zkBiometricMatcher.getSdk();
         Pointer hDevice = null;
         try {
-            hDevice = sdk.ZKFPM_OpenDevice(0);
-            if (hDevice == null) {
-                log.error("ZKFPM_OpenDevice retornó null — lector no disponible.");
-                sendCaptureError(session);
-                return;
-            }
-            log.info("Lector USB ZKFinger abierto (modo={}).", registerMode ? "register" : "scan");
-
-            // Buffer de imagen fijo: 1 MB cubre cualquier sensor ZKTeco (ZK9500 = 256×360 = 92 KB)
             byte[] imgBuf = new byte[1024 * 1024];
-
-            // Drenar imagen residual del sensor (stale buffer)
-            {
-                byte[] drainTpl = new byte[2048];
-                IntByReference drainLen = new IntByReference(2048);
-                if (sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, drainTpl, drainLen) == 0) {
-                    log.debug("Buffer residual drenado. Esperando 800 ms...");
-                    Thread.sleep(800);
-                }
-            }
+            hDevice = openAndDrainDevice(sdk, imgBuf);
+            log.info("Lector USB ZKFinger abierto (modo={}).", registerMode ? "register" : "scan");
 
             if (registerMode) {
                 captureRegisterMode(session, sdk, hDevice, imgBuf);
@@ -232,6 +215,9 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
 
         } catch (InterruptedException e) {
             log.debug("Hilo de captura interrumpido.");
+        } catch (IllegalStateException e) {
+            log.error(e.getMessage());
+            sendCaptureError(session);
         } catch (Throwable t) {
             log.error("Error nativo en captura de huella: {}", t.getMessage(), t);
             sendCaptureError(session);
@@ -243,6 +229,25 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
                 } catch (Throwable ignored) {}
             }
         }
+    }
+
+    /**
+     * Abre el dispositivo índice 0 y drena la imagen residual del sensor (stale buffer).
+     * Compartido por todas las rutas de captura (WebSocket y REST) para que el hilo
+     * único del executor sea el único que toca el SDK nativo.
+     */
+    private Pointer openAndDrainDevice(ZkfpSdk sdk, byte[] imgBuf) throws InterruptedException {
+        Pointer hDevice = sdk.ZKFPM_OpenDevice(0);
+        if (hDevice == null) {
+            throw new IllegalStateException("ZKFPM_OpenDevice retornó null — lector no disponible.");
+        }
+        byte[] drainTpl = new byte[2048];
+        IntByReference drainLen = new IntByReference(2048);
+        if (sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, drainTpl, drainLen) == 0) {
+            log.debug("Buffer residual drenado. Esperando 800 ms...");
+            Thread.sleep(800);
+        }
+        return hDevice;
     }
 
     /** Modo scan: espera y devuelve una única captura sin fusión. */
@@ -296,22 +301,36 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
      */
     private void captureRegisterMode(WebSocketSession session, ZkfpSdk sdk, Pointer hDevice, byte[] imgBuf)
             throws InterruptedException {
-        final int TOTAL = 3;
-        byte[][] temps = new byte[TOTAL][];
+        byte[][] temps = acquireRegisterTemplates(session, sdk, hDevice, imgBuf, 3);
+        if (temps == null) return; // hilo interrumpido o sesión cerrada
+        byte[] finalTpl = mergeOrBestTemplate(temps);
+        sendCaptureResult(session, Base64.getEncoder().encodeToString(finalTpl));
+    }
 
-        for (int step = 1; step <= TOTAL; step++) {
-            if (Thread.currentThread().isInterrupted() || !session.isOpen()) return;
+    /**
+     * Captura {@code total} plantillas con detección de levantamiento entre tomas.
+     * Si {@code session} es {@code null} (captura REST desde servidor, sin sesión
+     * WebSocket asociada) omite los envíos de progreso y solo revisa la interrupción
+     * del hilo. Compartida por la captura vía WebSocket y la captura REST para no
+     * duplicar el algoritmo de registro (3 tomas + fusión) en dos sitios.
+     */
+    private byte[][] acquireRegisterTemplates(WebSocketSession session, ZkfpSdk sdk, Pointer hDevice, byte[] imgBuf, int total)
+            throws InterruptedException {
+        byte[][] temps = new byte[total][];
 
-            log.info("Registro: esperando captura {}/{}...", step, TOTAL);
+        for (int step = 1; step <= total; step++) {
+            if (Thread.currentThread().isInterrupted() || (session != null && !session.isOpen())) return null;
+
+            log.info("Registro: esperando captura {}/{}...", step, total);
             byte[] tplBuf = new byte[2048];
             IntByReference tplLen = new IntByReference(2048);
 
-            while (!Thread.currentThread().isInterrupted() && session.isOpen()) {
+            while (!Thread.currentThread().isInterrupted() && (session == null || session.isOpen())) {
                 tplLen.setValue(2048);
                 int rc = sdk.ZKFPM_AcquireFingerprint(hDevice, imgBuf, imgBuf.length, tplBuf, tplLen);
                 if (rc == 0) {
                     temps[step - 1] = Arrays.copyOf(tplBuf, tplLen.getValue());
-                    log.info("Captura {}/{} exitosa (longitud={}).", step, TOTAL, temps[step - 1].length);
+                    log.info("Captura {}/{} exitosa (longitud={}).", step, total, temps[step - 1].length);
                     break;
                 } else if (rc == -28 || rc == -23 || rc == 1) {
                     Thread.sleep(100);
@@ -320,15 +339,15 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
                 }
             }
 
-            if (temps[step - 1] == null) return; // hilo interrumpido
+            if (temps[step - 1] == null) return null; // hilo interrumpido
 
-            if (step < TOTAL) {
-                sendCaptureProgress(session, step, TOTAL);
+            if (step < total) {
+                if (session != null) sendCaptureProgress(session, step, total);
                 waitForFingerLift(sdk, hDevice, imgBuf);
             }
         }
 
-        mergeAndSend(session, temps);
+        return temps;
     }
 
     /** Espera hasta que el sensor deje de detectar el dedo (máx. 6 s de fallback). */
@@ -348,23 +367,78 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
     }
 
     /**
-     * Fusiona 3 plantillas con ZKFPM_DBMerge y envía el resultado.
-     * Usa el dbCache principal de ZkBiometricMatcher como workspace para evitar crear/liberar
-     * un handle temporal que puede corromper el estado global del SDK ZKFinger.
+     * Fusiona 3 plantillas con ZKFPM_DBMerge, o usa la mejor captura individual como
+     * fallback si la fusión falla.
      */
-    private void mergeAndSend(WebSocketSession session, byte[][] temps) {
+    private byte[] mergeOrBestTemplate(byte[][] temps) {
         if (zkBiometricMatcher != null && zkBiometricMatcher.isReady()) {
             byte[] finalTpl = zkBiometricMatcher.mergeTemplates(temps[0], temps[1], temps[2]);
-            if (finalTpl != null) {
-                sendCaptureResult(session, Base64.getEncoder().encodeToString(finalTpl));
-                return;
-            }
+            if (finalTpl != null) return finalTpl;
             log.warn("ZKFPM_DBMerge falló. Usando plantilla individual como fallback.");
         }
         byte[] best = temps[0];
         for (byte[] t : temps) { if (t != null && t.length > best.length) best = t; }
         log.info("Fallback register: plantilla individual (longitud={}).", best.length);
-        sendCaptureResult(session, Base64.getEncoder().encodeToString(best));
+        return best;
+    }
+
+    /**
+     * Captura una huella de registro (3 tomas + fusión) para el endpoint REST de
+     * enrolamiento desde servidor. Comparte el mismo executor de un solo hilo y el
+     * mismo bloqueo de dispositivo ({@code activeMode}/{@code captureTask}) que usan
+     * las sesiones WebSocket del Kiosk/Admin, para evitar que dos hilos abran el
+     * dispositivo ZK9500 al mismo tiempo (el SDK nativo exige afinidad de hilo — ver
+     * cabecera de la clase). Mientras esta captura está en curso, las solicitudes
+     * "continuous" del Kiosk se rechazan con {@code capture_interrupted} igual que
+     * durante un enrolamiento admin vía WebSocket.
+     */
+    public synchronized CompletableFuture<byte[]> captureForServerEnroll() {
+        CompletableFuture<byte[]> result = new CompletableFuture<>();
+        if (zkBiometricMatcher == null || !zkBiometricMatcher.isReaderReady()) {
+            result.completeExceptionally(new IllegalStateException("Lector ZK9500 no disponible en el servidor"));
+            return result;
+        }
+
+        if (captureTask != null && !captureTask.isDone()) {
+            captureTask.cancel(true);
+            if (activeCapturingSession != null && activeCapturingSession.isOpen()) {
+                sendMsg(activeCapturingSession, "capture_interrupted");
+            }
+        }
+
+        activeCapturingSession = null;
+        activeMode = "register";
+
+        captureTask = executor.submit(() -> {
+            ZkfpSdk sdk = zkBiometricMatcher.getSdk();
+            Pointer hDevice = null;
+            try {
+                byte[] imgBuf = new byte[1024 * 1024];
+                hDevice = openAndDrainDevice(sdk, imgBuf);
+                log.info("Lector USB ZKFinger abierto para enrolamiento desde servidor.");
+                byte[][] temps = acquireRegisterTemplates(null, sdk, hDevice, imgBuf, 3);
+                if (temps == null) {
+                    result.completeExceptionally(new InterruptedException("Captura de huella interrumpida"));
+                    return;
+                }
+                result.complete(mergeOrBestTemplate(temps));
+            } catch (Throwable t) {
+                result.completeExceptionally(t);
+            } finally {
+                if (hDevice != null) {
+                    try { sdk.ZKFPM_CloseDevice(hDevice); log.info("Lector USB cerrado tras enrolamiento servidor."); } catch (Throwable ignored) {}
+                }
+                activeMode = null;
+                for (WebSocketSession s : sessions) {
+                    if (s.isOpen()) sendMsg(s, "capture_interrupted");
+                }
+            }
+        });
+        return result;
+    }
+
+    public boolean isReaderReady() {
+        return zkBiometricMatcher != null && zkBiometricMatcher.isReaderReady();
     }
 
     private void sendCaptureProgress(WebSocketSession session, int step, int total) {

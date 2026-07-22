@@ -563,12 +563,13 @@ export default function Kiosk() {
                     <th>NOMBRE</th>
                     <th>HORA</th>
                     <th>TIPO</th>
+                    <th>RETIRA</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredFeed.length === 0 ? (
                     <tr>
-                      <td colSpan="4" className="kiosk-feed-empty">Sin registros aún</td>
+                      <td colSpan="5" className="kiosk-feed-empty">Sin registros aún</td>
                     </tr>
                   ) : (
                     filteredFeed.map((e, i) => (
@@ -577,6 +578,7 @@ export default function Kiosk() {
                         <td>{e.employeeName}</td>
                         <td>{e.time}</td>
                         <td>{e.mealName}</td>
+                        <td>{e.proxyEmployeeName || '—'}</td>
                       </tr>
                     ))
                   )}

@@ -763,6 +763,7 @@ private fun TodayFeedPanel(
                         Text("NOMBRE", Modifier.weight(1f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         Text("HORA", Modifier.width(60.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
                         Text("TIPO", Modifier.width(80.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
+                        Text("RETIRA", Modifier.width(80.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
                     }
 
                     HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
@@ -785,6 +786,7 @@ private fun TodayFeedPanel(
                                         Modifier.width(60.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.Center
                                     )
                                     Text(e.mealName ?: "Comida", Modifier.width(80.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End)
+                                    Text(e.proxyEmployeeName ?: "—", Modifier.width(80.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1)
                                 }
                             }
                         }

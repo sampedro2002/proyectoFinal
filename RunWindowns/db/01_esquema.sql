@@ -138,7 +138,7 @@ CREATE TABLE IF NOT EXISTS consumo (
     sin_conexion         BOOLEAN NOT NULL DEFAULT FALSE,
     estado_sincronizacion     VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (estado_sincronizacion IN ('SYNCED','PENDING','CONFLICT')),
     -- method: origen del registro. FINGERPRINT = escaneo de huella del propio
-    -- empleado; MANUAL = registro manual "retira por otro" (proxy_employee_id
+    -- empleado; MANUAL = registro manual "retira por otro" (empleado_apoderado_id
     -- indica quién retira); EXTERNAL = persona externa creada al vuelo.
     metodo          VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
                         CHECK (metodo IN ('FINGERPRINT','MANUAL','EXTERNAL')),

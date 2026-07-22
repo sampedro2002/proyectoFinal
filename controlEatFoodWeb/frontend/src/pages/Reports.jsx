@@ -73,9 +73,6 @@ export default function Reports() {
 
   function buildDescription(r) {
     if (r.observation && r.observation.trim() !== '') return r.observation;
-    if (r.method === 'MANUAL' && r.proxyEmployeeName && r.employeeName) {
-      return `${r.proxyEmployeeName} retira de ${r.employeeName}`;
-    }
     return '—';
   }
 
@@ -122,7 +119,7 @@ export default function Reports() {
         <table>
           <thead><tr>
             <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
-            <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Descripción</th>
+            <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Retira</th><th>Descripción</th>
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (
@@ -139,6 +136,7 @@ export default function Reports() {
                     {METHOD_LABEL[r.method] || r.method}
                   </span>
                 </td>
+                <td>{r.proxyEmployeeName || '—'}</td>
                 <td>{buildDescription(r)}</td>
               </tr>
             ))}

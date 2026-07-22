@@ -11,8 +11,9 @@
 
 -- Roles del sistema (nombre es UNIQUE: IGNORE omite los que ya existan)
 INSERT IGNORE INTO roles (nombre, descripcion) VALUES
-  ('ADMIN',    'Administrador del sistema'),
-  ('CATERING', 'Registro de consumos en punto de restaurante');
+  ('ADMIN',             'Administrador del sistema'),
+  ('CATERING',          'Registro de consumos en punto de restaurante'),
+  ('RECURSOS_HUMANOS',  'Recursos Humanos — reportes y empleados (solo lectura)');
 
 -- Usuario administrador inicial (nombre_usuario es UNIQUE). La contraseña real
 -- (Admin123*) la cifra DataInitializer al arrancar (BCrypt), reemplazando
@@ -23,6 +24,13 @@ VALUES ('admin', 'NEEDS_RESET', 'Administrador', 'admin@eatfood.local', TRUE);
 -- Asignación de rol ADMIN (PK compuesta usuario_id+rol_id: IGNORE evita duplicado)
 INSERT IGNORE INTO usuario_rol (usuario_id, rol_id)
 SELECT u.id, r.id FROM usuario u, roles r WHERE u.nombre_usuario='admin' AND r.nombre='ADMIN';
+
+-- Usuario de Recursos Humanos (contraseña la fija DataInitializer)
+INSERT IGNORE INTO usuario (nombre_usuario, contrasena_hash, nombre_completo, correo, habilitado)
+VALUES ('rrhh', 'NEEDS_RESET', 'Recursos Humanos', 'rrhh@eatfood.local', TRUE);
+
+INSERT IGNORE INTO usuario_rol (usuario_id, rol_id)
+SELECT u.id, r.id FROM usuario u, roles r WHERE u.nombre_usuario='rrhh' AND r.nombre='RECURSOS_HUMANOS';
 
 -- 3 restaurantes iniciales (nombre es UNIQUE)
 INSERT IGNORE INTO restaurante (nombre, ubicacion, max_dispositivos) VALUES

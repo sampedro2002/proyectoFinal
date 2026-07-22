@@ -154,7 +154,8 @@ data class TodayFeedEntry(
     val employeeName: String?,
     val mealName: String?,
     val time: String?,
-    val method: String?
+    val method: String?,
+    val proxyEmployeeName: String?
 )
 
 /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */

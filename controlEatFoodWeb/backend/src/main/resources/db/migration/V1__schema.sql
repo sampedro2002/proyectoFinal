@@ -111,7 +111,7 @@ CREATE TABLE IF NOT EXISTS dispositivo (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
     restaurante_id BIGINT NOT NULL,
     uid_dispositivo VARCHAR(80) NOT NULL,
-    nombre        VARCHAR(120),
+    name          VARCHAR(120),
     ultima_conexion DATETIME,
     token_sesion  VARCHAR(120),
     conectado     BOOLEAN NOT NULL DEFAULT FALSE,
@@ -236,6 +236,6 @@ CREATE OR REPLACE VIEW v_config_efectiva_empleado AS
 SELECT e.id AS empleado_id,
        e.nombre_completo,
        e.permite_almuerzo,
-       e.permite_merienda AS effective_snack
+       e.permite_merienda AS merienda_efectiva
 FROM empleado e
 WHERE e.eliminado = FALSE;
