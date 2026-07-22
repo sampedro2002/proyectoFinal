@@ -1,10 +1,6 @@
 export default function ConfirmModal({ isOpen, title, message, onConfirm, onCancel }) {
   if (!isOpen) return null;
 
-  const handleOverlayClick = (e) => {
-    // Cerrar al hacer click fuera del card, sólo si onCancel está definido.
-    if (e.target === e.currentTarget && onCancel) onCancel();
-  };
   const handleKeyDown = (e) => {
     if (e.key === 'Escape' && onCancel) onCancel();
   };
@@ -12,7 +8,6 @@ export default function ConfirmModal({ isOpen, title, message, onConfirm, onCanc
   return (
     <div
       className="modal-overlay"
-      onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
       style={{

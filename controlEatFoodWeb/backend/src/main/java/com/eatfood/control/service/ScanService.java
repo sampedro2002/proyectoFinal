@@ -161,11 +161,11 @@ public class ScanService {
         }
 
         // Se decide por las comidas YA registradas hoy (no solo por el conteo), para que un
-        // empleado autorizado únicamente al segundo plato (allowsLunch=false, allowsSnack=true)
+        // empleado autorizado únicamente al segundo plato (permiteAlmuerzo=false, permiteMerienda=true)
         // no reciba "Almuerzo" en su primer escaneo y luego otra "Merienda" en el segundo: su
         // tope diario es 1 comida, no 2.
-        // Nota de nomenclatura: allows_lunch gobierna el "Almuerzo" (primer plato) y
-        // allows_snack la "Merienda" (segundo plato); son los dos únicos platos del sistema.
+        // Nota de nomenclatura: permite_almuerzo gobierna el "Almuerzo" (primer plato) y
+        // permite_merienda la "Merienda" (segundo plato); son los dos únicos platos del sistema.
         List<String> consumedToday = consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), date);
         boolean hadBreakfast = consumedToday.contains("Almuerzo");
         boolean hadLunch = consumedToday.contains("Merienda");
@@ -230,7 +230,8 @@ public class ScanService {
                             c.getRestaurant().getName(), c.getMealName(),
                             c.getObservation(), c.isOffline(),
                             c.getMethod() != null ? c.getMethod().name() : Method.FINGERPRINT.name(),
-                            p != null ? p.getFullName() : null);
+                            p != null ? p.getFullName() : null,
+                            c.isCancelled());
                 })
                 .toList();
 
@@ -262,8 +263,8 @@ public class ScanService {
      * El empleado {@code proxyEmployeeId} (Pepe) retira comidas a nombre de
      * una lista de titulares (Juan, Luis, Maria...). Para cada titular se crea
      * una fila de {@code consumption} por cada codigo de comida pedido, con
-     * {@code method='MANUAL'}, {@code proxy_employee_id=Pepe} y
-     * {@code observation="Pepe retira de Juan"} autogenerada (el admin no
+     * {@code method='MANUAL'}, {@code empleado_apoderado_id=Pepe} y
+     * {@code observacion="Pepe retira de Juan"} autogenerada (el admin no
      * necesita capturarla en la UI). No se valida horario, permisos ni
      * duplicados de los titulares: el manual es un override administrativo.
      */

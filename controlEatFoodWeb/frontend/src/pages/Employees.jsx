@@ -93,6 +93,14 @@ export default function Employees() {
     else setFingerprints([]);
   }, [form?.id]);
 
+  // Cerrar el modal con Escape.
+  useEffect(() => {
+    if (!form) return;
+    const handler = (e) => { if (e.key === 'Escape') closeForm(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [form]);
+
   // Cerrar el WebSocket del lector si el componente se desmonta.
   useEffect(() => {
     return () => {
@@ -346,10 +354,7 @@ export default function Employees() {
 
       {/* ── Modal central crear/editar ── */}
       {form && (
-        <div
-          className="modal-overlay"
-          onClick={(e) => { if (e.target === e.currentTarget) closeForm(); }}
-        >
+        <div className="modal-overlay">
           <div className="card modal-card">
             <div className="topbar" style={{ marginBottom: 12 }}>
               <h3 style={{ margin: 0 }}>{form.id ? 'Editar empleado' : 'Nuevo empleado'}</h3>

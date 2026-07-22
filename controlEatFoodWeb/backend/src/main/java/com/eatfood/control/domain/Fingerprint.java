@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "fingerprint")
+@Table(name = "huella_digital")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Fingerprint {
 
@@ -15,25 +15,24 @@ public class Fingerprint {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "employee_id")
+    @JoinColumn(name = "empleado_id")
     private Employee employee;
 
-    /** Índice del dedo registrado (0-9). */
-    @Column(name = "finger_index", nullable = false)
+    @Column(name = "indice_dedo", nullable = false)
     private short fingerIndex;
 
-    @Column(nullable = false)
+    @Column(name = "plantilla", nullable = false)
     @Convert(converter = com.eatfood.control.security.AesFingerprintConverter.class)
     private byte[] template;
 
-    @Column(name = "enrolled_by")
+    @Column(name = "registrado_por")
     private Long enrolledBy;
 
-    @Column(name = "enrolled_at", nullable = false)
+    @Column(name = "registrado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime enrolledAt = OffsetDateTime.now();
 
-    @Column(nullable = false)
+    @Column(name = "activo", nullable = false)
     @Builder.Default
     private boolean active = true;
 }

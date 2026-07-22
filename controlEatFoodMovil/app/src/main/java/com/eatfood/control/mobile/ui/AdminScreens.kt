@@ -1258,3 +1258,200 @@ fun ExtraMealsScreen() {
         }
     }
 }
+
+// ───────────────────────────── Editar Consumos ──────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun EditConsumptionsScreen() {
+    val context = LocalContext.current
+    val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+
+    var items by remember { mutableStateOf<List<ConsumptionDetailResponse>>(emptyList()) }
+    var search by remember { mutableStateOf("") }
+    var showCancelled by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<ConsumptionDetailResponse?>(null) }
+    var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
+    var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
+
+    suspend fun reload() {
+        runCatching {
+            api.manualConsumptionsList(
+                search = search.ifBlank { null },
+                restaurantId = selectedRestaurantId,
+                cancelled = if (showCancelled) null else false,
+                size = 100
+            ).content ?: emptyList()
+        }.onSuccess { items = it }.onFailure { snackbar.showSnackbar(it.apiMessage()) }
+    }
+    LaunchedEffect(Unit) {
+        restaurants = runCatching { api.restaurants() }.getOrDefault(emptyList())
+        reload()
+    }
+
+    fun cancelConsumption(id: Long) {
+        scope.launch {
+            runCatching { api.cancelManualConsumption(id) }
+                .onSuccess { snackbar.showSnackbar("Consumo cancelado"); reload() }
+                .onFailure { snackbar.showSnackbar(it.apiMessage("Error al cancelar")) }
+        }
+    }
+
+    fun uncancelConsumption(id: Long) {
+        scope.launch {
+            runCatching { api.uncancelManualConsumption(id) }
+                .onSuccess { snackbar.showSnackbar("Consumo reactivado"); reload() }
+                .onFailure { snackbar.showSnackbar(it.apiMessage("Error al reactivar")) }
+        }
+    }
+
+    Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            OutlinedTextField(
+                value = search, onValueChange = { search = it },
+                label = { Text("Buscar empleado…") }, singleLine = true,
+                trailingIcon = { TextButton(onClick = { scope.launch { reload() } }) { Text("Buscar") } },
+                modifier = Modifier.fillMaxWidth().padding(12.dp)
+            )
+            Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(
+                    selected = showCancelled,
+                    onClick = { showCancelled = !showCancelled; scope.launch { reload() } },
+                    label = { Text("Mostrar cancelados") }
+                )
+                Spacer(Modifier.width(12.dp))
+                Box(Modifier.weight(1f)) {
+                    var catMenu by remember { mutableStateOf(false) }
+                    OutlinedButton(onClick = { catMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "Todos los restaurants")
+                    }
+                    DropdownMenu(catMenu, { catMenu = false }) {
+                        DropdownMenuItem(text = { Text("Todos") }, onClick = { selectedRestaurantId = null; catMenu = false; scope.launch { reload() } })
+                        restaurants.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { selectedRestaurantId = c.id; catMenu = false; scope.launch { reload() } }) }
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+
+            // Resumen
+            val activeCount = items.count { !it.cancelled }
+            Text(
+                "${items.size} registros · $activeCount activos",
+                Modifier.padding(horizontal = 16.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(items) { c ->
+                    Surface(
+                        color = if (c.cancelled) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                else MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    "${c.employeeName ?: "—"} · ${c.mealName ?: ""}",
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    "${c.businessDate ?: ""} · ${c.restaurantName ?: ""} · CI ${c.identityCard ?: "—"}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (c.proxyEmployeeName != null) {
+                                    Text(
+                                        "Retira: ${c.proxyEmployeeName}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (c.cancelled) {
+                                    Text(
+                                        "CANCELADO",
+                                        color = MaterialTheme.colorScheme.error,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                            if (!c.cancelled) {
+                                TextButton(onClick = { editing = c }) { Text("Editar") }
+                                TextButton(onClick = { cancelConsumption(c.id) }) { Text("Cancelar", color = MaterialTheme.colorScheme.error) }
+                            } else {
+                                TextButton(onClick = { uncancelConsumption(c.id) }) { Text("Reactivar") }
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    // Modal de edición
+    editing?.let { c ->
+        var selEmployeeId by remember { mutableStateOf(c.employeeId) }
+        var selRestaurantId by remember { mutableStateOf(c.restaurantId) }
+        var selMeal by remember { mutableStateOf(c.mealName ?: "Almuerzo") }
+        var saving by remember { mutableStateOf(false) }
+
+        AlertDialog(
+            onDismissRequest = { editing = null },
+            title = { Text("Editar Consumo #${c.id}") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = c.employeeName ?: "",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Empleado actual") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Box {
+                        var restMenu by remember { mutableStateOf(false) }
+                        OutlinedTextField(
+                            value = restaurants.firstOrNull { it.id == selRestaurantId }?.name ?: "",
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Restaurante") },
+                            trailingIcon = { TextButton(onClick = { restMenu = true }) { Text("▼") } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        DropdownMenu(restMenu, { restMenu = false }) {
+                            restaurants.forEach { r ->
+                                DropdownMenuItem(text = { Text(r.name) },
+                                    onClick = { selRestaurantId = r.id; restMenu = false })
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilterChip(selected = selMeal == "Almuerzo", onClick = { selMeal = "Almuerzo" }, label = { Text("Almuerzo") })
+                        Spacer(Modifier.width(8.dp))
+                        FilterChip(selected = selMeal == "Merienda", onClick = { selMeal = "Merienda" }, label = { Text("Merienda") })
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(enabled = !saving, onClick = {
+                    saving = true
+                    scope.launch {
+                        runCatching {
+                            api.updateManualConsumption(c.id, UpdateManualConsumptionRequest(
+                                restaurantId = selRestaurantId,
+                                mealName = selMeal
+                            ))
+                        }.onSuccess { editing = null; reload(); snackbar.showSnackbar("Actualizado") }
+                         .onFailure { snackbar.showSnackbar(it.apiMessage("Error al actualizar")) }
+                        saving = false
+                    }
+                }) { Text(if (saving) "Guardando…" else "Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancelar") } }
+        )
+    }
+}

@@ -42,7 +42,7 @@
             android:name=".ui.kiosk.KioskActivity"
             android:exported="true"
             android:theme="@style/Theme.EatFood.Kiosk"
-            android:screenOrientation="fullSensor"
+            android:screenOrientation="unspecified"
             android:launchMode="singleTask"
             tools:ignore="LockedOrientationActivity">
             <intent-filter>

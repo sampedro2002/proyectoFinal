@@ -1,9 +1,6 @@
 export default function Drawer({ isOpen, title, onClose, children, width = 480 }) {
   if (!isOpen) return null;
 
-  const handleOverlayClick = (e) => {
-    if (e.target === e.currentTarget && onClose) onClose();
-  };
   const handleKeyDown = (e) => {
     if (e.key === 'Escape' && onClose) onClose();
   };
@@ -11,7 +8,6 @@ export default function Drawer({ isOpen, title, onClose, children, width = 480 }
   return (
     <div
       className="drawer-overlay"
-      onClick={handleOverlayClick}
       onKeyDown={handleKeyDown}
       tabIndex={-1}
     >

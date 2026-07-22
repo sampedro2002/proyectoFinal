@@ -3,8 +3,8 @@
 -- Esquema relacional MySQL — estado final consolidado. Es el esquema COMPLETO
 -- y único: incluye el renombre de platos Almuerzo/Merienda, la eliminación del
 -- código público de empleado (el identificador es su id autoincremental) y la
--- distinción de método de registro (consumption.method = FINGERPRINT/MANUAL/
--- EXTERNAL) con el proxy de "retira por otro" (consumption.proxy_employee_id),
+-- distinción de método de registro (consumo.metodo = FINGERPRINT/MANUAL/
+-- EXTERNAL) con el proxy de "retira por otro" (consumo.empleado_apoderado_id),
 -- que antes vivían en una migración V3 aparte, ahora fusionada aquí.
 -- Debe mantenerse idéntico en estructura a RunWindowns\db\01_esquema.sql
 -- (los scripts del instalador).
@@ -26,79 +26,79 @@
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS roles (
     id          BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name        VARCHAR(40) NOT NULL UNIQUE,         -- ADMIN, CATERING
-    description VARCHAR(120)
+    nombre      VARCHAR(40) NOT NULL UNIQUE,         -- ADMIN, CATERING
+    descripcion VARCHAR(120)
 );
 
 -- ----------------------------------------------------------------------------
 -- RESTAURANTES
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS restaurant (
+CREATE TABLE IF NOT EXISTS restaurante (
     id             BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name           VARCHAR(120) NOT NULL UNIQUE,
-    location       VARCHAR(160),
-    representative VARCHAR(120),
-    active         BOOLEAN NOT NULL DEFAULT TRUE,
-    max_devices    INT NOT NULL DEFAULT 2 CHECK (max_devices > 0),
-    created_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    nombre         VARCHAR(120) NOT NULL UNIQUE,
+    ubicacion      VARCHAR(160),
+    representante  VARCHAR(120),
+    activo         BOOLEAN NOT NULL DEFAULT TRUE,
+    max_dispositivos INT NOT NULL DEFAULT 2 CHECK (max_dispositivos > 0),
+    creado_en      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS app_user (
+CREATE TABLE IF NOT EXISTS usuario (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    username        VARCHAR(60) NOT NULL UNIQUE,
-    password_hash   VARCHAR(120) NOT NULL,
-    full_name       VARCHAR(120) NOT NULL,
-    email           VARCHAR(120),
-    enabled         BOOLEAN NOT NULL DEFAULT TRUE,
-    failed_attempts INT NOT NULL DEFAULT 0,
-    locked_until    DATETIME,
-    restaurant_id   BIGINT,
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CONSTRAINT fk_user_restaurant FOREIGN KEY (restaurant_id) REFERENCES restaurant(id)
+    nombre_usuario  VARCHAR(60) NOT NULL UNIQUE,
+    contrasena_hash VARCHAR(120) NOT NULL,
+    nombre_completo VARCHAR(120) NOT NULL,
+    correo          VARCHAR(120),
+    habilitado      BOOLEAN NOT NULL DEFAULT TRUE,
+    intentos_fallidos INT NOT NULL DEFAULT 0,
+    bloqueado_hasta DATETIME,
+    restaurante_id  BIGINT,
+    creado_en       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en  DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_usuario_restaurante FOREIGN KEY (restaurante_id) REFERENCES restaurante(id)
 );
 
-CREATE TABLE IF NOT EXISTS user_roles (
-    user_id BIGINT NOT NULL,
-    role_id BIGINT NOT NULL,
-    PRIMARY KEY (user_id, role_id),
-    FOREIGN KEY (user_id) REFERENCES app_user(id) ON DELETE CASCADE,
-    FOREIGN KEY (role_id) REFERENCES roles(id)
+CREATE TABLE IF NOT EXISTS usuario_rol (
+    usuario_id BIGINT NOT NULL,
+    rol_id     BIGINT NOT NULL,
+    PRIMARY KEY (usuario_id, rol_id),
+    FOREIGN KEY (usuario_id) REFERENCES usuario(id) ON DELETE CASCADE,
+    FOREIGN KEY (rol_id) REFERENCES roles(id)
 );
 
 -- ----------------------------------------------------------------------------
 -- EMPLEADOS (el identificador es el id autoincremental; no hay código público)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS employee (
-    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    identity_card   VARCHAR(20) NOT NULL UNIQUE,
-    full_name       VARCHAR(160) NOT NULL,
-    status          VARCHAR(10) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE','INACTIVE')),
-    observation     VARCHAR(500),
-    allows_lunch    BOOLEAN NOT NULL DEFAULT TRUE,
-    allows_snack    BOOLEAN NOT NULL DEFAULT FALSE,
-    deleted         BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY idx_employee_status_not_deleted (status, deleted)
+CREATE TABLE IF NOT EXISTS empleado (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    cedula            VARCHAR(20) NOT NULL UNIQUE,
+    nombre_completo   VARCHAR(160) NOT NULL,
+    estado            VARCHAR(10) NOT NULL DEFAULT 'ACTIVE' CHECK (estado IN ('ACTIVE','INACTIVE')),
+    observacion       VARCHAR(500),
+    permite_almuerzo  BOOLEAN NOT NULL DEFAULT TRUE,
+    permite_merienda  BOOLEAN NOT NULL DEFAULT FALSE,
+    eliminado         BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    KEY idx_empleado_estado_no_eliminado (estado, eliminado)
 );
 
 -- ----------------------------------------------------------------------------
 -- HUELLAS
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS fingerprint (
+CREATE TABLE IF NOT EXISTS huella_digital (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    employee_id   BIGINT NOT NULL,
-    finger_index  SMALLINT NOT NULL CHECK (finger_index BETWEEN 0 AND 9),
-    template      BLOB NOT NULL,
-    enrolled_by   BIGINT,
-    enrolled_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    active        BOOLEAN NOT NULL DEFAULT TRUE,
-    UNIQUE KEY uq_fingerprint_employee_finger (employee_id, finger_index),
-    KEY idx_fingerprint_employee (employee_id),
-    FOREIGN KEY (employee_id) REFERENCES employee(id) ON DELETE CASCADE,
-    FOREIGN KEY (enrolled_by) REFERENCES app_user(id)
+    empleado_id   BIGINT NOT NULL,
+    indice_dedo   SMALLINT NOT NULL CHECK (indice_dedo BETWEEN 0 AND 9),
+    plantilla     BLOB NOT NULL,
+    registrado_por BIGINT,
+    registrado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    activo        BOOLEAN NOT NULL DEFAULT TRUE,
+    UNIQUE KEY uq_huella_empleado_dedo (empleado_id, indice_dedo),
+    KEY idx_huella_empleado (empleado_id),
+    FOREIGN KEY (empleado_id) REFERENCES empleado(id) ON DELETE CASCADE,
+    FOREIGN KEY (registrado_por) REFERENCES usuario(id)
 );
 
 -- Nota: el límite de 3 huellas activas por empleado se impone en FingerprintService
@@ -107,134 +107,135 @@ CREATE TABLE IF NOT EXISTS fingerprint (
 -- ----------------------------------------------------------------------------
 -- DISPOSITIVOS
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS device (
+CREATE TABLE IF NOT EXISTS dispositivo (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    restaurant_id BIGINT NOT NULL,
-    device_uid    VARCHAR(80) NOT NULL,
-    name          VARCHAR(120),
-    last_seen     DATETIME,
-    session_token VARCHAR(120),
-    connected     BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_device_restaurant_uid (restaurant_id, device_uid),
-    KEY idx_device_restaurant_connected (restaurant_id, connected),
-    FOREIGN KEY (restaurant_id) REFERENCES restaurant(id)
+    restaurante_id BIGINT NOT NULL,
+    uid_dispositivo VARCHAR(80) NOT NULL,
+    nombre        VARCHAR(120),
+    ultima_conexion DATETIME,
+    token_sesion  VARCHAR(120),
+    conectado     BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_dispositivo_restaurante_uid (restaurante_id, uid_dispositivo),
+    KEY idx_dispositivo_restaurante_conectado (restaurante_id, conectado),
+    FOREIGN KEY (restaurante_id) REFERENCES restaurante(id)
 );
 
 -- ----------------------------------------------------------------------------
 -- HORARIO (único, aplica a todas las comidas del día)
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS schedule (
-    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
-    start_time TIME NOT NULL,
-    end_time   TIME NOT NULL,
-    active     BOOLEAN NOT NULL DEFAULT TRUE,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    CHECK (end_time > start_time)
+CREATE TABLE IF NOT EXISTS horario (
+    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    hora_inicio  TIME NOT NULL,
+    hora_fin     TIME NOT NULL,
+    activo       BOOLEAN NOT NULL DEFAULT TRUE,
+    actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CHECK (hora_fin > hora_inicio)
 );
 
 -- ----------------------------------------------------------------------------
 -- REGISTRO DE CONSUMO
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS consumption (
-    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    employee_id     BIGINT NOT NULL,
-    restaurant_id   BIGINT NOT NULL,
-    device_id       BIGINT,
-    consumed_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    business_date   DATE NOT NULL,
-    offline         BOOLEAN NOT NULL DEFAULT FALSE,
-    sync_status     VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (sync_status IN ('SYNCED','PENDING','CONFLICT')),
+CREATE TABLE IF NOT EXISTS consumo (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    empleado_id         BIGINT NOT NULL,
+    restaurante_id      BIGINT NOT NULL,
+    dispositivo_id      BIGINT,
+    consumido_en        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    fecha_negocio       DATE NOT NULL,
+    sin_conexion        BOOLEAN NOT NULL DEFAULT FALSE,
+    estado_sincronizacion VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (estado_sincronizacion IN ('SYNCED','PENDING','CONFLICT')),
     -- method: origen del registro. FINGERPRINT = escaneo de huella del propio
-    -- empleado; MANUAL = registro manual "retira por otro" (proxy_employee_id
+    -- empleado; MANUAL = registro manual "retira por otro" (empleado_apoderado_id
     -- indica quién retira); EXTERNAL = persona externa creada al vuelo.
-    method          VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
-                        CHECK (method IN ('FINGERPRINT','MANUAL','EXTERNAL')),
-    proxy_employee_id BIGINT,               -- empleado que retira (solo method='MANUAL')
-    meal_name       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
-    observation     VARCHAR(500),
-    client_uuid     VARCHAR(36) NOT NULL,
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_consumption_client_uuid (client_uuid),
-    KEY idx_consumption_date (business_date),
-    KEY idx_consumption_restaurant_date (restaurant_id, business_date),
-    KEY idx_consumption_employee_date (employee_id, business_date),
-    KEY idx_consumption_method (method),
-    KEY idx_consumption_proxy (proxy_employee_id),
-    FOREIGN KEY (employee_id) REFERENCES employee(id),
-    FOREIGN KEY (restaurant_id) REFERENCES restaurant(id),
-    FOREIGN KEY (device_id) REFERENCES device(id),
-    FOREIGN KEY (proxy_employee_id) REFERENCES employee(id) ON DELETE SET NULL
+    metodo              VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
+                            CHECK (metodo IN ('FINGERPRINT','MANUAL','EXTERNAL')),
+    empleado_apoderado_id BIGINT,               -- empleado que retira (solo method='MANUAL')
+    nombre_comida       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
+    observacion         VARCHAR(500),
+    uuid_cliente        VARCHAR(36) NOT NULL,
+    cancelado           BOOLEAN NOT NULL DEFAULT FALSE,
+    creado_en           DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_consumo_uuid_cliente (uuid_cliente),
+    KEY idx_consumo_fecha (fecha_negocio),
+    KEY idx_consumo_restaurante_fecha (restaurante_id, fecha_negocio),
+    KEY idx_consumo_empleado_fecha (empleado_id, fecha_negocio),
+    KEY idx_consumo_metodo (metodo),
+    KEY idx_consumo_apoderado (empleado_apoderado_id),
+    FOREIGN KEY (empleado_id) REFERENCES empleado(id),
+    FOREIGN KEY (restaurante_id) REFERENCES restaurante(id),
+    FOREIGN KEY (dispositivo_id) REFERENCES dispositivo(id),
+    FOREIGN KEY (empleado_apoderado_id) REFERENCES empleado(id) ON DELETE SET NULL
 );
 
 -- Nota: no hay índice único por (empleado, día): el tope de comidas por día
--- lo controla ScanService, y la idempotencia por reintentos la da client_uuid.
+-- lo controla ScanService, y la idempotencia por reintentos la da uuid_cliente.
 
 -- ----------------------------------------------------------------------------
 -- INTENTOS FALLIDOS
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS failed_scan (
+CREATE TABLE IF NOT EXISTS escaneo_fallido (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    restaurant_id BIGINT,
-    device_id     BIGINT,
-    employee_id   BIGINT,
-    reason        VARCHAR(30) NOT NULL,
-    occurred_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_failed_scan_date (occurred_at),
-    FOREIGN KEY (restaurant_id) REFERENCES restaurant(id),
-    FOREIGN KEY (device_id) REFERENCES device(id),
-    FOREIGN KEY (employee_id) REFERENCES employee(id)
+    restaurante_id BIGINT,
+    dispositivo_id BIGINT,
+    empleado_id   BIGINT,
+    razon         VARCHAR(30) NOT NULL,
+    ocurrido_en   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_escaneo_fallido_fecha (ocurrido_en),
+    FOREIGN KEY (restaurante_id) REFERENCES restaurante(id),
+    FOREIGN KEY (dispositivo_id) REFERENCES dispositivo(id),
+    FOREIGN KEY (empleado_id) REFERENCES empleado(id)
 );
 
 -- ----------------------------------------------------------------------------
 -- AUDITORÍA
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS audit_log (
-    id           BIGINT AUTO_INCREMENT PRIMARY KEY,
-    username     VARCHAR(60),
-    entity_name  VARCHAR(60) NOT NULL,
-    entity_id    VARCHAR(40),
-    action       VARCHAR(20) NOT NULL,
-    old_value    TEXT,
-    new_value    TEXT,
-    ip_address   VARCHAR(60),
-    device_info  VARCHAR(200),
-    created_at   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_audit_entity (entity_name, entity_id),
-    KEY idx_audit_date (created_at)
+CREATE TABLE IF NOT EXISTS registro_auditoria (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    nombre_usuario  VARCHAR(60),
+    nombre_entidad  VARCHAR(60) NOT NULL,
+    id_entidad      VARCHAR(40),
+    accion          VARCHAR(20) NOT NULL,
+    valor_anterior  TEXT,
+    valor_nuevo     TEXT,
+    direccion_ip    VARCHAR(60),
+    info_dispositivo VARCHAR(200),
+    creado_en       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_auditoria_entidad (nombre_entidad, id_entidad),
+    KEY idx_auditoria_fecha (creado_en)
 );
 
 -- ----------------------------------------------------------------------------
 -- SESIONES
 -- ----------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS login_session (
+CREATE TABLE IF NOT EXISTS sesion_inicio (
     id            BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id       BIGINT NOT NULL,
-    refresh_token VARCHAR(200) NOT NULL,
-    ip_address    VARCHAR(60),
-    device_info   VARCHAR(200),
-    issued_at     DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at    DATETIME NOT NULL,
-    revoked       BOOLEAN NOT NULL DEFAULT FALSE,
-    KEY idx_session_user (user_id),
-    FOREIGN KEY (user_id) REFERENCES app_user(id)
+    usuario_id    BIGINT NOT NULL,
+    token_refresco VARCHAR(200) NOT NULL,
+    direccion_ip  VARCHAR(60),
+    info_dispositivo VARCHAR(200),
+    emitido_en    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expira_en     DATETIME NOT NULL,
+    revocado      BOOLEAN NOT NULL DEFAULT FALSE,
+    KEY idx_sesion_usuario (usuario_id),
+    FOREIGN KEY (usuario_id) REFERENCES usuario(id)
 );
 
 -- ----------------------------------------------------------------------------
 -- VISTAS (CREATE OR REPLACE: siempre queda con la definición más reciente)
 -- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_daily_consumption AS
-SELECT c.business_date,
-       c.restaurant_id,
+CREATE OR REPLACE VIEW v_consumo_diario AS
+SELECT c.fecha_negocio,
+       c.restaurante_id,
        'GENERAL' AS meal_code,
        COUNT(*)  AS total_records
-FROM consumption c
-GROUP BY c.business_date, c.restaurant_id;
+FROM consumo c
+GROUP BY c.fecha_negocio, c.restaurante_id;
 
-CREATE OR REPLACE VIEW v_employee_effective_config AS
-SELECT e.id AS employee_id,
-       e.full_name,
-       e.allows_lunch,
-       e.allows_snack AS effective_snack
-FROM employee e
-WHERE e.deleted = FALSE;
+CREATE OR REPLACE VIEW v_config_efectiva_empleado AS
+SELECT e.id AS empleado_id,
+       e.nombre_completo,
+       e.permite_almuerzo,
+       e.permite_merienda AS effective_snack
+FROM empleado e
+WHERE e.eliminado = FALSE;

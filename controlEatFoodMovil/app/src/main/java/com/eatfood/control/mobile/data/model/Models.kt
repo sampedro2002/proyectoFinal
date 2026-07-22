@@ -175,7 +175,8 @@ data class ConsumptionRow(
     val observation: String?,
     val offline: Boolean,
     val method: String? = null,
-    val proxyEmployeeName: String? = null
+    val proxyEmployeeName: String? = null,
+    val cancelled: Boolean = false
 )
 
 data class DashboardStats(
@@ -260,4 +261,31 @@ data class MealAvailabilityResponse(
     val hadAlmuerzo: Boolean = false,
     val hadMerienda: Boolean = false,
     val availableCodes: List<String> = emptyList()
+)
+
+data class ConsumptionDetailResponse(
+    val id: Long,
+    val employeeId: Long,
+    val employeeName: String?,
+    val identityCard: String?,
+    val proxyEmployeeId: Long?,
+    val proxyEmployeeName: String?,
+    val restaurantId: Long,
+    val restaurantName: String?,
+    val mealName: String?,
+    val observation: String?,
+    val method: String?,
+    val offline: Boolean,
+    val cancelled: Boolean,
+    val businessDate: String?,
+    val consumedAt: String?,
+    val createdAt: String?
+)
+
+data class UpdateManualConsumptionRequest(
+    val proxyEmployeeId: Long? = null,
+    val employeeId: Long? = null,
+    val restaurantId: Long? = null,
+    val mealName: String? = null,
+    val observation: String? = null
 )

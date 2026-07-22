@@ -87,7 +87,8 @@ interface ApiService {
         @Query("from") from: String,
         @Query("to") to: String,
         @Query("restaurantId") restaurantId: Long? = null,
-        @Query("employeeId") employeeId: Long? = null
+        @Query("employeeId") employeeId: Long? = null,
+        @Query("showCancelled") showCancelled: Boolean = false
     ): List<ConsumptionRow>
 
     @GET("reports/export")
@@ -96,7 +97,8 @@ interface ApiService {
         @Query("format") format: String,
         @Query("from") from: String,
         @Query("to") to: String,
-        @Query("restaurantId") restaurantId: Long? = null
+        @Query("restaurantId") restaurantId: Long? = null,
+        @Query("showCancelled") showCancelled: Boolean = false
     ): Response<ResponseBody>
 
     // ── Auditoría ──────────────────────────────────────────────────────────────
@@ -118,4 +120,29 @@ interface ApiService {
     /** Comidas permitidas y aún no consumidas hoy por el empleado (para pre-seleccionar en el registro manual). */
     @GET("manual-consumptions/availability/{employeeId}")
     suspend fun mealAvailability(@Path("employeeId") employeeId: Long): MealAvailabilityResponse
+
+    // ── Edición de consumos manuales ───────────────────────────────────────
+    @GET("manual-consumptions")
+    suspend fun manualConsumptionsList(
+        @Query("search") search: String? = null,
+        @Query("restaurantId") restaurantId: Long? = null,
+        @Query("cancelled") cancelled: Boolean? = null,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 50
+    ): Page<ConsumptionDetailResponse>
+
+    @GET("manual-consumptions/{id}")
+    suspend fun manualConsumptionDetail(@Path("id") id: Long): ConsumptionDetailResponse
+
+    @PUT("manual-consumptions/{id}")
+    suspend fun updateManualConsumption(
+        @Path("id") id: Long,
+        @Body body: UpdateManualConsumptionRequest
+    ): ConsumptionDetailResponse
+
+    @POST("manual-consumptions/{id}/cancel")
+    suspend fun cancelManualConsumption(@Path("id") id: Long): Response<Unit>
+
+    @POST("manual-consumptions/{id}/uncancel")
+    suspend fun uncancelManualConsumption(@Path("id") id: Long): Response<Unit>
 }

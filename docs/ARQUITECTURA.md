@@ -8,7 +8,7 @@ Sistema cliente-servidor de 3 capas con dispositivos de borde (catering):
   catering en modo kiosco; instalable y operable offline.
 - **Backend (Spring Boot 3, Java 21):** API REST stateless con JWT, lógica de negocio,
   motor de identificación biométrica 1:N, auditoría, reportes y sincronización.
-- **PostgreSQL:** persistencia transaccional.
+- **MySQL 8:** persistencia transaccional.
 - **Dispositivos de catering:** navegador en modo kiosco + agente local **ZKFinger WebAPI**
   conectado al lector **ZK9500** por USB.
 
@@ -22,104 +22,114 @@ Empleado → [Lector ZK9500] → ZKFinger WebAPI (WebSocket local)
                     Backend Spring Boot ── 1:N (libzkfp/JNA) ── índice de plantillas
                                    │
                                    ▼
-                              PostgreSQL
+                              MySQL 8
 ```
 
 ## 2. Modelo Entidad-Relación
 
 ```mermaid
 erDiagram
-    ROLES ||--o{ USER_ROLES : tiene
-    APP_USER ||--o{ USER_ROLES : posee
-    APP_USER }o--|| CATERING : opera
-    EMPLOYEE ||--o{ FINGERPRINT : registra
-    EMPLOYEE ||--o{ CONSUMPTION : genera
-    CATERING ||--o{ DEVICE : conecta
-    CATERING ||--o{ CONSUMPTION : atiende
-    MEAL_TYPE ||--o{ SCHEDULE : define
-    MEAL_TYPE ||--o{ CONSUMPTION : clasifica
-    DEVICE ||--o{ CONSUMPTION : captura
+    ROLES ||--o{ USUARIO_ROL : tiene
+    USUARIO ||--o{ USUARIO_ROL : posee
+    USUARIO }o--|| RESTAURANTE : opera
+    EMPLEADO ||--o{ HUELLA_DIGITAL : registra
+    EMPLEADO ||--o{ CONSUMO : genera
+    RESTAURANTE ||--o{ DISPOSITIVO : conecta
+    RESTAURANTE ||--o{ CONSUMO : atiende
+    DISPOSITIVO ||--o{ CONSUMO : captura
 
-    APP_USER {
+    USUARIO {
         bigint id PK
-        varchar username UK
-        varchar password_hash
-        bigint catering_id FK
-        int failed_attempts
-        timestamptz locked_until
+        varchar nombre_usuario UK
+        varchar contrasena_hash
+        varchar nombre_completo
+        varchar correo
+        boolean habilitado
+        int intentos_fallidos
+        datetime bloqueado_hasta
+        bigint restaurante_id FK
     }
-    EMPLOYEE {
+    EMPLEADO {
         bigint id PK
-        varchar identity_card UK
-        varchar full_name
-        varchar position
-        varchar status
-        int allowed_plates
-        boolean allows_lunch
-        boolean allows_snack
-        boolean deleted
+        varchar cedula UK
+        varchar nombre_completo
+        varchar estado
+        varchar observacion
+        boolean permite_almuerzo
+        boolean permite_merienda
+        boolean eliminado
     }
-    FINGERPRINT {
+    HUELLA_DIGITAL {
         bigint id PK
-        bigint employee_id FK
-        smallint finger_index
-        bytea template
-        text template_b64
-        bigint enrolled_by
+        bigint empleado_id FK
+        smallint indice_dedo
+        blob plantilla
+        bigint registrado_por
+        boolean activo
     }
-    CATERING {
+    RESTAURANTE {
         bigint id PK
-        varchar name UK
-        varchar location
-        int max_devices
+        varchar nombre UK
+        varchar ubicacion
+        varchar representante
+        boolean activo
+        int max_dispositivos
     }
-    DEVICE {
+    DISPOSITIVO {
         bigint id PK
-        bigint catering_id FK
-        varchar device_uid
-        varchar session_token
-        boolean connected
+        bigint restaurante_id FK
+        varchar uid_dispositivo
+        varchar nombre
+        varchar token_sesion
+        boolean conectado
     }
-    MEAL_TYPE {
+    HORARIO {
         bigint id PK
-        varchar code UK
-        varchar name
+        time hora_inicio
+        time hora_fin
+        boolean activo
     }
-    SCHEDULE {
+    CONSUMO {
         bigint id PK
-        bigint meal_type_id FK
-        time start_time
-        time end_time
+        bigint empleado_id FK
+        bigint restaurante_id FK
+        bigint dispositivo_id FK
+        datetime consumido_en
+        date fecha_negocio
+        varchar uuid_cliente UK
+        varchar estado_sincronizacion
+        boolean sin_conexion
+        varchar metodo
+        varchar nombre_comida
+        varchar observacion
+        bigint empleado_apoderado_id FK
     }
-    CONSUMPTION {
+    REGISTRO_AUDITORIA {
         bigint id PK
-        bigint employee_id FK
-        bigint catering_id FK
-        bigint meal_type_id FK
-        bigint device_id FK
-        int plates
-        date business_date
-        uuid client_uuid UK
-        varchar sync_status
-        boolean offline
+        varchar nombre_usuario
+        varchar nombre_entidad
+        varchar accion
+        text valor_anterior
+        text valor_nuevo
+        varchar direccion_ip
+        varchar info_dispositivo
     }
-    AUDIT_LOG {
+    SESION_INICIO {
         bigint id PK
-        varchar username
-        varchar entity_name
-        varchar action
-        text old_value
-        text new_value
-        varchar ip_address
+        bigint usuario_id FK
+        varchar token_refresco
+        varchar direccion_ip
+        varchar info_dispositivo
+        datetime emitido_en
+        datetime expira_en
+        boolean revocado
     }
 ```
 
 **Restricciones e índices clave:**
-- `UNIQUE(employee_id, meal_type_id, business_date)` → impide consumo duplicado por día.
-- `UNIQUE(client_uuid)` → idempotencia de sincronización offline.
-- Trigger `check_max_fingerprints` → máximo 3 huellas activas por empleado.
-- Índice único parcial `schedule(meal_type_id) WHERE active` → un horario activo por comida.
-- Empleado con `deleted=true` conserva su historial de `consumption`.
+- `UNIQUE(uuid_cliente)` → idempotencia de sincronización offline.
+- Máximo 3 huellas activas por empleado (controlado en FingerprintService, no en BD).
+- Empleado con `eliminado=true` conserva su historial de `consumo`.
 
 ## 3. Diagrama de clases (capa de servicio)
 
@@ -127,8 +137,7 @@ erDiagram
 classDiagram
     class ScanService {
         +scan(ScanRequest) ScanResponse
-        -resolveMealType(code, time) MealType
-        -isMealAllowed(emp, meal) boolean
+        -resolveMealForScan(emp, time, date) MealSelection
     }
     class BiometricMatcher {
         <<interface>>
@@ -166,7 +175,7 @@ classDiagram
 | Aspecto | Decisión |
 |--------|----------|
 | Captura | Agente **ZKFinger WebAPI** en el dispositivo, expuesto por WebSocket local. El navegador obtiene la **plantilla** (no la imagen). |
-| Almacenamiento | Solo `template` (BYTEA) + copia base64. **Nunca** se guardan imágenes de huella. Máx. 3 por empleado. |
+| Almacenamiento | Solo `plantilla` (BLOB) + copia base64. **Nunca** se guardan imágenes de huella. Máx. 3 por empleado. |
 | Identificación | **1:N en el servidor** con `libzkfp` (`ZKFPM_DBIdentify`) vía **JNA**. Índice en memoria de todas las plantillas activas, reconstruible. |
 | Umbral | Configurable (`app.biometric.match-threshold`, por defecto 70). |
 | Intercambiable | Interfaz `BiometricMatcher`: `zk` (SDK real) o `sim` (pruebas sin hardware). |
@@ -179,7 +188,7 @@ classDiagram
 2. Los registros en cola **no se pueden modificar**.
 3. Al volver la conexión (evento `online` o sondeo cada 15 s), se envían en lote a `POST /api/scan/sync`.
 4. El backend resuelve identidad y reglas en el momento de sincronizar y responde por registro.
-5. **Antiduplicados:** `clientUuid` único + restricción `(empleado, comida, día)`. Reenviar un lote es seguro (idempotente).
+5. **Antiduplicados:** `uuid_cliente` único + restricción `(empleado, comida, día)`. Reenviar un lote es seguro (idempotente).
 
 > Compromiso de diseño: como la identificación 1:N ocurre en el servidor, en modo
 > offline la pantalla confirma "REGISTRO EN COLA" (sin nombre) y la identidad se
@@ -188,12 +197,12 @@ classDiagram
 
 ## 6. Seguridad
 
-- **JWT** (access 30 min + refresh 7 días con rotación y revocación en `login_session`).
+- **JWT** (access 30 min + refresh 7 días con rotación y revocación en `sesion_inicio`).
 - **BCrypt** para contraseñas.
 - **Plantillas biométricas cifradas** con AES-256/GCM (integridad verificada). La clave se persiste protegida con **DPAPI** en `C:\ProgramData\ControlEatFood\` (fuera del repo y de la carpeta que se borra al desinstalar) y se reutiliza en reinstalaciones para no invalidar las huellas ya cifradas.
-- **Roles** `ADMIN`/`SUPERVISOR`/`CATERING` con `@PreAuthorize` por endpoint.
+- **Roles** `ADMIN`/`CATERING` con `@PreAuthorize` por endpoint.
 - **Fuerza bruta:** bloqueo temporal tras N intentos (`app.security.brute-force`).
-- **Dispositivos simultáneos:** máx. 2 por catering (token de sesión de dispositivo).
+- **Dispositivos simultáneos:** máx. 2 por restaurante (token de sesión de dispositivo).
 - **CORS** restringido por configuración; API stateless (sin cookies → superficie CSRF mínima).
 - **Auditoría** de cambios con usuario, IP, user-agent, valor anterior/nuevo.
 
@@ -202,14 +211,14 @@ classDiagram
 ```
             ┌──────────── Nginx / reverse proxy (TLS) ────────────┐
             │  /            → frontend (PWA estática)              │
-            │  /api, /swagger → backend Spring Boot (8080)         │
+            │  /api, /swagger → backend Spring Boot (3000)         │
             └──────────────────────┬──────────────────────────────┘
                                    │
                     ┌──────────────┴──────────────┐
                     │  Spring Boot (JAR / Docker)  │
                     └──────────────┬──────────────┘
                                    │
-                             PostgreSQL (con respaldos)
+                             MySQL 8 (con respaldos)
 ```
 
 - **Backend:** `mvn clean package` → JAR ejecutable; o contenedor Docker (`eclipse-temurin:21-jre`). Montar `native/` con las DLL/.so del SDK.
@@ -219,16 +228,15 @@ classDiagram
 
 ## 8. Respaldo y recuperación
 
-- **PostgreSQL:** `pg_dump` diario + WAL archiving para PITR (point-in-time recovery).
+- **MySQL:** `mysqldump` diario + binlog para PITR (point-in-time recovery).
 - **Retención:** 30 días en caliente, copias mensuales en almacenamiento externo.
 - **Pruebas de restauración** periódicas en entorno de staging.
-- **Plantillas biométricas:** incluidas en el respaldo de la BD (BYTEA); el índice en memoria se reconstruye al iniciar (`rebuildIndex`).
-- **RPO** objetivo ≤ 24 h (≤ minutos con WAL); **RTO** ≤ 1 h.
+- **Plantillas biométricas:** incluidas en el respaldo de la BD (BLOB); el índice en memoria se reconstruye al iniciar (`rebuildIndex`).
+- **RPO** objetivo ≤ 24 h (≤ minutos con binlog); **RTO** ≤ 1 h.
 
 ## 9. Escalabilidad y mantenimiento
 
 - Backend **stateless** → escalado horizontal tras balanceador. El índice biométrico es local a cada instancia; para muchos nodos, centralizar el matching en un servicio dedicado o usar identificación en el borde.
-- **Connection pooling** (HikariCP) e índices en columnas de reporte (`business_date`, `catering_id`).
-- Reportes pesados → vistas (`v_daily_consumption`) y posibilidad de réplica de lectura.
+- **Connection pooling** (HikariCP) e índices en columnas de reporte (`fecha_negocio`, `restaurante_id`).
+- Reportes pesados → vistas (`v_consumo_diario`) y posibilidad de réplica de lectura.
 - **Migraciones versionadas** con Flyway. **Observabilidad** con Spring Actuator.
-- Tipos de comida **extensibles** (tabla `meal_type`) sin cambios de esquema.

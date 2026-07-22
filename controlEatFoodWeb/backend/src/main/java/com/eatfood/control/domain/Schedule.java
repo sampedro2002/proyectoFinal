@@ -7,7 +7,7 @@ import java.time.LocalTime;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "schedule")
+@Table(name = "horario")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Schedule {
 
@@ -16,17 +16,17 @@ public class Schedule {
     private Long id;
 
 
-    @Column(name = "start_time", nullable = false)
+    @Column(name = "hora_inicio", nullable = false)
     private LocalTime startTime;
 
-    @Column(name = "end_time", nullable = false)
+    @Column(name = "hora_fin", nullable = false)
     private LocalTime endTime;
 
-    @Column(nullable = false)
+    @Column(name = "activo", nullable = false)
     @Builder.Default
     private boolean active = true;
 
-    @Column(name = "updated_at", nullable = false)
+    @Column(name = "actualizado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime updatedAt = OffsetDateTime.now();
 

@@ -22,6 +22,13 @@ export default function Users() {
   const [loadError, setLoadError] = useState('');
   const [showPass, setShowPass] = useState(false);
 
+  useEffect(() => {
+    if (!form) return;
+    const handler = (e) => { if (e.key === 'Escape') setForm(null); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [form]);
+
   const load = () => api.get('/users')
     .then((r) => { setItems(r.data); setLoadError(''); })
     .catch((err) => { setItems([]); setLoadError(err.response?.data?.message || 'No se pudieron cargar los usuarios'); });
@@ -145,10 +152,7 @@ export default function Users() {
       </div>
 
       {form && (
-        <div
-          className="modal-overlay"
-          onClick={(e) => { if (e.target === e.currentTarget) setForm(null); }}
-        >
+        <div className="modal-overlay">
           <form className="card modal-card" style={{ maxWidth: 460 }} onSubmit={save}>
             <div className="topbar" style={{ marginBottom: 16 }}>
               <h3 style={{ margin: 0 }}>{form.id ? 'Editar' : 'Nuevo'} usuario</h3>

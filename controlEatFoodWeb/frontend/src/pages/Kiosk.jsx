@@ -541,6 +541,10 @@ export default function Kiosk() {
         <div 
           className="kiosk-feed-divider" 
           onClick={() => setShowTable(!showTable)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { setShowTable(!showTable); e.preventDefault(); } }}
+          tabIndex={0}
+          role="button"
+          aria-expanded={showTable}
         >
           REGISTROS DE HOY {showTable ? '▲' : '▼'}
         </div>

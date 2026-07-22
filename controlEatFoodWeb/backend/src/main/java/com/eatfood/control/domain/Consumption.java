@@ -8,7 +8,7 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "consumption")
+@Table(name = "consumo")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Consumption {
 
@@ -17,64 +17,58 @@ public class Consumption {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "employee_id")
+    @JoinColumn(name = "empleado_id")
     private Employee employee;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "restaurant_id")
+    @JoinColumn(name = "restaurante_id")
     private Restaurant restaurant;
 
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "device_id")
+    @JoinColumn(name = "dispositivo_id")
     private Device device;
 
-    @Column(name = "consumed_at", nullable = false)
+    @Column(name = "consumido_en", nullable = false)
     @Builder.Default
     private OffsetDateTime consumedAt = OffsetDateTime.now();
 
-    @Column(name = "business_date", nullable = false)
+    @Column(name = "fecha_negocio", nullable = false)
     private LocalDate businessDate;
 
-    /** Observación opcional; se captura en el registro manual. */
-    @Column(length = 500)
+    @Column(name = "observacion", length = 500)
     private String observation;
 
-    /**
-     * Origen del registro: {@link Method#FINGERPRINT} (escaneo de huella),
-     * {@link Method#MANUAL} (registro admin "retira por otro") o
-     * {@link Method#EXTERNAL} (persona externa).
-     */
     @Enumerated(EnumType.STRING)
-    @Column(name = "method", nullable = false, length = 12)
+    @Column(name = "metodo", nullable = false, length = 12)
     @Builder.Default
     private Method method = Method.FINGERPRINT;
 
-    /**
-     * Empleado que retira por el titular cuando {@code method=MANUAL} ("retira
-     * por otro"). {@code null} para FINGERPRINT y EXTERNAL.
-     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "proxy_employee_id")
+    @JoinColumn(name = "empleado_apoderado_id")
     private Employee proxyEmployee;
 
-    @Column(nullable = false)
+    @Column(name = "sin_conexion", nullable = false)
     @Builder.Default
     private boolean offline = false;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "sync_status", nullable = false, length = 12)
+    @Column(name = "estado_sincronizacion", nullable = false, length = 12)
     @Builder.Default
     private SyncStatus syncStatus = SyncStatus.SYNCED;
 
-    @Column(name = "meal_name", length = 30)
+    @Column(name = "nombre_comida", length = 30)
     private String mealName;
 
     @org.hibernate.annotations.JdbcTypeCode(java.sql.Types.VARCHAR)
-    @Column(name = "client_uuid", nullable = false, unique = true)
+    @Column(name = "uuid_cliente", nullable = false, unique = true)
     private UUID clientUuid;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "cancelado", nullable = false)
+    @Builder.Default
+    private boolean cancelled = false;
+
+    @Column(name = "creado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

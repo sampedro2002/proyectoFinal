@@ -56,14 +56,15 @@ class MainActivity : ComponentActivity() {
 /** Pantallas del panel (equivale a las rutas del frontend web). */
 enum class Screen(val title: String, val roles: List<String>) {
     MY_RESTAURANT("Mi Restaurante", listOf("CATERING")),
-    DASHBOARD("Dashboard", listOf("ADMIN")),
-    EMPLOYEES("Empleados", listOf("ADMIN")),
+    DASHBOARD("Dashboard", listOf("ADMIN", "RECURSOS_HUMANOS")),
+    EMPLOYEES("Empleados", listOf("ADMIN", "RECURSOS_HUMANOS")),
     RESTAURANTS("Restaurantes", listOf("ADMIN")),
     USERS("Usuarios", listOf("ADMIN")),
     SCHEDULES("Horarios", listOf("ADMIN")),
-    REPORTS("Reportes", listOf("ADMIN")),
+    REPORTS("Reportes", listOf("ADMIN", "RECURSOS_HUMANOS")),
     AUDIT("Auditoría", listOf("ADMIN")),
-    EXTRA_MEALS("Registro manual", listOf("ADMIN"))
+    EXTRA_MEALS("Registro manual", listOf("ADMIN", "RECURSOS_HUMANOS")),
+    EDIT_CONSUMOS("Editar Consumos", listOf("ADMIN", "RECURSOS_HUMANOS"))
 }
 
 @Composable
@@ -73,6 +74,10 @@ fun AppRoot() {
     val store = remember { SessionStore.get(context) }
     var user by remember { mutableStateOf(store.user) }
     var showSettings by remember { mutableStateOf(false) }
+
+    // Retroceder (botón o gesto) desde Ajustes vuelve a la pantalla que había debajo
+    // (Login o el panel Admin) en lugar de cerrar la app.
+    BackHandler(enabled = showSettings) { showSettings = false }
 
     // Retroceder desde el login admin vuelve a la pantalla de Restaurant (pantalla de arranque)
     // en lugar de cerrar la app.
@@ -125,6 +130,9 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
     val visibleScreens = remember(roles) { Screen.entries.filter { s -> s.roles.any { it in roles } } }
     var current by remember { mutableStateOf(visibleScreens.firstOrNull() ?: Screen.DASHBOARD) }
 
+    // Retroceder (botón o gesto) con el menú abierto lo cierra en vez de salir del panel Admin.
+    BackHandler(enabled = drawerState.isOpen) { scope.launch { drawerState.close() } }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
@@ -146,7 +154,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                val roleLabels = roles.joinToString(", ") { when (it) { "ADMIN" -> "Administrador"; "CATERING" -> "Restaurante"; else -> it } }
+                val roleLabels = roles.joinToString(", ") { when (it) { "ADMIN" -> "Administrador"; "CATERING" -> "Restaurante"; "RECURSOS_HUMANOS" -> "Recursos Humanos"; else -> it } }
                 Text("${user.fullName ?: user.username ?: ""} · $roleLabels",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -203,6 +211,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                     Screen.REPORTS -> ReportsScreen()
                     Screen.AUDIT -> AuditScreen()
                     Screen.EXTRA_MEALS -> ExtraMealsScreen()
+                    Screen.EDIT_CONSUMOS -> EditConsumptionsScreen()
                 }
             }
         }

@@ -26,13 +26,13 @@ public class EmployeeController {
     private final ExportService exportService;
 
     @GetMapping
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECURSOS_HUMANOS')")
     public Page<EmployeeResponse> list(@RequestParam(required = false) String term, Pageable pageable) {
         return employeeService.search(term, pageable);
     }
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECURSOS_HUMANOS')")
     public EmployeeResponse get(@PathVariable Long id) {
         return employeeService.get(id);
     }

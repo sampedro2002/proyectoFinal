@@ -10,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -116,8 +117,13 @@ fun ReportsScreen() {
                     RowItem(
                         title = "${index + 1}. ${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
                         subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}\n" +
-                                "Tipo: ${methodLabel(r.method)} · ${buildDescription(r)}",
-                        trailing = if (r.offline) "offline" else ""
+                                "Tipo: ${methodLabel(r.method)} · ${buildDescription(r)}" +
+                                if (r.cancelled) "\nCANCELADO" else "",
+                        trailing = when {
+                            r.cancelled -> "Cancelado"
+                            r.offline -> "offline"
+                            else -> ""
+                        }
                     )
                 }
             }

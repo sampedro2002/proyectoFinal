@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "device")
+@Table(name = "dispositivo")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Device {
 
@@ -15,26 +15,26 @@ public class Device {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(name = "restaurant_id")
+    @JoinColumn(name = "restaurante_id")
     private Restaurant restaurant;
 
-    @Column(name = "device_uid", nullable = false, length = 80)
+    @Column(name = "uid_dispositivo", nullable = false, length = 80)
     private String deviceUid;
 
     @Column(length = 120)
     private String name;
 
-    @Column(name = "last_seen")
+    @Column(name = "ultima_conexion")
     private OffsetDateTime lastSeen;
 
-    @Column(name = "session_token", length = 120)
+    @Column(name = "token_sesion", length = 120)
     private String sessionToken;
 
-    @Column(nullable = false)
+    @Column(name = "conectado", nullable = false)
     @Builder.Default
     private boolean connected = false;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "creado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

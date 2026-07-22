@@ -11,6 +11,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 public interface ConsumptionRepository extends JpaRepository<Consumption, Long> {
 
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
@@ -19,17 +22,18 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
     Optional<Consumption> findFirstByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
     /** Nombres de las comidas ya registradas hoy para el empleado (p. ej. "Almuerzo", "Merienda"). */
-    @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date")
+    @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date AND c.cancelled = FALSE")
     List<String> findMealNamesByEmployeeIdAndBusinessDate(@Param("employeeId") Long employeeId, @Param("date") LocalDate date);
 
     Optional<Consumption> findByClientUuid(UUID clientUuid);
 
-    List<Consumption> findByBusinessDateAndRestaurantId(LocalDate businessDate, Long restaurantId);
+    @Query("SELECT c FROM Consumption c WHERE c.businessDate = :businessDate AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE")
+    List<Consumption> findByBusinessDateAndRestaurantId(@Param("businessDate") LocalDate businessDate, @Param("restaurantId") Long restaurantId);
 
     @EntityGraph(attributePaths = {"restaurant", "employee"})
     @Query("""
             SELECT c FROM Consumption c
-            WHERE c.businessDate = :date AND c.restaurant.id = :restaurantId
+            WHERE c.businessDate = :date AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE
             ORDER BY c.consumedAt DESC
             """)
     List<Consumption> findByBusinessDateAndRestaurantIdWithDetails(
@@ -50,24 +54,26 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:employeeId IS NULL OR c.employee.id = :employeeId)
               AND (:methods IS NULL OR c.method IN :methods)
+              AND (:showCancelled = TRUE OR c.cancelled = FALSE)
             ORDER BY c.consumedAt DESC
             """)
     List<Consumption> report(@Param("from") LocalDate from,
                              @Param("to") LocalDate to,
                              @Param("restaurantId") Long restaurantId,
                              @Param("employeeId") Long employeeId,
-                             @Param("methods") List<com.eatfood.control.domain.Method> methods);
+                             @Param("methods") List<com.eatfood.control.domain.Method> methods,
+                             @Param("showCancelled") boolean showCancelled);
 
-    long countByBusinessDate(LocalDate date);
+    long countByBusinessDateAndCancelledFalse(LocalDate date);
 
-    long countByBusinessDateAndMealName(LocalDate date, String mealName);
+    long countByBusinessDateAndMealNameAndCancelledFalse(LocalDate date, String mealName);
 
-    @Query("SELECT COUNT(DISTINCT c.employee.id) FROM Consumption c WHERE c.businessDate = :date")
+    @Query("SELECT COUNT(DISTINCT c.employee.id) FROM Consumption c WHERE c.businessDate = :date AND c.cancelled = FALSE")
     long countDistinctEmployees(@Param("date") LocalDate date);
 
 
 
-    @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date")
+    @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date AND c.cancelled = FALSE")
     List<Long> findConsumedEmployeeIds(@Param("date") LocalDate date);
 
     /**
@@ -77,8 +83,24 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
      */
     @Query("""
             SELECT c.businessDate, COUNT(c) FROM Consumption c
-            WHERE c.businessDate BETWEEN :from AND :to
+            WHERE c.businessDate BETWEEN :from AND :to AND c.cancelled = FALSE
             GROUP BY c.businessDate
             """)
     List<Object[]> countGroupedByBusinessDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    @EntityGraph(attributePaths = {"employee", "proxyEmployee", "restaurant"})
+    @Query("""
+            SELECT c FROM Consumption c
+            WHERE c.method = com.eatfood.control.domain.Method.MANUAL
+              AND (:search IS NULL OR 
+                   LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(c.proxyEmployee.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+              AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
+              AND (:cancelled IS NULL OR c.cancelled = :cancelled)
+            ORDER BY c.consumedAt DESC
+            """)
+    Page<Consumption> findManualConsumptions(@Param("search") String search,
+                                              @Param("restaurantId") Long restaurantId,
+                                              @Param("cancelled") Boolean cancelled,
+                                              Pageable pageable);
 }

@@ -21,7 +21,7 @@ public class CatalogController {
 
     // ---- Restaurants ----
     @GetMapping("/restaurants")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'RECURSOS_HUMANOS')")
     public List<RestaurantResponse> listRestaurants() {
         return catalogService.listRestaurants();
     }

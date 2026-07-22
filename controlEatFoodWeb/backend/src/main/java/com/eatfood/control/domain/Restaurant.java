@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
-@Table(name = "restaurant")
+@Table(name = "restaurante")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class Restaurant extends Auditable {
 
@@ -12,21 +12,20 @@ public class Restaurant extends Auditable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 120)
+    @Column(name = "nombre", nullable = false, unique = true, length = 120)
     private String name;
 
-    @Column(length = 160)
+    @Column(name = "ubicacion", length = 160)
     private String location;
 
-    /** Nombre del responsable / representante que maneja el restaurante. */
     @Column(length = 120)
     private String representative;
 
-    @Column(nullable = false)
+    @Column(name = "activo", nullable = false)
     @Builder.Default
     private boolean active = true;
 
-    @Column(name = "max_devices", nullable = false)
+    @Column(name = "max_dispositivos", nullable = false)
     @Builder.Default
     private int maxDevices = 2;
 }

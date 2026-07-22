@@ -12,6 +12,13 @@ export default function Restaurants() {
   const [error, setError] = useState('');
   const [loadError, setLoadError] = useState('');
 
+  useEffect(() => {
+    if (!form) return;
+    const handler = (e) => { if (e.key === 'Escape') setForm(null); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [form]);
+
   const load = () => api.get('/restaurants')
     .then((r) => { setItems(r.data); setLoadError(''); })
     .catch((err) => { setItems([]); setLoadError(err.response?.data?.message || 'No se pudieron cargar los restaurantes'); });
@@ -54,10 +61,7 @@ export default function Restaurants() {
         </table>
       </div>
       {form && (
-        <div
-          className="modal-overlay"
-          onClick={(e) => { if (e.target === e.currentTarget) setForm(null); }}
-        >
+        <div className="modal-overlay">
           <form className="card modal-card" style={{ maxWidth: 420 }} onSubmit={save}>
             <div className="topbar" style={{ marginBottom: 16 }}>
               <h3 style={{ margin: 0 }}>{form.id ? 'Editar' : 'Nuevo'} restaurante</h3>

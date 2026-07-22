@@ -80,7 +80,7 @@ public class FingerprintService {
 
         // Si existe una huella (activa o inactiva) para el mismo dedo, reutilizarla en
         // lugar de insertar una nueva fila. Esto evita violar la UNIQUE
-        // (employee_id, finger_index) del esquema cuando el usuario re-registra un dedo
+        // (empleado_id, indice_dedo) del esquema cuando el usuario re-registra un dedo
         // que ya tenía una huella (activa o previamente borrada).
         Optional<Fingerprint> existing = fingerprintRepository
                 .findByEmployeeIdAndFingerIndexAndActiveFalse(employee.getId(), req.fingerIndex());

@@ -46,7 +46,7 @@ public class EmployeeService {
         if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
             throw new BusinessException("DUPLICATE_CARD", "Ya existe un empleado con esa cédula.");
         }
-        // identity_card es UNIQUE global en la BD: si la cédula pertenece a un empleado
+        // cedula es UNIQUE global en la BD: si la cédula pertenece a un empleado
         // eliminado (soft-delete), el INSERT fallaría con un 500. Se reactiva ese registro
         // con los datos nuevos en lugar de crear una fila duplicada.
         Employee revived = employeeRepository.findByIdentityCard(identityCard).orElse(null);

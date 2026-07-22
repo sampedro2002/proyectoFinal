@@ -1,6 +1,6 @@
 # API REST — Control de Consumo de Alimentos
 
-Base: `http://localhost:8080`  ·  Documentación interactiva: `/swagger-ui.html`
+Base: `http://localhost:3000`  ·  Documentación interactiva: `/swagger-ui.html`
 Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/api/scan/**`).
 
 ## Autenticación
@@ -11,7 +11,7 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 | POST | `/api/auth/refresh` | Renueva tokens | `{refreshToken}` |
 | POST | `/api/auth/logout` | Revoca refresh token | `{refreshToken}` |
 
-## Empleados — `ADMIN` (escritura), `SUPERVISOR` (lectura)
+## Empleados — `ADMIN`
 
 | Método | Ruta | Descripción |
 |-------|------|-------------|
@@ -21,7 +21,7 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 | PUT | `/api/employees/{id}` | Actualizar |
 | DELETE | `/api/employees/{id}` | Inactivar (soft-delete; conserva historial) |
 
-`EmployeeRequest`: `{identityCard, fullName, position?, status?, allowedPlates?, allowsLunch?, allowsSnack?}`
+`EmployeeRequest`: `{identityCard, fullName, observation?, status?, allowsLunch?, allowsSnack?}`
 
 ## Huellas — `ADMIN`
 
@@ -35,17 +35,15 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 
 | Método | Ruta | Rol |
 |-------|------|-----|
-| GET/POST/PUT | `/api/caterings` `/api/caterings/{id}` | lectura `ADMIN/SUPERVISOR`, escritura `ADMIN` |
-| GET | `/api/meal-types` | autenticado |
-| POST | `/api/meal-types` | `ADMIN` |
+| GET/POST/PUT | `/api/restaurants` `/api/restaurants/{id}` | lectura `ADMIN`, escritura `ADMIN` |
 | GET | `/api/schedules` | autenticado |
-| POST | `/api/schedules` | `ADMIN` (upsert por tipo de comida) |
+| POST | `/api/schedules` | `ADMIN` (upsert del horario general) |
 
-## Catering / Escaneo — token de dispositivo (no JWT)
+## Restaurante / Escaneo — token de dispositivo (no JWT)
 
 | Método | Ruta | Descripción |
 |-------|------|-------------|
-| POST | `/api/scan/connect` | Conecta dispositivo `{cateringUsername, cateringPassword, deviceUid, deviceName?}` → `{sessionToken,...}`. Máx. 2 simultáneos. |
+| POST | `/api/scan/connect` | Conecta dispositivo `{restaurantUsername, restaurantPassword, deviceUid, deviceName?}` → `{sessionToken,...}`. Máx. 2 simultáneos. |
 | POST | `/api/scan/disconnect?sessionToken=` | Desconecta |
 | POST | `/api/scan` | Procesa huella y registra consumo |
 | POST | `/api/scan/sync` | Sincroniza lote offline |
@@ -62,7 +60,7 @@ End point para "retira por otro" y persona externa. No usan JWT del dispositivo
 
 | Método | Ruta | Descripción |
 |-------|------|-------------|
-| POST | `/api/manual-consumptions` | Registra "retira por otro". Un empleado (retirador) retira comidas a nombre de uno o varios titulares; se crea una fila `consumption` por cada (titular × tipo de comida) con `method='MANUAL'`, `proxy_employee_id=<retirador>` y `observation="<Retirador> retira de <Titular>"` autogenerada. No valida horario, permisos ni duplicados (override admin). |
+| POST | `/api/manual-consumptions` | Registra "retira por otro". Un empleado (retirador) retira comidas a nombre de uno o varios titulares; se crea una fila `consumo` por cada (titular × tipo de comida) con `method='MANUAL'`, `empleado_apoderado_id=<retirador>` y `observacion="<Retirador> retira de <Titular>"` autogenerada. No valida horario, permisos ni duplicados (override admin). |
 | POST | `/api/manual-consumptions/external` | Persona externa (visitante/contratista). Crea/reutiliza `Employee` con `status='INACTIVE'`; registra un consumo con `method='EXTERNAL'`. |
 
 `ManualScanRequest`:
@@ -90,7 +88,7 @@ End point para "retira por otro" y persona externa. No usan JWT del dispositivo
   "mealTypeCode": "BREAKFAST", "restaurantId": 2, "observation": null }
 ```
 
-## Reportes y estadísticas — `ADMIN`/`SUPERVISOR`
+## Reportes y estadísticas — `ADMIN`
 
 | Método | Ruta | Descripción |
 |-------|------|-------------|
@@ -126,7 +124,7 @@ End point para "retira por otro" y persona externa. No usan JWT del dispositivo
 |------|--------|-----------|
 | 401 | `BAD_CREDENTIALS` | Login inválido |
 | 409 | `ACCOUNT_LOCKED` | Bloqueo por fuerza bruta |
-| 409 | `DEVICE_LIMIT` | Límite de dispositivos del catering |
+| 409 | `DEVICE_LIMIT` | Límite de dispositivos del restaurante |
 | 409 | `MAX_FINGERPRINTS` | Más de 3 huellas |
 | 404 | `NOT_FOUND` | Recurso inexistente |
 | 400 | `VALIDATION` | Error de validación de campos |

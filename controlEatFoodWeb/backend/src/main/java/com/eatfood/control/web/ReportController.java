@@ -21,7 +21,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/reports")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'RECURSOS_HUMANOS')")
 public class ReportController {
 
     private final ReportService reportService;
@@ -34,11 +34,12 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Long employeeId,
-            @RequestParam(required = false) List<String> method) {
+            @RequestParam(required = false) List<String> method,
+            @RequestParam(defaultValue = "false") boolean showCancelled) {
         List<String> methods = (method == null || method.stream().allMatch(String::isBlank))
                 ? null
                 : method.stream().filter(s -> !s.isBlank()).toList();
-        return reportService.consumptions(from, to, restaurantId, employeeId, methods);
+        return reportService.consumptions(from, to, restaurantId, employeeId, methods, showCancelled);
     }
 
     @GetMapping("/dashboard")
@@ -68,12 +69,13 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Long employeeId,
-            @RequestParam(required = false) List<String> method) {
+            @RequestParam(required = false) List<String> method,
+            @RequestParam(defaultValue = "false") boolean showCancelled) {
 
         List<String> methods = (method == null || method.stream().allMatch(String::isBlank))
                 ? null
                 : method.stream().filter(s -> !s.isBlank()).toList();
-        List<ConsumptionRow> rows = reportService.consumptions(from, to, restaurantId, employeeId, methods);
+        List<ConsumptionRow> rows = reportService.consumptions(from, to, restaurantId, employeeId, methods, showCancelled);
         String title = buildTitle(restaurantId, from, to);
         byte[] body;
         String filename;

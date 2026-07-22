@@ -35,7 +35,7 @@ spring:
         # Para columnas OffsetDateTime en MySQL (sin tipo "timestamp with time zone"),
         # el default de Hibernate 6 es NORMALIZE_UTC → guarda en UTC e IGNORA jdbc.time_zone,
         # dejando las horas 5h adelantadas respecto a Ecuador. NORMALIZE respeta jdbc.time_zone
-        # (America/Guayaquil) y guarda/lee la hora local, consistente con business_date.
+        # (America/Guayaquil) y guarda/lee la hora local, consistente con fecha_negocio.
         timezone:
           default_storage: NORMALIZE
     open-in-view: false

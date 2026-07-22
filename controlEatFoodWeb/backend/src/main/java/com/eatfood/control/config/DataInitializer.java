@@ -45,6 +45,7 @@ public class DataInitializer implements CommandLineRunner {
 
     private static final String DEV_ADMIN_PASSWORD = "Admin123*";
     private static final String DEV_RESTAURANT_PASSWORD = "restaurant123";
+    private static final String DEV_RRHH_PASSWORD = "Rrhh123*";
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final AppUserRepository userRepository;
@@ -72,6 +73,21 @@ public class DataInitializer implements CommandLineRunner {
                     logOneTimeCredential("admin", null, pwd);
                 } else {
                     log.info("Contraseña del usuario 'admin' inicializada ({}).", DEV_ADMIN_PASSWORD);
+                }
+            }
+        });
+
+        // Asegurar contraseña válida del usuario de Recursos Humanos
+        userRepository.findByUsername("rrhh").ifPresent(rrhh -> {
+            if (rrhh.getPasswordHash() == null || !rrhh.getPasswordHash().startsWith("$2")) {
+                String pwd = production ? generateOneTimePassword() : DEV_RRHH_PASSWORD;
+                rrhh.setPasswordHash(passwordEncoder.encode(pwd));
+                userRepository.save(rrhh);
+                if (production) {
+                    generated.add("rrhh: " + pwd);
+                    logOneTimeCredential("rrhh", null, pwd);
+                } else {
+                    log.info("Contraseña del usuario 'rrhh' inicializada ({}).", DEV_RRHH_PASSWORD);
                 }
             }
         });

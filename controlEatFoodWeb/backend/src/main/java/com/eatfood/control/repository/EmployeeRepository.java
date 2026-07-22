@@ -16,7 +16,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     Optional<Employee> findByIdentityCardAndDeletedFalse(String identityCard);
 
-    /** Búsqueda global (incluye soft-deleted): identity_card es UNIQUE en la BD. */
+    /** Búsqueda global (incluye soft-deleted): cedula es UNIQUE en la BD. */
     Optional<Employee> findByIdentityCard(String identityCard);
 
     /** ¿Otro empleado (distinto de id) ya usa esta cédula? Para validar en la edición. */
@@ -53,7 +53,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     @Query("""
             SELECT e FROM Employee e
             WHERE e.deleted = false AND e.status = :status
-              AND e.id NOT IN (SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date)
+              AND e.id NOT IN (SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date AND c.cancelled = FALSE)
             ORDER BY e.fullName
             """)
     List<Employee> findActiveNotConsumed(@Param("status") com.eatfood.control.domain.EmployeeStatus status,

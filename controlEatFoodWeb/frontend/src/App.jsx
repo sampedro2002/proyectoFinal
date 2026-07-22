@@ -10,6 +10,7 @@ import Schedules from './pages/Schedules.jsx';
 import Reports from './pages/Reports.jsx';
 import Audit from './pages/Audit.jsx';
 import ManualScan from './pages/ManualScan.jsx';
+import EditManualConsumptions from './pages/EditManualConsumptions.jsx';
 import ServerQr from './pages/ServerQr.jsx';
 import Kiosk from './pages/Kiosk.jsx';
 
@@ -23,12 +24,12 @@ function Protected({ children, roles }) {
   return children;
 }
 
-// El panel (dashboard y estadísticas) es solo de ADMIN. Un usuario con rol de
-// restaurante (CATERING) no tiene nada que hacer aquí: su única función es la
-// pantalla de escaneo, así que se le lleva directo al Kiosk.
+// El panel (dashboard y estadísticas) es solo de ADMIN o RECURSOS_HUMANOS.
+// Un usuario con rol de restaurante (CATERING) no tiene nada que hacer aquí:
+// su única función es la pantalla de escaneo, así que se le lleva directo al Kiosk.
 function Home() {
   const { hasRole } = useAuth();
-  return hasRole('ADMIN') ? <Dashboard /> : <Navigate to="/kiosk" replace />;
+  return (hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) ? <Dashboard /> : <Navigate to="/kiosk" replace />;
 }
 
 export default function App() {
@@ -39,13 +40,14 @@ export default function App() {
 
       <Route path="/" element={<Protected><Layout /></Protected>}>
         <Route index element={<Home />} />
-        <Route path="employees" element={<Protected roles={['ADMIN']}><Employees /></Protected>} />
+        <Route path="employees" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><Employees /></Protected>} />
         <Route path="restaurants" element={<Protected roles={['ADMIN']}><Restaurants /></Protected>} />
         <Route path="users" element={<Protected roles={['ADMIN']}><Users /></Protected>} />
         <Route path="schedules" element={<Protected roles={['ADMIN']}><Schedules /></Protected>} />
-        <Route path="reports" element={<Protected roles={['ADMIN']}><Reports /></Protected>} />
+        <Route path="reports" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><Reports /></Protected>} />
         <Route path="audit" element={<Protected roles={['ADMIN']}><Audit /></Protected>} />
-        <Route path="manual-scan" element={<Protected roles={['ADMIN']}><ManualScan /></Protected>} />
+        <Route path="manual-scan" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><ManualScan /></Protected>} />
+        <Route path="edit-consumptions" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><EditManualConsumptions /></Protected>} />
         <Route path="conexion" element={<Protected roles={['ADMIN']}><ServerQr /></Protected>} />
       </Route>
 

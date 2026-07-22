@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "audit_log")
+@Table(name = "registro_auditoria")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class AuditLog {
 
@@ -14,31 +14,31 @@ public class AuditLog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(length = 60)
+    @Column(name = "nombre_usuario", length = 60)
     private String username;
 
-    @Column(name = "entity_name", nullable = false, length = 60)
+    @Column(name = "nombre_entidad", nullable = false, length = 60)
     private String entityName;
 
-    @Column(name = "entity_id", length = 40)
+    @Column(name = "id_entidad", length = 40)
     private String entityId;
 
-    @Column(nullable = false, length = 20)
+    @Column(name = "accion", nullable = false, length = 20)
     private String action;
 
-    @Column(name = "old_value", columnDefinition = "text")
+    @Column(name = "valor_anterior", columnDefinition = "text")
     private String oldValue;
 
-    @Column(name = "new_value", columnDefinition = "text")
+    @Column(name = "valor_nuevo", columnDefinition = "text")
     private String newValue;
 
-    @Column(name = "ip_address", length = 60)
+    @Column(name = "direccion_ip", length = 60)
     private String ipAddress;
 
-    @Column(name = "device_info", length = 200)
+    @Column(name = "info_dispositivo", length = 200)
     private String deviceInfo;
 
-    @Column(name = "created_at", nullable = false)
+    @Column(name = "creado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 }

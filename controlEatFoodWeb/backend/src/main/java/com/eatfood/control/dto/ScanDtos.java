@@ -71,7 +71,7 @@ public final class ScanDtos {
      * Modelo "retira por otro": el empleado {@code proxyEmployeeId} (p. ej.
      * Pepe) retira uno o varios titulares. Se generara una fila de
      * {@code consumption} por cada titular x codigo de comida, con
-     * {@code method='MANUAL'}, {@code proxy_employee_id=Pepe} y
+     * {@code method='MANUAL'}, {@code empleado_apoderado_id=Pepe} y
      * {@code observation="Pepe retira de Juan"} autogenerada.
      */
     public record ManualScanRequest(
@@ -112,4 +112,29 @@ public final class ScanDtos {
             @NotBlank String mealTypeCode,
             @NotNull Long restaurantId,
             String observation) {}
+
+    public record UpdateManualConsumptionRequest(
+            Long proxyEmployeeId,
+            Long employeeId,
+            Long restaurantId,
+            String mealName,
+            String observation) {}
+
+    public record ConsumptionDetailResponse(
+            Long id,
+            Long employeeId,
+            String employeeName,
+            String identityCard,
+            Long proxyEmployeeId,
+            String proxyEmployeeName,
+            Long restaurantId,
+            String restaurantName,
+            String mealName,
+            String observation,
+            String method,
+            boolean offline,
+            boolean cancelled,
+            String businessDate,
+            String consumedAt,
+            String createdAt) {}
 }

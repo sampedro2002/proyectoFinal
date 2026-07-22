@@ -18,10 +18,10 @@ import java.time.OffsetDateTime;
 public abstract class Auditable {
 
     @CreatedDate
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "creado_en", updatable = false)
     private OffsetDateTime createdAt;
 
     @LastModifiedDate
-    @Column(name = "updated_at")
+    @Column(name = "actualizado_en")
     private OffsetDateTime updatedAt;
 }

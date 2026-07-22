@@ -6,7 +6,7 @@ import lombok.*;
 import java.time.OffsetDateTime;
 
 @Entity
-@Table(name = "failed_scan")
+@Table(name = "escaneo_fallido")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class FailedScan {
 
@@ -14,21 +14,21 @@ public class FailedScan {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "restaurant_id")
+    @Column(name = "restaurante_id")
     private Long restaurantId;
 
-    @Column(name = "device_id")
+    @Column(name = "dispositivo_id")
     private Long deviceId;
 
     /** NOT_FOUND, OUT_OF_SCHEDULE, DUPLICATE, NOT_ALLOWED */
-    @Column(nullable = false, length = 30)
+    @Column(name = "razon", nullable = false, length = 30)
     private String reason;
 
 
-    @Column(name = "employee_id")
+    @Column(name = "empleado_id")
     private Long employeeId;
 
-    @Column(name = "occurred_at", nullable = false)
+    @Column(name = "ocurrido_en", nullable = false)
     @Builder.Default
     private OffsetDateTime occurredAt = OffsetDateTime.now();
 }

@@ -8,7 +8,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "app_user")
+@Table(name = "usuario")
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 public class AppUser extends Auditable {
 
@@ -19,34 +19,34 @@ public class AppUser extends Auditable {
     @Column(nullable = false, unique = true, length = 60)
     private String username;
 
-    @Column(name = "password_hash", nullable = false, length = 120)
+    @Column(name = "contrasena_hash", nullable = false, length = 120)
     private String passwordHash;
 
-    @Column(name = "full_name", nullable = false, length = 120)
+    @Column(name = "nombre_completo", nullable = false, length = 120)
     private String fullName;
 
-    @Column(length = 120)
+    @Column(name = "correo", length = 120)
     private String email;
 
-    @Column(nullable = false)
+    @Column(name = "habilitado", nullable = false)
     @Builder.Default
     private boolean enabled = true;
 
-    @Column(name = "failed_attempts", nullable = false)
+    @Column(name = "intentos_fallidos", nullable = false)
     @Builder.Default
     private int failedAttempts = 0;
 
-    @Column(name = "locked_until")
+    @Column(name = "bloqueado_hasta")
     private OffsetDateTime lockedUntil;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "restaurant_id")
+    @JoinColumn(name = "restaurante_id")
     private Restaurant restaurant;
 
     @ManyToMany(fetch = FetchType.EAGER)
-    @JoinTable(name = "user_roles",
-            joinColumns = @JoinColumn(name = "user_id"),
-            inverseJoinColumns = @JoinColumn(name = "role_id"))
+    @JoinTable(name = "usuario_rol",
+            joinColumns = @JoinColumn(name = "usuario_id"),
+            inverseJoinColumns = @JoinColumn(name = "rol_id"))
     @Builder.Default
     private Set<Role> roles = new HashSet<>();
 }

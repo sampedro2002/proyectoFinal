@@ -51,7 +51,8 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public List<ConsumptionRow> consumptions(LocalDate from, LocalDate to, Long restaurantId,
-                                             Long employeeId, List<String> methods) {
+                                             Long employeeId, List<String> methods,
+                                             boolean showCancelled) {
         validateRange(from, to);
         List<com.eatfood.control.domain.Method> methodEnums = null;
         if (methods != null && !methods.isEmpty()) {
@@ -65,7 +66,7 @@ public class ReportService {
             }
             if (methodEnums.isEmpty()) methodEnums = null;
         }
-        return consumptionRepository.report(from, to, restaurantId, employeeId, methodEnums)
+        return consumptionRepository.report(from, to, restaurantId, employeeId, methodEnums, showCancelled)
                 .stream().map(this::toRow).toList();
     }
 
@@ -78,16 +79,17 @@ public class ReportService {
                 c.getRestaurant().getName(), c.getMealName(),
                 c.getObservation(), c.isOffline(),
                 c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),
-                p != null ? p.getFullName() : null);
+                p != null ? p.getFullName() : null,
+                c.isCancelled());
     }
 
     @Transactional(readOnly = true)
     public DashboardStats dashboard(LocalDate date) {
         if (date == null) date = LocalDate.now(BUSINESS_ZONE);
 
-        long total = consumptionRepository.countByBusinessDate(date);
-        long almuerzos = consumptionRepository.countByBusinessDateAndMealName(date, "Almuerzo");
-        long meriendas = consumptionRepository.countByBusinessDateAndMealName(date, "Merienda");
+        long total = consumptionRepository.countByBusinessDateAndCancelledFalse(date);
+        long almuerzos = consumptionRepository.countByBusinessDateAndMealNameAndCancelledFalse(date, "Almuerzo");
+        long meriendas = consumptionRepository.countByBusinessDateAndMealNameAndCancelledFalse(date, "Merienda");
 
         long expected = employeeRepository.countByDeletedFalseAndStatus(EmployeeStatus.ACTIVE);
         long consumed = consumptionRepository.countDistinctEmployees(date);

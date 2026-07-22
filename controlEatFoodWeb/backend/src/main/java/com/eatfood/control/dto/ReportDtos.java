@@ -17,7 +17,8 @@ public final class ReportDtos {
             String observation,
             boolean offline,
             String method,
-            String proxyEmployeeName) {}
+            String proxyEmployeeName,
+            boolean cancelled) {}
 
     /** Etiqueta legible del método de registro, para UIs y reportes. */
     public static String methodLabel(String method) {

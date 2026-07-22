@@ -46,6 +46,7 @@ a { color: var(--accent-2); text-decoration: none; }
 .sidebar a {
   color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 14px;
 }
+.sidebar a:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 .sidebar a.active, .sidebar a:hover { background: var(--panel-2); }
 .sidebar .spacer { flex: 1; }
 .content { flex: 1; padding: 24px; overflow: auto; }
@@ -75,6 +76,7 @@ input:focus, select:focus { outline: 2px solid var(--accent); }
 button {
   background: var(--accent); border: none; cursor: pointer; font-weight: 600;
 }
+button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
 button:hover { filter: brightness(1.1); }
 button.ghost { background: transparent; border: 1px solid var(--border); }
 button.danger { background: var(--err); }
@@ -115,6 +117,7 @@ textarea:focus { outline: 2px solid var(--accent); }
   background: transparent; border: none; border-bottom: 2px solid transparent;
   border-radius: 0; padding: 10px 16px; color: var(--muted); font-weight: 600;
 }
+.tabs .tab:focus-visible { outline: 2px solid var(--accent-2); outline-offset: -2px; }
 .tabs .tab:hover:not(:disabled) { filter: none; color: var(--text); }
 .tabs .tab.active { color: var(--accent-2); border-bottom-color: var(--accent-2); }
 .tabs .tab:disabled { opacity: .45; cursor: not-allowed; }
@@ -215,6 +218,7 @@ button.password-toggle:hover {
   cursor: pointer;
   user-select: none;
 }
+.kiosk-feed-divider:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 4px; }
 .kiosk-feed-divider::before,
 .kiosk-feed-divider::after {
   content: '';
