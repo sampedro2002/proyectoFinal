@@ -253,6 +253,29 @@ export default function Employees() {
     }
   }
 
+  async function enrollFromServer() {
+    if (!form?.id) return;
+    const targetId = form.id;
+    const isStale = () => formIdRef.current !== targetId;
+    setBioMsg('');
+    if (fingerprints.length >= 3) { setBioMsg('Máximo 3 huellas por empleado.'); return; }
+    try {
+      setBioStatus('connecting');
+      setBioMsg('Conectando con el lector del servidor...');
+      const { data } = await api.post(`/fingerprints/enroll-from-server/${targetId}/${Number(fingerIndex)}`, null, {
+        timeout: 130000,
+      });
+      if (isStale()) return;
+      setBioStatus('idle');
+      setBioMsg('Huella registrada correctamente desde el servidor.');
+      loadFp(targetId);
+    } catch (err) {
+      if (isStale()) return;
+      setBioStatus('idle');
+      setBioMsg(err.response?.data?.message || err.message || 'Error al registrar la huella desde el servidor');
+    }
+  }
+
   function removeFp(fpId) {
     setConfirmDialog({
       title: 'Eliminar huella',
@@ -493,6 +516,11 @@ export default function Employees() {
                             {bioStatus === 'capturing'  && 'Leyendo huellas (3×)…'}
                             {bioStatus === 'saving'     && 'Guardando…'}
                           </button>
+                          {isAdmin && (
+                            <button onClick={enrollFromServer} disabled={bioStatus !== 'idle'}>
+                              Capturar desde servidor
+                            </button>
+                          )}
                         </div>
                         {bioMsg && (
                           <p style={{

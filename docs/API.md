@@ -29,6 +29,7 @@ Autenticación: `Authorization: Bearer <accessToken>` (salvo `/api/auth/**` y `/
 |-------|------|-------------|
 | GET | `/api/fingerprints/employee/{employeeId}` | Lista huellas activas |
 | POST | `/api/fingerprints/enroll` | Enrola huella `{employeeId, fingerIndex, templateB64}` (máx. 3) |
+| POST | `/api/fingerprints/enroll-from-server/{employeeId}/{fingerIndex}` | Captura desde lector ZK9500 del servidor y enrola (requiere lector conectado al servidor) |
 | DELETE | `/api/fingerprints/{id}` | Desactiva huella |
 
 ## Catálogos

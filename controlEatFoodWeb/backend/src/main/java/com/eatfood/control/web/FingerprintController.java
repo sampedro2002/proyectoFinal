@@ -1,10 +1,13 @@
 package com.eatfood.control.web;
 
 import com.eatfood.control.dto.FingerprintDtos.*;
+import com.eatfood.control.exception.BusinessException;
+import com.eatfood.control.service.FingerprintCaptureService;
 import com.eatfood.control.service.FingerprintService;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,6 +21,27 @@ import java.util.Map;
 public class FingerprintController {
 
     private final FingerprintService fingerprintService;
+
+    @Autowired(required = false)
+    private FingerprintCaptureService fingerprintCaptureService;
+
+    /**
+     * Captura una huella desde el lector ZK9500 conectado al servidor y la registra
+     * para el empleado y dedo indicados. No requiere lector local en el cliente.
+     */
+    @PostMapping("/enroll-from-server/{employeeId}/{fingerIndex}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public FingerprintResponse enrollFromServer(
+            @PathVariable Long employeeId,
+            @PathVariable Short fingerIndex) {
+        if (fingerprintCaptureService == null || !fingerprintCaptureService.isReaderReady()) {
+            throw new BusinessException("READER_NOT_AVAILABLE",
+                    "Lector ZK9500 no disponible en el servidor. " +
+                    "Conecte el lector al servidor para usar esta función.");
+        }
+        String templateB64 = fingerprintCaptureService.captureForEnroll(120_000);
+        return fingerprintService.enroll(new EnrollRequest(employeeId, fingerIndex, templateB64));
+    }
 
     @GetMapping("/employee/{employeeId}")
     @PreAuthorize("hasRole('ADMIN')")
