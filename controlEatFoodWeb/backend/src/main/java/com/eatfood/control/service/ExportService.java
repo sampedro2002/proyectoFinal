@@ -785,12 +785,6 @@ public class ExportService {
     private String buildDescription(ConsumptionRow r) {
         String obs = r.observation();
         if (obs != null && !obs.isBlank()) return obs;
-        String proxy = r.proxyEmployeeName();
-        if (proxy != null && !proxy.isBlank()
-                && r.method() != null && "MANUAL".equals(r.method())
-                && r.employeeName() != null && !r.employeeName().isBlank()) {
-            return proxy + " retira de " + r.employeeName();
-        }
         return "";
     }
 
