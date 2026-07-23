@@ -64,7 +64,8 @@ enum class Screen(val title: String, val roles: List<String>) {
     REPORTS("Reportes", listOf("ADMIN", "RECURSOS_HUMANOS")),
     AUDIT("Auditoría", listOf("ADMIN")),
     EXTRA_MEALS("Registro manual", listOf("ADMIN", "RECURSOS_HUMANOS")),
-    EDIT_CONSUMOS("Editar Consumos", listOf("ADMIN", "RECURSOS_HUMANOS"))
+    EDIT_CONSUMOS("Editar Consumos", listOf("ADMIN", "RECURSOS_HUMANOS")),
+    CONEXION("Conexión (QR)", listOf("ADMIN"))
 }
 
 @Composable
@@ -212,6 +213,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                     Screen.AUDIT -> AuditScreen()
                     Screen.EXTRA_MEALS -> ExtraMealsScreen()
                     Screen.EDIT_CONSUMOS -> EditConsumptionsScreen()
+                    Screen.CONEXION -> ConexionScreen()
                 }
             }
         }

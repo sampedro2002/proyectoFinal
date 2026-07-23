@@ -101,6 +101,10 @@ interface ApiService {
         @Query("showCancelled") showCancelled: Boolean = false
     ): Response<ResponseBody>
 
+    // ── Información del servidor (pantalla Conexión / QR, solo ADMIN) ───────────
+    @GET("server-info")
+    suspend fun serverInfo(): ServerInfo
+
     // ── Auditoría ──────────────────────────────────────────────────────────────
     @GET("audit")
     suspend fun audit(

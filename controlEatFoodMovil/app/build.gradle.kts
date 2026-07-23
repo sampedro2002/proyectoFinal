@@ -104,6 +104,10 @@ dependencies {
     // Se usa para aprovisionar la URL del servidor desde un QR (el usuario no la teclea).
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
 
+    // Generación de QR (pantalla Conexión del admin): codifica la URL del servidor en un
+    // bitmap para que otros dispositivos la escaneen. zxing:core es Java puro (sin UI).
+    implementation("com.google.zxing:core:3.5.3")
+
     // Cola offline (Room) — reemplaza IndexedDB del frontend web
     val room_version = "2.7.0-alpha12"
     implementation("androidx.room:room-runtime:$room_version")

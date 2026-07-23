@@ -20,6 +20,16 @@ data class AuthResponse(
     val restaurantId: Long?
 )
 
+// ── Información del servidor (pantalla Conexión / QR del admin) ────────────────
+// Refleja el Map que devuelve ServerInfoController: URLs candidatas por las que el
+// backend es alcanzable, para proponer la mejor al generar el QR de vinculación.
+data class ServerInfo(
+    val port: Int? = null,
+    val configuredUrl: String? = null,
+    val requestUrl: String? = null,
+    val lanUrls: List<String>? = null
+)
+
 // ── Empleados ────────────────────────────────────────────────────────────────
 data class EmployeeRequest(
     val identityCard: String,
