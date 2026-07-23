@@ -50,7 +50,7 @@ import java.util.Map;
 @Service
 public class ExportService {
 
-    private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+    private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("h:mm:ss a", java.util.Locale.US);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
@@ -86,7 +86,7 @@ public class ExportService {
 
     private static final String[] HEADERS =
             {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida",
-             "Tipo", "Retira", "Descripción"};
+             "Tipo", "Descripción"};
     private static final String[] EMP_HEADERS =
             {"Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
              "N.º Huellas", "Observación"};
@@ -108,7 +108,6 @@ public class ExportService {
               .append(csv(r.restaurantName())).append(';')
               .append(csv(r.mealName())).append(';')
               .append(methodLabel(r.method())).append(';')
-              .append(csv(r.proxyEmployeeName())).append(';')
               .append(csv(buildDescription(r))).append('\n');
         }
         sb.append("\n");
@@ -240,8 +239,7 @@ public class ExportService {
                 row.createCell(4).setCellValue(safe(r.restaurantName()));
                 row.createCell(5).setCellValue(safe(r.mealName()));
                 row.createCell(6).setCellValue(methodLabel(r.method()));
-                row.createCell(7).setCellValue(safe(r.proxyEmployeeName()));
-                row.createCell(8).setCellValue(safe(buildDescription(r)));
+                row.createCell(7).setCellValue(safe(buildDescription(r)));
                 if ("MANUAL".equals(r.method()) || "EXTERNAL".equals(r.method())) {
                     XSSFCellStyle style = "MANUAL".equals(r.method()) ? manualStyle : externalStyle;
                     for (int i = 0; i < HEADERS.length; i++) {
@@ -295,7 +293,7 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(HEADERS.length);
             table.setWidthPercentage(100);
-            table.setWidths(new float[]{5f, 12f, 10f, 18f, 15f, 10f, 10f, 13f, 17f});
+            table.setWidths(new float[]{5f, 12f, 12f, 20f, 18f, 12f, 10f, 21f});
             table.setHeaderRows(1);
             addHeaderRow(table, HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
@@ -310,7 +308,6 @@ public class ExportService {
                 addBodyCell(table, safe(r.restaurantName()), cf, bg);
                 addBodyCell(table, safe(r.mealName()), cf, bg);
                 addBodyCell(table, methodLabel(r.method()), cf, bg);
-                addBodyCell(table, safe(r.proxyEmployeeName()), cf, bg);
                 addBodyCell(table, safe(buildDescription(r)), cf, bg);
             }
             doc.add(table);
@@ -503,7 +500,7 @@ public class ExportService {
     // ------------------------------------------------------------------------
     private static final String[] KIOSK_HEADERS =
             {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida",
-             "Tipo", "Retira", "Descripción"};
+             "Tipo", "Descripción"};
 
     public byte[] kioskDailyCsv(String restaurantName, LocalDate date,
                                 List<ConsumptionRow> rows, Map<String, Long> plateCounts) {
@@ -521,7 +518,6 @@ public class ExportService {
               .append(csv(restaurantName)).append(';')
               .append(csv(r.mealName())).append(';')
               .append(methodLabel(r.method())).append(';')
-              .append(csv(r.proxyEmployeeName())).append(';')
               .append(csv(buildDescription(r))).append('\n');
         }
         sb.append("\n");
@@ -568,8 +564,7 @@ public class ExportService {
                 row.createCell(4).setCellValue(safe(restaurantName));
                 row.createCell(5).setCellValue(safe(r.mealName()));
                 row.createCell(6).setCellValue(methodLabel(r.method()));
-                row.createCell(7).setCellValue(safe(r.proxyEmployeeName()));
-                row.createCell(8).setCellValue(safe(buildDescription(r)));
+                row.createCell(7).setCellValue(safe(buildDescription(r)));
                 if ("MANUAL".equals(r.method()) || "EXTERNAL".equals(r.method())) {
                     XSSFCellStyle style = "MANUAL".equals(r.method()) ? kManualStyle : kExternalStyle;
                     for (int i = 0; i < KIOSK_HEADERS.length; i++) {
@@ -624,7 +619,7 @@ public class ExportService {
 
             PdfPTable table = new PdfPTable(KIOSK_HEADERS.length);
             table.setWidthPercentage(100);
-            table.setWidths(new float[]{5f, 12f, 10f, 18f, 15f, 10f, 10f, 13f, 17f});
+            table.setWidths(new float[]{5f, 12f, 12f, 20f, 18f, 12f, 10f, 21f});
             table.setHeaderRows(1);
             addHeaderRow(table, KIOSK_HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
@@ -639,7 +634,6 @@ public class ExportService {
                 addBodyCell(table, safe(restaurantName), cf, bg);
                 addBodyCell(table, safe(r.mealName()), cf, bg);
                 addBodyCell(table, methodLabel(r.method()), cf, bg);
-                addBodyCell(table, safe(r.proxyEmployeeName()), cf, bg);
                 addBodyCell(table, safe(buildDescription(r)), cf, bg);
             }
             doc.add(table);

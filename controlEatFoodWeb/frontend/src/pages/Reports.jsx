@@ -119,14 +119,14 @@ export default function Reports() {
         <table>
           <thead><tr>
             <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
-            <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Retira</th><th>Descripción</th>
+            <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Descripción</th>
           </tr></thead>
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id} className={rowClass(r.method)}>
                 <td>{i + 1}</td>
                 <td>{r.businessDate}</td>
-                <td>{new Date(r.consumedAt).toLocaleTimeString()}</td>
+                <td>{new Date(r.consumedAt).toLocaleTimeString('en-US')}</td>
                 <td>{r.identityCard}</td>
                 <td>{r.employeeName}</td>
                 <td>{r.restaurantName}</td>
@@ -136,7 +136,6 @@ export default function Reports() {
                     {METHOD_LABEL[r.method] || r.method}
                   </span>
                 </td>
-                <td>{r.proxyEmployeeName || '—'}</td>
                 <td>{buildDescription(r)}</td>
               </tr>
             ))}

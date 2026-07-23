@@ -302,6 +302,12 @@ public class ScanService {
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         OffsetDateTime now = OffsetDateTime.now(BUSINESS_ZONE);
         String proxyName = proxy.getFullName();
+        
+        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (sch == null || !sch.isActive() || !sch.contains(now.toLocalTime())) {
+            return new ManualScanResponse("OUT_OF_SCHEDULE", "Fuera del horario permitido para registros manuales", proxyName, null, 0);
+        }
+
         int created = 0;
         String lastMealName = null;
         // Motivos por los que se omitió un plato (no permitido / ya registrado), para
@@ -465,6 +471,12 @@ public class ScanService {
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
+        
+        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE))) {
+            return new ManualScanResponse("OUT_OF_SCHEDULE", "Fuera del horario permitido para registros externos", req.fullName(), null, 0);
+        }
+
         String mealName = mealNameForCode(req.mealTypeCode());
         // No permitir registrar dos veces el mismo plato el mismo día para esta persona
         // externa (misma cédula/pasaporte). En un externo recién creado la lista está vacía.

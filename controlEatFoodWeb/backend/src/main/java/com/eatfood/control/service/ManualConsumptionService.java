@@ -7,6 +7,7 @@ import com.eatfood.control.exception.NotFoundException;
 import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.RestaurantRepository;
+import com.eatfood.control.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -14,6 +15,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.util.List;
 
 @Slf4j
@@ -24,6 +27,7 @@ public class ManualConsumptionService {
     private final ConsumptionRepository consumptionRepository;
     private final EmployeeRepository employeeRepository;
     private final RestaurantRepository restaurantRepository;
+    private final ScheduleRepository scheduleRepository;
     private final AuditService auditService;
 
     @Transactional(readOnly = true)
@@ -41,6 +45,11 @@ public class ManualConsumptionService {
 
     @Transactional
     public ConsumptionDetailResponse update(Long id, UpdateManualConsumptionRequest req) {
+        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(ZoneId.of("America/Guayaquil")))) {
+            throw new BusinessException("OUT_OF_SCHEDULE", "Fuera del horario permitido para editar registros.");
+        }
+
         Consumption c = consumptionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
 
