@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
-const METHOD_LABEL = { MANUAL: 'Manual', EXTERNAL: 'Externo' };
 const MEALS = [
   { value: 'Almuerzo', label: 'Almuerzo' },
   { value: 'Merienda', label: 'Merienda' },
@@ -274,13 +273,6 @@ export default function EditManualConsumptions() {
   };
 
   /* ───── helpers ───── */
-  const fmt = (iso) => {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d)) return iso;
-    return d.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  };
-
   const pickTitular = async (emp) => {
     if (!emp) { setEditTarget(t => t ? { ...t, employeeId: null, mealName: null, _avail: null } : t); return; }
     // Bloquear si la persona seleccionada es el mismo que el apoderado actual
@@ -332,11 +324,16 @@ export default function EditManualConsumptions() {
     setEditTarget(t => t ? { ...t, proxyEmployeeId: null } : t);
   };
 
+  const todayStr = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
   /* ───── render ───── */
   return (
     <div>
       <div className="topbar">
-        <h2 style={{ margin: 0 }}>Editar Consumos</h2>
+        <div>
+          <h2 style={{ margin: 0 }}>Editar Consumos</h2>
+          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>(Manuales) — {todayStr}</div>
+        </div>
       </div>
 
       {toast && (
@@ -380,12 +377,10 @@ export default function EditManualConsumptions() {
               <th>ID</th>
               <th>Empleado</th>
               <th>Cédula</th>
-              <th>Tipo</th>
               <th>Retira por</th>
               <th>Restaurante</th>
               <th>Comida</th>
-              <th>Observación</th>
-              <th>Fecha</th>
+              <th>Hora</th>
               <th>Estado</th>
               <th></th>
             </tr>
@@ -396,18 +391,10 @@ export default function EditManualConsumptions() {
                 <td>{r.id}</td>
                 <td>{r.employeeName}</td>
                 <td>{r.identityCard || '—'}</td>
-                <td>
-                  <span className={`badge ${r.method === 'MANUAL' ? 'manual' : 'external'}`}>
-                    {METHOD_LABEL[r.method] || r.method}
-                  </span>
-                </td>
                 <td>{r.proxyEmployeeName || '—'}</td>
                 <td>{r.restaurantName}</td>
                 <td>{r.mealName}</td>
-                <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {r.observation || '—'}
-                </td>
-                <td>{fmt(r.businessDate)}</td>
+                <td>{r.consumedAt ? new Date(r.consumedAt).toLocaleTimeString('en-US') : '—'}</td>
                 <td>
                   {r.cancelled
                     ? <span className="badge off">Cancelado</span>
@@ -434,7 +421,7 @@ export default function EditManualConsumptions() {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={11} style={{ color: 'var(--muted)', textAlign: 'center' }}>
+                <td colSpan={9} style={{ color: 'var(--muted)', textAlign: 'center' }}>
                   No hay consumos manuales
                 </td>
               </tr>

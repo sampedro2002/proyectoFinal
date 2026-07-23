@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -32,7 +33,8 @@ public class ManualConsumptionService {
 
     @Transactional(readOnly = true)
     public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, Pageable pageable) {
-        return consumptionRepository.findManualConsumptions(search, restaurantId, cancelled, pageable)
+        LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
+        return consumptionRepository.findManualConsumptions(search, restaurantId, cancelled, today, pageable)
                 .map(this::toDetail);
     }
 
@@ -52,6 +54,11 @@ public class ManualConsumptionService {
 
         Consumption c = consumptionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
+
+        LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
+        if (!c.getBusinessDate().equals(today)) {
+            throw new BusinessException("OUT_OF_DATE", "Solo se pueden editar los consumos del día actual.");
+        }
 
         if (c.getMethod() != Method.MANUAL && c.getMethod() != Method.EXTERNAL) {
             throw new BusinessException("NOT_MANUAL", "Solo se pueden editar consumos manuales o externos.");

@@ -94,6 +94,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             JOIN FETCH c.restaurant
             LEFT JOIN FETCH c.proxyEmployee pe
             WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
+              AND c.businessDate = :businessDate
               AND (:search IS NULL OR
                    LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
@@ -106,6 +107,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             SELECT COUNT(DISTINCT c) FROM Consumption c
             LEFT JOIN c.proxyEmployee pe
             WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
+              AND c.businessDate = :businessDate
               AND (:search IS NULL OR
                    LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
@@ -116,5 +118,6 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
     Page<Consumption> findManualConsumptions(@Param("search") String search,
                                               @Param("restaurantId") Long restaurantId,
                                               @Param("cancelled") Boolean cancelled,
+                                              @Param("businessDate") LocalDate businessDate,
                                               Pageable pageable);
 }

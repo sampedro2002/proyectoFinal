@@ -24,7 +24,12 @@ export default function Layout() {
         {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/reports">Reportes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/audit">Auditoría</NavLink>}
         {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/manual-scan">Registro manual</NavLink>}
-        {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/edit-consumptions">Editar Consumos</NavLink>}
+        {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && (
+          <NavLink to="/edit-consumptions" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', lineHeight: 1.2 }}>
+            <span>Editar Consumos</span>
+            <span style={{ fontSize: 12, color: 'var(--muted, #94a3b8)', marginTop: 2 }}>(Manuales)</span>
+          </NavLink>
+        )}
         {hasRole('ADMIN') && <NavLink to="/conexion">Conexión (QR)</NavLink>}
         <div className="spacer" />
         <button className="ghost" onClick={logout}>Cerrar sesión</button>
