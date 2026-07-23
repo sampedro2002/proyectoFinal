@@ -18,7 +18,7 @@ public class Restaurant extends Auditable {
     @Column(name = "ubicacion", length = 160)
     private String location;
 
-    @Column(length = 120)
+    @Column(name = "representante", length = 120)
     private String representative;
 
     @Column(name = "activo", nullable = false)

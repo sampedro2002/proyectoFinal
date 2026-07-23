@@ -88,16 +88,30 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             """)
     List<Object[]> countGroupedByBusinessDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
-    @EntityGraph(attributePaths = {"employee", "proxyEmployee", "restaurant"})
-    @Query("""
-            SELECT c FROM Consumption c
-            WHERE c.method = com.eatfood.control.domain.Method.MANUAL
-              AND (:search IS NULL OR 
+    @Query(value = """
+            SELECT DISTINCT c FROM Consumption c
+            JOIN FETCH c.employee
+            JOIN FETCH c.restaurant
+            LEFT JOIN FETCH c.proxyEmployee pe
+            WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
+              AND (:search IS NULL OR
                    LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
-                   LOWER(c.proxyEmployee.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+                   LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(pe.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:cancelled IS NULL OR c.cancelled = :cancelled)
             ORDER BY c.consumedAt DESC
+            """,
+            countQuery = """
+            SELECT COUNT(DISTINCT c) FROM Consumption c
+            LEFT JOIN c.proxyEmployee pe
+            WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
+              AND (:search IS NULL OR
+                   LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(pe.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
+              AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
+              AND (:cancelled IS NULL OR c.cancelled = :cancelled)
             """)
     Page<Consumption> findManualConsumptions(@Param("search") String search,
                                               @Param("restaurantId") Long restaurantId,

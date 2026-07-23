@@ -44,8 +44,15 @@ public class ManualConsumptionService {
         Consumption c = consumptionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
 
-        if (c.getMethod() != Method.MANUAL) {
-            throw new BusinessException("NOT_MANUAL", "Solo se pueden editar consumos manuales.");
+        if (c.getMethod() != Method.MANUAL && c.getMethod() != Method.EXTERNAL) {
+            throw new BusinessException("NOT_MANUAL", "Solo se pueden editar consumos manuales o externos.");
+        }
+
+        // Validar que el apoderado no sea el mismo que el titular
+        if (req.proxyEmployeeId() != null && req.proxyEmployeeId().equals(
+                req.employeeId() != null ? req.employeeId() : c.getEmployee().getId())) {
+            throw new BusinessException("SAME_PERSON",
+                    "El empleado que retira no puede ser el mismo que el titular.");
         }
 
         String before = snapshot(c);
@@ -59,12 +66,19 @@ public class ManualConsumptionService {
         if (req.proxyEmployeeId() != null) {
             Employee proxy = employeeRepository.findById(req.proxyEmployeeId())
                     .orElseThrow(() -> new NotFoundException("Empleado no encontrado: " + req.proxyEmployeeId()));
+            if (proxy.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+                throw new BusinessException("INACTIVE_EMPLOYEE", "El empleado apoderado seleccionado está inactivo.");
+            }
             c.setProxyEmployee(proxy);
         }
 
-        if (req.employeeId() != null && !req.employeeId().equals(c.getEmployee().getId())) {
+        boolean titularChanged = req.employeeId() != null && !req.employeeId().equals(c.getEmployee().getId());
+        if (titularChanged) {
             Employee newTitular = employeeRepository.findById(req.employeeId())
                     .orElseThrow(() -> new NotFoundException("Empleado no encontrado: " + req.employeeId()));
+            if (newTitular.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+                throw new BusinessException("INACTIVE_EMPLOYEE", "El nuevo empleado titular seleccionado está inactivo.");
+            }
 
             String mealToCheck = req.mealName() != null ? req.mealName() : c.getMealName();
             boolean allowed = "Merienda".equals(mealToCheck) ? newTitular.effectiveSnack() : newTitular.isAllowsLunch();
@@ -85,7 +99,24 @@ public class ManualConsumptionService {
             c.setObservation(proxyName + " retira de " + newTitular.getFullName());
         }
 
-        if (req.mealName() != null) {
+        if (req.mealName() != null && !req.mealName().equals(c.getMealName())) {
+            // Si cambió el titular, el bloque anterior ya validó permiso y duplicado con
+            // la comida nueva. Si solo cambia la comida (mismo titular), hay que validar
+            // aquí para no crear un plato no permitido ni un duplicado del día.
+            if (!titularChanged) {
+                Employee titular = c.getEmployee();
+                boolean allowed = "Merienda".equals(req.mealName()) ? titular.effectiveSnack() : titular.isAllowsLunch();
+                if (!allowed) {
+                    throw new BusinessException("NOT_ALLOWED",
+                            titular.getFullName() + " no tiene permitido " + req.mealName());
+                }
+                List<String> consumedToday = consumptionRepository
+                        .findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), c.getBusinessDate());
+                if (consumedToday.contains(req.mealName())) {
+                    throw new BusinessException("DUPLICATE",
+                            titular.getFullName() + " ya tiene " + req.mealName() + " registrado hoy");
+                }
+            }
             c.setMealName(req.mealName());
         }
 

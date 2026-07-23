@@ -47,6 +47,12 @@ public class AuthService {
         AppUser user = userRepository.findByUsername(req.username())
                 .orElseThrow(() -> new BadCredentialsException("Credenciales inválidas"));
 
+        // Validación explícita case-sensitive: aunque la BD use collation CI,
+        // el nombre de usuario debe coincidir exactamente (mayúsculas y minúsculas).
+        if (!user.getUsername().equals(req.username())) {
+            throw new BadCredentialsException("Credenciales inválidas");
+        }
+
         if (user.getLockedUntil() != null && user.getLockedUntil().isAfter(OffsetDateTime.now())) {
             throw new UnauthorizedException("ACCOUNT_LOCKED",
                     "Cuenta bloqueada temporalmente por intentos fallidos. Intente más tarde.");

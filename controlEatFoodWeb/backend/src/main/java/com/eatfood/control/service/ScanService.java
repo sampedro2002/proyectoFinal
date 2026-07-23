@@ -266,8 +266,9 @@ public class ScanService {
      * una fila de {@code consumption} por cada codigo de comida pedido, con
      * {@code method='MANUAL'}, {@code empleado_apoderado_id=Pepe} y
      * {@code observacion="Pepe retira de Juan"} autogenerada (el admin no
-     * necesita capturarla en la UI). No se valida horario, permisos ni
-     * duplicados de los titulares: el manual es un override administrativo.
+     * necesita capturarla en la UI). No se valida horario (es un override
+     * administrativo), pero sí el permiso del titular por comida y el duplicado
+     * del día: no se registra un plato no permitido ni uno ya consumido hoy.
      */
     @Transactional
     public ManualScanResponse manualScan(ManualScanRequest req) {
@@ -286,6 +287,10 @@ public class ScanService {
             return new ManualScanResponse("NOT_FOUND",
                     "Empleado que retira no encontrado", null, null, 0);
         }
+        if (proxy.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+            return new ManualScanResponse("ERROR",
+                    "El empleado que retira está inactivo y no puede realizar registros manuales.", proxy.getFullName(), null, 0);
+        }
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId())
                 .orElse(null);
@@ -303,6 +308,15 @@ public class ScanService {
         // devolverlos en el mensaje y que la UI explique qué no se creó y por qué.
         List<String> skipped = new ArrayList<>();
 
+        // El proxy no puede ser titular de sí mismo
+        boolean proxyIsAlsoTitular = req.titulars().stream()
+                .anyMatch(item -> req.proxyEmployeeId().equals(item.employeeId()));
+        if (proxyIsAlsoTitular) {
+            return new ManualScanResponse("ERROR",
+                    "El empleado que retira no puede ser al mismo tiempo titular de sí mismo.",
+                    proxyName, null, 0);
+        }
+
         for (ManualScanItem item : req.titulars()) {
             // Lock pesimista igual que el escaneo por huella: serializa registros
             // concurrentes del mismo empleado (manual + kiosco a la vez) para que el
@@ -310,8 +324,11 @@ public class ScanService {
             Employee titular = employeeRepository.findByIdForUpdate(item.employeeId())
                     .orElse(null);
             if (titular == null || titular.isDeleted()) {
-                log.warn("[MANUAL] Titular no encontrado o eliminado: id={}",
-                        item.employeeId());
+                skipped.add("Empleado ID " + item.employeeId() + " no encontrado");
+                continue;
+            }
+            if (titular.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+                skipped.add(titular.getFullName() + ": Empleado inactivo");
                 continue;
             }
             if (item.mealTypeCodes() == null || item.mealTypeCodes().isEmpty()) {

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 
-export default function EmployeeSelect({ employees, value, onChange }) {
+export default function EmployeeSelect({ employees = [], value, onChange }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [highlight, setHighlight] = useState(-1);

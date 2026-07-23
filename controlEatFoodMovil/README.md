@@ -121,6 +121,7 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 | Rol | Usuario | Contraseña |
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
+| Recursos Humanos | `rrhh` | `Rrhh123*` |
 | Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `catering123` |
 
 > Las contraseñas se cifran con BCrypt al primer arranque del backend.
@@ -171,6 +172,10 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 | Horarios | GET/POST | `/schedules` |
 | Registro manual (empleado) | POST | `/manual-consumptions` |
 | Registro persona externa | POST | `/manual-consumptions/external` |
+| Listar consumos manuales | GET | `/manual-consumptions` |
+| Actualizar manual | PUT | `/manual-consumptions/{id}` |
+| Cancelar manual | DELETE | `/manual-consumptions/{id}` |
+| Reactivar manual | POST | `/manual-consumptions/{id}/reactivate` |
 | Conectar dispositivo | POST | `/scan/connect` |
 | Escanear huella | POST | `/scan` |
 | Sincronizar offline | POST | `/scan/sync` |

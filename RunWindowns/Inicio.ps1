@@ -694,7 +694,7 @@ function Ensure-ControlMysql8 {
 # ESQUEMA DE BASE DE DATOS (scripts en RunWindowns\db)
 # ---------------------------------------------------------------------------
 # db\01_esquema.sql y db\02_datos.sql crean la estructura y los datos iniciales
-# cuando la base aun NO tiene la estructura (se detecta por la tabla 'employee');
+# cuando la base aun NO tiene la estructura (se detecta por la tabla 'empleado');
 # si ya existe, se omiten. El backend conserva Flyway como respaldo
 # (baseline-on-migrate): si estos scripts no corren, el esquema se crea igual
 # al arrancar la aplicacion.
@@ -770,13 +770,13 @@ function Ensure-DatabaseSchema {
         return
     }
 
-    # 2) Si ya hay estructura (tabla employee), no hay nada que hacer.
+    # 2) Si ya hay estructura (tabla empleado), no hay nada que hacer.
     # La salida se filtra a la linea puramente numerica: mysql agrega por stderr
     # el aviso "Using a password on the command line..." que 2>&1 mezcla aqui.
-    $tableCount = Invoke-MySqlClient -DbConfig $DbConfig -Silent -Query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$($DbConfig.Name)' AND table_name='employee';"
+    $tableCount = Invoke-MySqlClient -DbConfig $DbConfig -Silent -Query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$($DbConfig.Name)' AND table_name='empleado';"
     $countLine = @($tableCount) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
     if ($LASTEXITCODE -eq 0 -and $countLine -and ([int]$countLine) -ge 1) {
-        Write-Log "La base ya tiene la estructura (tabla 'employee' presente): scripts de db\ omitidos." 'SUCCESS'
+        Write-Log "La base ya tiene la estructura (tabla 'empleado' presente): scripts de db\ omitidos." 'SUCCESS'
         return
     }
 
@@ -819,6 +819,7 @@ function Step-ConfigureDatabase {
     if ($choice -eq 1) {
         # ============ LOCAL (solo disponible en modo Pruebas) ============
         $dbConfig.Type = 'local'
+        $dbConfig.Name = Read-Default "Nombre de base de datos" $dbConfig.Name
 
         # Se consulta la imagen del contenedor 'control-mysql' ANTES de mirar el puerto.
         # Un contenedor viejo (p. ej. la antigua mysql:5.6) tambien abre el 3306, y antes
@@ -837,8 +838,6 @@ function Step-ConfigureDatabase {
             Write-Log "Se detecto un servicio en el puerto 3306 (MySQL ya esta corriendo)." 'SUCCESS'
             if ($controlImage -match '^mysql:8') {
                 Write-Log "Contenedor Docker 'control-mysql' (MySQL 8) en ejecucion." 'SUCCESS'
-            } else {
-                Write-Log "Asumiendo MySQL local/externo. Verifica que la BD y el usuario existan." 'WARN'
             }
             $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
             $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"

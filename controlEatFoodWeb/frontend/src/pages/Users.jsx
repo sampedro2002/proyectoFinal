@@ -3,7 +3,7 @@ import api from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 
 // Etiquetas amigables para los roles internos.
-const ROLE_LABELS = { ADMIN: 'Administrador', CATERING: 'Restaurante' };
+const ROLE_LABELS = { ADMIN: 'Administrador', CATERING: 'Restaurante', RECURSOS_HUMANOS: 'Recursos Humanos' };
 const roleLabel = (name) => ROLE_LABELS[name] || name;
 
 const empty = {

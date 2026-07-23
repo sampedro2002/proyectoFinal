@@ -16,7 +16,7 @@ public class AppUser extends Auditable {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 60)
+    @Column(name = "nombre_usuario", nullable = false, unique = true, length = 60)
     private String username;
 
     @Column(name = "contrasena_hash", nullable = false, length = 120)

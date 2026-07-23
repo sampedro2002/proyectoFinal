@@ -168,7 +168,8 @@ export default function ManualScan() {
       api.get('/employees', { params: { term: proxyTerm.trim(), size: 8 } })
         .then((r) => {
           if (seq !== proxySeqRef.current) return;
-          setProxySuggestions(r.data.content || r.data || []);
+          const data = r.data.content || r.data || [];
+          setProxySuggestions(data.filter(e => e.status === 'ACTIVE'));
           setShowProxySuggest(true);
         })
         .catch(() => { if (seq === proxySeqRef.current) setProxySuggestions([]); });
@@ -186,7 +187,8 @@ export default function ManualScan() {
       api.get('/employees', { params: { term: titularTerm.trim(), size: 8 } })
         .then((r) => {
           if (seq !== titularSeqRef.current) return;
-          setTitularSuggestions(r.data.content || r.data || []);
+          const data = r.data.content || r.data || [];
+          setTitularSuggestions(data.filter(e => e.status === 'ACTIVE'));
           setShowTitularSuggest(true);
         })
         .catch(() => { if (seq === titularSeqRef.current) setTitularSuggestions([]); });
@@ -199,6 +201,14 @@ export default function ManualScan() {
     // escribe: en ese caso solo se limpia el proxy (sin tocar el término tecleado,
     // que ya lo actualizó el propio onChange) y sin dereferenciar emp.
     if (!emp) { setProxy(null); setResult(null); setError(''); return; }
+    // Bloquear si la persona que retira ya está en la lista de titulares
+    if (titulars.find((t) => t.id === emp.id)) {
+      setError('El empleado que retira no puede ser al mismo tiempo titular. Quítalo de la lista de titulares primero.');
+      setProxyTerm('');
+      setProxySuggestions([]);
+      setShowProxySuggest(false);
+      return;
+    }
     setProxy(emp);
     setProxyTerm(`${emp.fullName} · ${emp.identityCard}`);
     setShowProxySuggest(false);
@@ -209,6 +219,14 @@ export default function ManualScan() {
     // Igual que selectProxy: onChange manda null al escribir. Un titular solo se
     // agrega al elegirlo de las sugerencias, así que con null no se hace nada.
     if (!emp) return;
+    // Bloquear si el titular seleccionado es el mismo que quien retira
+    if (proxy && proxy.id === emp.id) {
+      setError('El titular no puede ser el mismo que el empleado que retira.');
+      setTitularTerm('');
+      setTitularSuggestions([]);
+      setShowTitularSuggest(false);
+      return;
+    }
     if (titulars.find((t) => t.id === emp.id)) {
       setTitularTerm(''); setTitularSuggestions([]); setShowTitularSuggest(false);
       return;

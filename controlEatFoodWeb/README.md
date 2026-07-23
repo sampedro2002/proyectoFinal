@@ -149,6 +149,7 @@ npm run dev              # http://localhost:5173
 | Rol | Usuario | Contraseña |
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
+| Recursos Humanos | `rrhh` | `Rrhh123*` |
 | Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `restaurant123` |
 
 > Las contraseñas se cifran con BCrypt al primer arranque (`DataInitializer`).
@@ -219,7 +220,7 @@ Si prefieres instalar manualmente o en Linux:
 
 ## 🔐 Roles y permisos
 
-- **Administrador (ADMIN):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **registra consumos manuales** (empleado o persona externa) sin validar horario/permiso/duplicado.
+- **Administrador (ADMIN) / Recursos Humanos (RRHH):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **administra consumos manuales** (registro, edición, cancelación y reactivación) sin validar horario/permiso/duplicado.
 - **Catering (CATERING):** registra consumos desde su dispositivo; ve solo lo propio. Usuarios: `cateringNorte`, `cateringCentro`, `cateringSur`.
 
 > *Nota: El rol SUPERVISOR fue eliminado en la migración V7.*
@@ -241,7 +242,7 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  ## 🚀 Funcionalidades Avanzadas
  
  - **Gestión de Fallos**: El sistema registra y audita los escaneos fallidos (`FailedScan`) para analizar problemas de lectura o intentos no autorizados.
- - **Registro Manual de Consumos**: El administrador puede registrar consumos sin huella desde el panel web o la app móvil, eligiendo empleado, restaurante y tipo de comida (Desayuno/Almuerzo). No se validan horario, permiso ni duplicados: pensado para correcciones.
+ - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. No se validan horario, permiso ni duplicados: pensado para correcciones.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema crea un empleado temporal `INACTIVE` reutilizable por cédula, de modo que el consumo aparece en el feed del kiosk y en reportes, pero no contamina la gestión de empleados activos.
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
  - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos.
@@ -294,7 +295,13 @@ Ver su README en [`../controlEatFoodMovil/README.md`](../controlEatFoodMovil/REA
 
 | Función | Método | Endpoint | Body | Autorización |
 |---------|--------|----------|------|--------------|
-| Registro manual (empleado existente) | POST | `/api/manual-consumptions` | `{ employeeId, mealTypeCode, cateringId }` | `ADMIN` |
-| Registro de persona externa | POST | `/api/manual-consumptions/external` | `{ identityCard, fullName, mealTypeCode, cateringId }` | `ADMIN` |
+| Registro manual (empleado existente) | POST | `/api/manual-consumptions` | `{ employeeId, mealTypeCode, cateringId }` | `ADMIN, RRHH` |
+| Registro de persona externa | POST | `/api/manual-consumptions/external` | `{ identityCard, fullName, mealTypeCode, cateringId }` | `ADMIN, RRHH` |
+| Listar consumos manuales | GET | `/api/manual-consumptions` | | `ADMIN, RRHH` |
+| Detalle consumo manual | GET | `/api/manual-consumptions/{id}` | | `ADMIN, RRHH` |
+| Editar consumo manual | PUT | `/api/manual-consumptions/{id}` | `{ mealTypeCode, cateringId, comment }` | `ADMIN, RRHH` |
+| Cancelar consumo manual | DELETE | `/api/manual-consumptions/{id}` | | `ADMIN, RRHH` |
+| Reactivar consumo manual | POST | `/api/manual-consumptions/{id}/reactivate` | | `ADMIN, RRHH` |
+| Comidas permitidas | GET | `/api/manual-consumptions/allowed-meals` | | `ADMIN, RRHH` |
 
-Ambos endpoints registran el consumo con `businessDate = hoy (America/Guayaquil)`, `offline=false`, `syncStatus=SYNCED`, y un `clientUuid` aleatorio. El consumo aparece en el feed del kiosk del catering elegido y en los reportes. No validan horario, permiso ni duplicado (corrección forzada por admin).
+El sistema permite la administración completa del ciclo de vida de los consumos manuales. Los consumos creados manualmente registran con `businessDate = hoy (America/Guayaquil)`, `offline=false`, `syncStatus=SYNCED`, y un `clientUuid` aleatorio. El consumo aparece en el feed del kiosk y reportes. Además de registrar, se puede listar con paginación, modificar su contenido, o cancelarlo (excluyéndolo de reportes) y reactivarlo.

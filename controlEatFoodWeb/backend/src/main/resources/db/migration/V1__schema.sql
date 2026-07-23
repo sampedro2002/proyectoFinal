@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS restaurante (
 
 CREATE TABLE IF NOT EXISTS usuario (
     id              BIGINT AUTO_INCREMENT PRIMARY KEY,
-    nombre_usuario  VARCHAR(60) NOT NULL UNIQUE,
+    nombre_usuario  VARCHAR(60) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL UNIQUE,
     contrasena_hash VARCHAR(120) NOT NULL,
     nombre_completo VARCHAR(120) NOT NULL,
     correo          VARCHAR(120),

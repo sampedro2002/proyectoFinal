@@ -73,6 +73,7 @@ Al primer arranque, `DataInitializer` crea/asegura estos usuarios (contraseñas 
 | Rol | Usuario | Contraseña |
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
+| Recursos Humanos | `rrhh` | `Rrhh123*` |
 | Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `restaurant123` |
 
 > **Cámbialas en producción.**
