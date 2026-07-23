@@ -56,8 +56,12 @@ public class ZkBiometricMatcher implements BiometricMatcher {
      * no dependen de esto.
      */
     private volatile boolean readerReady = false;
+    /** Último conteo de dispositivos observado por el poll (diagnóstico; -1 = aún no consultado). */
+    private volatile int lastDeviceCount = -1;
+    /** Evita reintentar la recuperación del SDK en cada ciclo del poll (una vez por episodio de bloqueo). */
+    private boolean recoveryAttempted = false;
     /** {@code ZKFPM_Init} devolvió OK al menos una vez (para emparejar con {@code ZKFPM_Terminate}). */
-    private boolean sdkInitialized = false;
+    private volatile boolean sdkInitialized = false;
     /** La caché de matching se creó sin lector ({@code ZKFPM_Init} aún no había tenido éxito). */
     private boolean cacheBuiltWithoutReader = false;
     /**
@@ -95,12 +99,15 @@ public class ZkBiometricMatcher implements BiometricMatcher {
                 }
             }
 
-            // ZKFPM_Init inicializa el entorno del SDK y, en este build, solo tiene éxito
-            // cuando hay un lector conectado. NO condicionamos el matching a esto: el motor
-            // 1:N funciona sin lector una vez cargada la DLL (ver comentario de matchingReady).
+            // ZKFPM_Init inicializa el ENTORNO/ALGORITMO del SDK (no el hardware). En el SDK
+            // estándar devuelve 0 aunque no haya lector: por eso la PRESENCIA del lector NO se
+            // deduce de este rc, sino de ZKFPM_GetDeviceCount() (abajo y en el poll del
+            // ZkFingerWebSocketHandler). Se llama una sola vez para poder emparejar con Terminate.
             int rc = sdk.ZKFPM_Init();
-            boolean readerNow = (rc == ZKFP_ERR_OK);
-            if (readerNow) sdkInitialized = true;
+            if (rc == ZKFP_ERR_OK) sdkInitialized = true;
+
+            // Presencia REAL del lector en este equipo: número de dispositivos USB detectados.
+            boolean readerNow = safeDeviceCount() > 0;
 
             // --- Motor de matching (independiente del lector) ---
             if (!matchingReady) {
@@ -126,28 +133,14 @@ public class ZkBiometricMatcher implements BiometricMatcher {
             }
 
             // --- Estado del lector físico (solo para captura/enrolamiento web) ---
-            if (readerNow) {
-                if (!readerReady) {
-                    if (cacheBuiltWithoutReader) {
-                        // El índice se armó antes de que ZKFPM_Init tuviera éxito. Ahora que el
-                        // entorno del SDK está plenamente inicializado, refrescamos la caché nativa
-                        // para no arrastrar un handle creado en ese estado.
-                        log.info("ZK9500 detectado tras un arranque sin lector — refrescando caché de matching.");
-                        refreshCache();
-                        cacheBuiltWithoutReader = false;
-                    } else {
-                        log.info("ZK9500 detectado — captura/enrolamiento web habilitado.");
-                    }
-                }
-                readerReady = true;
-                lastInitFailed = false;
-                cancelRetry();
-            } else {
-                readerReady = false;
-                logInitFailure("ZKFPM_Init rc=" + rc + describeInitRc(rc)
-                        + " — lector no disponible para captura/enrolamiento");
-                scheduleRetry();
-            }
+            // Se resuelve por GetDeviceCount y se mantiene al día en AMBAS direcciones mediante
+            // reportReaderPresent(), que invoca el poll periódico del ZkFingerWebSocketHandler.
+            applyReaderPresence(readerNow);
+
+            // El motor de matching ya arrancó; los reintentos de BRING-UP del motor se cancelan.
+            // La conexión/desconexión del lector se vigila aparte (poll GetDeviceCount), no aquí.
+            lastInitFailed = false;
+            cancelRetry();
         } catch (UnsatisfiedLinkError e) {
             logInitFailure("No se pudo cargar el SDK nativo ZKFinger desde '" + nativeLibPath
                     + "'. Detalle: " + e.getMessage());
@@ -158,13 +151,6 @@ public class ZkBiometricMatcher implements BiometricMatcher {
             logInitFailure("Error inesperado al inicializar el motor ZKFinger: " + e.getMessage());
             scheduleRetry();
         }
-    }
-
-    /** Traduce el código de retorno de {@code ZKFPM_Init} en una pista legible. */
-    private static String describeInitRc(int rc) {
-        return rc == -1 ? " (sin dispositivo o driver no instalado)"
-             : rc == -2 ? " (driver USB no instalado o ZK9500 no conectado)"
-             : "";
     }
 
     /**
@@ -186,6 +172,172 @@ public class ZkBiometricMatcher implements BiometricMatcher {
             rebuildIndex();
         } catch (Throwable t) {
             log.error("refreshCache: error al refrescar la caché de matching: {}", t.getMessage());
+        }
+    }
+
+    /** Número de lectores ZK9500 conectados por USB; 0 si el SDK aún no cargó o la llamada falla. */
+    private int safeDeviceCount() {
+        try {
+            return sdk != null ? sdk.ZKFPM_GetDeviceCount() : 0;
+        } catch (Throwable t) {
+            log.debug("ZKFPM_GetDeviceCount falló: {}", t.getMessage());
+            return 0;
+        }
+    }
+
+    /**
+     * Comprueba la presencia del lector y actualiza el estado. DEBE ejecutarse en el hilo con
+     * afinidad del SDK (lo llama el executor del {@link com.eatfood.control.web.ZkFingerWebSocketHandler}).
+     *
+     * <p>Maneja los dos comportamientos conocidos de {@code libzkfp}:</p>
+     * <ul>
+     *   <li>Builds donde {@code ZKFPM_Init()} arranca sin lector: {@code GetDeviceCount()} refleja
+     *       directamente la presencia.</li>
+     *   <li>Builds donde {@code GetDeviceCount()} solo funciona tras un {@code ZKFPM_Init()} exitoso
+     *       y este solo tiene éxito con el lector conectado: si el conteo es 0 y el SDK aún no
+     *       inicializó, se reintenta {@code ZKFPM_Init()} y se vuelve a contar. Así la conexión
+     *       en caliente se detecta aunque el entorno no se hubiese podido inicializar al arranque.</li>
+     * </ul>
+     *
+     * @return true si hay al menos un lector conectado.
+     */
+    public synchronized boolean pollReaderPresence() {
+        return pollReaderPresence(true);
+    }
+
+    /**
+     * @param allowRecovery si es {@code false}, solo detecta (GetDeviceCount + probe de apertura)
+     *   sin ejecutar la recuperación pesada (Terminate+Init). Lo usa {@code handleOpen} del kiosco,
+     *   cuyo cliente tiene un timeout de conexión corto (5 s): la recuperación pesada se deja al
+     *   poll de fondo y a la ruta de captura.
+     */
+    public synchronized boolean pollReaderPresence(boolean allowRecovery) {
+        if (sdk == null) { lastDeviceCount = 0; return false; }
+        int count = safeDeviceCount();
+        if (count <= 0 && !sdkInitialized) {
+            try {
+                int rc = sdk.ZKFPM_Init();
+                if (rc == ZKFP_ERR_OK) {
+                    sdkInitialized = true;
+                    count = safeDeviceCount();
+                    log.info("ZKFPM_Init tardío OK — SDK inicializado; dispositivos detectados: {}.", count);
+                }
+            } catch (Throwable t) {
+                log.debug("pollReaderPresence: ZKFPM_Init falló: {}", t.getMessage());
+            }
+        }
+        lastDeviceCount = count;
+
+        // Detección REAL de conectividad: que GetDeviceCount>0 no basta — un ZK9500 bloqueado por
+        // un cierre anterior reporta count>0 pero ZKFPM_OpenDevice devuelve null. Se prueba abrir y
+        // cerrar de verdad para confirmar que es USABLE. Si está bloqueado, se intenta UNA
+        // recuperación automática del SDK (Terminate+Init) por episodio. Este probe solo corre
+        // cuando NO hay captura activa (el poll del WS lo omite si el lector está en uso).
+        boolean usable = count > 0 && probeOpen();
+        if (allowRecovery && count > 0 && !usable && !recoveryAttempted) {
+            log.warn("ZK9500 detectado (GetDeviceCount={}) pero OpenDevice falló — presente pero NO usable. " +
+                    "Intentando recuperación automática del SDK…", count);
+            recoverStuckReader();
+            recoveryAttempted = true;
+            usable = probeOpen();
+            if (!usable) {
+                log.warn("Recuperación no resolvió el bloqueo del ZK9500 — desconecte y reconecte el lector.");
+            }
+        }
+        if (usable) recoveryAttempted = false;
+        reportReaderPresent(usable);
+        return usable;
+    }
+
+    /** Abre y cierra el lector para verificar que es USABLE de verdad (no solo detectado). */
+    private boolean probeOpen() {
+        Pointer h = null;
+        try {
+            h = sdk.ZKFPM_OpenDevice(0);
+            return h != null;
+        } catch (Throwable t) {
+            log.debug("probeOpen: ZKFPM_OpenDevice lanzó {}", t.getMessage());
+            return false;
+        } finally {
+            if (h != null) {
+                try { sdk.ZKFPM_CloseDevice(h); } catch (Throwable ignored) {}
+            }
+        }
+    }
+
+    /**
+     * Recuperación de un lector "colgado": {@code GetDeviceCount>0} pero {@code OpenDevice}
+     * devuelve null de forma persistente (lock del SDK/driver tras un cierre anterior no limpio).
+     * Resetea el entorno del SDK ({@code Terminate}+{@code Init}) y recrea la caché de matching
+     * (Terminate invalida el handle {@code dbCache}). DEBE ejecutarse en el hilo con afinidad del
+     * SDK (lo llaman el probe del poll y la ruta de captura, ambos en el executor del WS handler).
+     */
+    public synchronized void recoverStuckReader() {
+        if (sdk == null) return;
+        log.warn("Recuperando lector ZK9500 bloqueado: ZKFPM_Terminate + ZKFPM_Init + reconstrucción de índice…");
+        try { sdk.ZKFPM_Terminate(); } catch (Throwable t) { log.debug("recover: Terminate lanzó {}", t.getMessage()); }
+        // El handle dbCache queda inválido tras Terminate; NO llamar DBFree sobre él (crashearía).
+        dbCache = null;
+        matchingReady = false;
+        sdkInitialized = false;
+        try {
+            int rc = sdk.ZKFPM_Init();
+            if (rc == ZKFP_ERR_OK) { sdkInitialized = true; log.info("recover: ZKFPM_Init OK."); }
+            else log.warn("recover: ZKFPM_Init rc={}.", rc);
+        } catch (Throwable t) {
+            log.error("recover: ZKFPM_Init lanzó {}", t.getMessage());
+        }
+        try {
+            dbCache = sdk.ZKFPM_DBInit();
+            if (dbCache != null) { rebuildIndex(); matchingReady = true; cacheBuiltWithoutReader = false; }
+            else log.error("recover: ZKFPM_DBInit devolvió null — matching sigue deshabilitado.");
+        } catch (Throwable t) {
+            log.error("recover: ZKFPM_DBInit/rebuild lanzó {}", t.getMessage());
+        }
+    }
+
+    /** Último conteo de dispositivos observado por el poll (diagnóstico). */
+    public int getLastDeviceCount() { return lastDeviceCount; }
+
+    /** {@code true} si {@code ZKFPM_Init} tuvo éxito al menos una vez (SDK inicializado). */
+    public boolean isSdkInitialized() { return sdkInitialized; }
+
+    /**
+     * Notifica un cambio de presencia del lector detectado por {@code ZKFPM_GetDeviceCount()}.
+     * Lo invoca el poll periódico del {@link com.eatfood.control.web.ZkFingerWebSocketHandler},
+     * que ejecuta GetDeviceCount en el hilo con afinidad del SDK. Es idempotente: solo actúa en
+     * las transiciones ausente↔presente, y detecta tanto la conexión como la desconexión.
+     */
+    public synchronized void reportReaderPresent(boolean present) {
+        // Si el lector llegó pero el motor de matching aún no arrancó (p. ej. un build del SDK
+        // que exige el lector para inicializar el algoritmo), intentar el bring-up ahora.
+        if (present && !matchingReady) {
+            init();
+            return;
+        }
+        applyReaderPresence(present);
+    }
+
+    /**
+     * Aplica la transición de presencia del lector. Al reconectarse, si el índice se había
+     * armado sin lector (los {@code ZKFPM_DBAdd} pueden fallar con rc=-13 y dejarlo vacío),
+     * lo reconstruye para habilitar la validación 1:N y la captura.
+     */
+    private synchronized void applyReaderPresence(boolean present) {
+        if (present == readerReady) return;
+        if (present) {
+            if (cacheBuiltWithoutReader) {
+                log.info("ZK9500 detectado — refrescando índice de matching (habilita validación/captura).");
+                refreshCache();
+                cacheBuiltWithoutReader = false;
+            } else {
+                log.info("ZK9500 detectado — captura/enrolamiento habilitado.");
+            }
+            readerReady = true;
+        } else {
+            log.warn("ZK9500 desconectado — captura/enrolamiento deshabilitado " +
+                    "(la validación 1:N sigue activa mientras el índice esté cargado).");
+            readerReady = false;
         }
     }
 

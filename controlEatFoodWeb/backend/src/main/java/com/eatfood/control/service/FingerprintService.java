@@ -157,11 +157,17 @@ public class FingerprintService {
         long activeInDb = fingerprintRepository.findByActiveTrue().size();
         // engineReady = motor de matching 1:N listo (no requiere lector en este equipo).
         // readerConnected = hay un ZK9500 en ESTE equipo para capturar/enrolar desde la web.
-        boolean readerConnected = matcher instanceof com.eatfood.control.biometric.ZkBiometricMatcher zk
-                && zk.isReaderReady();
+        boolean isZk = matcher instanceof com.eatfood.control.biometric.ZkBiometricMatcher;
+        var zk = isZk ? (com.eatfood.control.biometric.ZkBiometricMatcher) matcher : null;
+        boolean readerConnected = zk != null && zk.isReaderReady();
+        // deviceCount y sdkInitialized son diagnóstico del SDK nativo: si readerConnected=false
+        // pero el lector está enchufado, estos valores indican dónde está el problema
+        // (deviceCount=0 con sdkInitialized=false → ZKFPM_Init aún no arranca en este equipo).
         return Map.of(
                 "engineReady", matcher.isReady(),
                 "readerConnected", readerConnected,
+                "deviceCount", zk != null ? zk.getLastDeviceCount() : -1,
+                "sdkInitialized", zk != null && zk.isSdkInitialized(),
                 "indexSize", matcher.indexSize(),
                 "activeInDb", activeInDb,
                 "indexMatchesDb", matcher.indexSize() == activeInDb

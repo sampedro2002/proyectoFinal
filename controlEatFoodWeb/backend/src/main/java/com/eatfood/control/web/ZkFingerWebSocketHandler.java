@@ -14,6 +14,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.*;
@@ -45,6 +46,9 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private Future<?> captureTask = null;
 
+    // Vigilancia periódica de la presencia del lector (conexión Y desconexión en caliente).
+    private final ScheduledExecutorService presencePoller = Executors.newSingleThreadScheduledExecutor();
+
     // Seguimiento de sesiones activas para notificaciones cruzadas
     private final Set<WebSocketSession> sessions = new CopyOnWriteArraySet<>();
     private volatile WebSocketSession activeCapturingSession = null;
@@ -52,6 +56,29 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
 
     public ZkFingerWebSocketHandler(FingerprintRepository fingerprintRepository) {
         this.fingerprintRepository = fingerprintRepository;
+    }
+
+    /**
+     * Poll de presencia del lector: cada 3 s ejecuta {@code ZKFPM_GetDeviceCount()} en el hilo
+     * del {@code executor} (afinidad del SDK) y actualiza el estado del matcher, detectando
+     * conexión Y desconexión en caliente. Se omite mientras hay una captura activa (el lector
+     * está en uso y la propia captura vigila la desconexión), evitando encolar trabajo sobre
+     * el executor ocupado.
+     */
+    @PostConstruct
+    public void startPresencePolling() {
+        presencePoller.scheduleWithFixedDelay(() -> {
+            try {
+                if (zkBiometricMatcher == null || zkBiometricMatcher.getSdk() == null) return;
+                if (captureTask != null && !captureTask.isDone()) return; // lector en uso
+                // pollReaderPresence corre GetDeviceCount (+ ZKFPM_Init tardío si hace falta) en
+                // el hilo del executor y actualiza readerReady en ambas direcciones.
+                Future<Boolean> f = executor.submit(() -> zkBiometricMatcher.pollReaderPresence(true));
+                f.get(15, TimeUnit.SECONDS); // margen amplio: puede incluir una recuperación (Terminate+Init)
+            } catch (Throwable ignored) {
+                // Timeout/errores puntuales: se reintenta en el próximo ciclo.
+            }
+        }, 2, 8, TimeUnit.SECONDS);
     }
 
     @Override
@@ -95,34 +122,26 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
     private void handleOpen(WebSocketSession session) throws IOException {
         boolean result;
 
-        if (zkBiometricMatcher != null && zkBiometricMatcher.isReaderReady()) {
-            // Si hay una tarea de captura activa, el dispositivo está en uso = disponible.
-            // Someter una tarea al executor cuando está ocupado provoca un timeout de 5 s.
-            if (captureTask != null && !captureTask.isDone()) {
-                log.info("Dispositivo en uso (captura activa) — respondiendo open=true sin bloquear executor.");
-                result = true;
-            } else {
-                Future<Boolean> check = executor.submit(() -> {
-                    try {
-                        ZkfpSdk sdk = zkBiometricMatcher.getSdk();
-                        int count = sdk.ZKFPM_GetDeviceCount();
-                        log.info("Dispositivos ZKFinger detectados: {}", count);
-                        return count > 0;
-                    } catch (Throwable t) {
-                        log.error("Error al obtener conteo de dispositivos: {}", t.getMessage(), t);
-                        return false;
-                    }
-                });
-                try {
-                    result = check.get(5, TimeUnit.SECONDS);
-                } catch (Exception e) {
-                    log.error("Timeout o error comprobando dispositivo: {}", e.getMessage());
-                    result = false;
-                }
-            }
-        } else {
-            log.warn("ZkBiometricMatcher no disponible — lector ZKTeco9500 no conectado.");
+        if (zkBiometricMatcher == null || zkBiometricMatcher.getSdk() == null) {
+            log.warn("SDK ZKFinger no cargado — lector ZKTeco9500 no disponible.");
             result = false;
+        } else if (captureTask != null && !captureTask.isDone()) {
+            // Si hay una captura activa, el dispositivo está en uso = presente. Someter una
+            // tarea al executor ocupado provocaría un timeout de 5 s innecesario.
+            log.info("Dispositivo en uso (captura activa) — respondiendo open=true sin bloquear executor.");
+            result = true;
+        } else {
+            // La presencia se decide SIEMPRE por pollReaderPresence (GetDeviceCount + probe de
+            // apertura), no por un flag latcheado. Sin recuperación pesada (allowRecovery=false):
+            // el cliente del kiosco tiene un timeout de conexión de 5 s y no debe bloquearse por
+            // un Terminate+Init; esa recuperación la hace el poll de fondo.
+            Future<Boolean> check = executor.submit(() -> zkBiometricMatcher.pollReaderPresence(false));
+            try {
+                result = check.get(6, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.error("Timeout o error comprobando dispositivo: {}", e.getMessage());
+                result = false;
+            }
         }
 
         Map<String, Object> response = new HashMap<>();
@@ -237,9 +256,21 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
      * único del executor sea el único que toca el SDK nativo.
      */
     private Pointer openAndDrainDevice(ZkfpSdk sdk, byte[] imgBuf) throws InterruptedException {
-        Pointer hDevice = sdk.ZKFPM_OpenDevice(0);
+        // ZKFPM_OpenDevice puede devolver null aunque GetDeviceCount>0 cuando el lector quedó
+        // bloqueado por un cierre anterior no limpio (JVM matada sin liberar el handle) o por un
+        // estado USB colgado. 1º se reintenta (caso transitorio); si persiste, se resetea el SDK
+        // (Terminate+Init) para soltar el lock y se reintenta de nuevo.
+        Pointer hDevice = tryOpenDevice(sdk, 3);
+        if (hDevice == null && zkBiometricMatcher != null) {
+            log.warn("OpenDevice sigue en null tras 3 intentos — recuperando el SDK (Terminate+Init) y reintentando…");
+            zkBiometricMatcher.recoverStuckReader();
+            Thread.sleep(500);
+            hDevice = tryOpenDevice(sdk, 3);
+        }
         if (hDevice == null) {
-            throw new IllegalStateException("ZKFPM_OpenDevice retornó null — lector no disponible.");
+            throw new IllegalStateException("ZKFPM_OpenDevice retornó null incluso tras recuperar el SDK — el " +
+                    "ZK9500 está presente (GetDeviceCount>0) pero bloqueado a nivel de driver/USB. Desconecte y " +
+                    "reconecte el lector, o reinicie el servidor de forma limpia.");
         }
         byte[] drainTpl = new byte[2048];
         IntByReference drainLen = new IntByReference(2048);
@@ -248,6 +279,21 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
             Thread.sleep(800);
         }
         return hDevice;
+    }
+
+    /** Intenta abrir el lector hasta {@code attempts} veces con pausa; null si no lo logra. */
+    private Pointer tryOpenDevice(ZkfpSdk sdk, int attempts) throws InterruptedException {
+        Pointer h = null;
+        for (int i = 1; i <= attempts && h == null; i++) {
+            h = sdk.ZKFPM_OpenDevice(0);
+            if (h == null) {
+                int count = -1;
+                try { count = sdk.ZKFPM_GetDeviceCount(); } catch (Throwable ignored) {}
+                log.warn("ZKFPM_OpenDevice(0) devolvió null (intento {}/{}, GetDeviceCount={}). Reintentando…", i, attempts, count);
+                Thread.sleep(500);
+            }
+        }
+        return h;
     }
 
     /** Modo scan: espera y devuelve una única captura sin fusión. */
@@ -500,6 +546,7 @@ public class ZkFingerWebSocketHandler extends TextWebSocketHandler {
 
     @PreDestroy
     public void destroy() {
+        presencePoller.shutdownNow();
         executor.shutdownNow();
     }
 }

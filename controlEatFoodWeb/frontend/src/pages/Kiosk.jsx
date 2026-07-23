@@ -3,29 +3,11 @@ import axios from 'axios';
 import { ZkFingerClient, getWsUrl, setWsUrl } from '../biometric/zkfinger.js';
 import { enqueue, pending, remove, newUuid } from '../offline/queue.js';
 import { playSuccess, playError } from '../offline/sound.js';
+import ReaderStatusPill, { READER_STATUS } from '../components/ReaderStatusPill.jsx';
 import logger from '../utils/logger.js';
 
 const SUCCESS_SECONDS = 1;
 const scanApi = axios.create({ baseURL: '/api' });
-
-// ──────────────────────────────────────────────────────────────────────────────
-// ESTADOS DEL LECTOR
-// ──────────────────────────────────────────────────────────────────────────────
-const READER_STATUS = {
-  CONNECTING: 'connecting',
-  READY: 'ready',
-  NO_DEVICE: 'no-device',
-  ERROR: 'error',
-  DISCONNECTED: 'disconnected',
-};
-
-const readerStatusLabel = {
-  [READER_STATUS.CONNECTING]: { text: 'Detectando lector...', color: '#f59e0b' },
-  [READER_STATUS.READY]: { text: 'ZKTeco Conectado ✓', color: '#16a34a' },
-  [READER_STATUS.NO_DEVICE]: { text: 'Conecte el ZKTeco', color: '#dc2626' },
-  [READER_STATUS.ERROR]: { text: 'Error de conexión al agente', color: '#dc2626' },
-  [READER_STATUS.DISCONNECTED]: { text: 'Conecte el ZKTeco', color: '#dc2626' },
-};
 
 export default function Kiosk() {
   const [session, setSession] = useState(() => {
@@ -406,8 +388,6 @@ export default function Kiosk() {
         ? 'error'
         : '';
 
-  const rInfo = readerStatusLabel[readerStatus] || readerStatusLabel[READER_STATUS.DISCONNECTED];
-
   const totalAlmuerzos = feed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
   const totalMeriendas = feed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
 
@@ -419,21 +399,11 @@ export default function Kiosk() {
         {queued > 0 ? ` · ${queued} en cola` : ''}
       </div>
 
-      {/* Indicador de estado del lector */}
-      <div style={{
-        position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)',
-        background: 'rgba(0,0,0,.6)', border: `1px solid ${rInfo.color}`,
-        borderRadius: 999, padding: '4px 14px', fontSize: 13,
-        color: rInfo.color, display: 'flex', alignItems: 'center', gap: 6,
-        backdropFilter: 'blur(6px)', zIndex: 10,
-      }}>
-        <span style={{
-          width: 8, height: 8, borderRadius: '50%',
-          background: rInfo.color,
-          animation: readerStatus === READER_STATUS.CONNECTING ? 'pulse 1s infinite' : 'none'
-        }} />
-        {rInfo.text}
-      </div>
+      {/* Indicador de estado del lector (compartido con el panel Admin) */}
+      <ReaderStatusPill
+        status={readerStatus}
+        style={{ position: 'fixed', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 10 }}
+      />
 
       {/* Elementos Estáticos Principales */}
       <div className="title" style={{ marginTop: '20px' }}>{session.restaurantName?.toUpperCase()}</div>

@@ -1064,8 +1064,22 @@ function Stop-ExistingProcesses {
             try {
                 $connections = Get-NetTCPConnection -OwningProcess $proc.Id -ErrorAction SilentlyContinue | Where-Object { $_.LocalPort -eq 3000 }
                 if ($connections) {
-                    $proc | Stop-Process -Force -ErrorAction SilentlyContinue
-                    Write-Log "Proceso backend cerrado (PID: $($proc.Id))." 'SUCCESS'
+                    # Cierre ELEGANTE primero: 'taskkill' SIN /F envia WM_CLOSE/CTRL_CLOSE_EVENT,
+                    # lo que dispara el shutdown hook de la JVM y el @PreDestroy del backend
+                    # (ZKFPM_Terminate + CloseDevice) que LIBERA el lector ZK9500. Un kill forzado
+                    # deja el ZK9500 bloqueado y el siguiente arranque no lo puede abrir (OpenDevice=null).
+                    cmd /c "taskkill /PID $($proc.Id) /T >nul 2>&1" | Out-Null
+                    $exited = $false
+                    for ($i = 0; $i -lt 24; $i++) {
+                        Start-Sleep -Milliseconds 500
+                        if (-not (Get-Process -Id $proc.Id -ErrorAction SilentlyContinue)) { $exited = $true; break }
+                    }
+                    if ($exited) {
+                        Write-Log "Backend cerrado limpiamente (PID: $($proc.Id)) - lector ZK9500 liberado." 'SUCCESS'
+                    } else {
+                        Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+                        Write-Log "Backend no respondio al cierre limpio; forzado (PID: $($proc.Id)). El ZK9500 podria quedar bloqueado." 'WARN'
+                    }
                 }
             } catch { }
         }

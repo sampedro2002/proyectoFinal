@@ -5,6 +5,7 @@ import { isValidCedulaEC } from '../utils/cedula.js';
 import { ZkFingerClient } from '../biometric/zkfinger.js';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 import Drawer from '../components/Drawer.jsx';
+import ReaderStatusPill, { READER_STATUS } from '../components/ReaderStatusPill.jsx';
 
 const FINGERS = [
   'Pulgar derecho', 'Índice derecho', 'Medio derecho', 'Anular derecho', 'Meñique derecho',
@@ -46,6 +47,7 @@ export default function Employees() {
   const [fingerIndex, setFingerIndex]   = useState(0);
   const [bioStatus, setBioStatus]       = useState('idle');
   const [bioMsg, setBioMsg]             = useState('');
+  const [readerStatus, setReaderStatus] = useState(READER_STATUS.CONNECTING);
   const zkRef = useRef(null);
   const formIdRef = useRef(null);
   const loadSeq = useRef(0);
@@ -120,6 +122,32 @@ export default function Employees() {
       }
     }
   }, [fingerprints, fingerIndex]);
+
+  // Estado EN VIVO del lector para la pestaña Huellas. Sondea /biometric-status, que
+  // reporta readerConnected según la detección real del backend (GetDeviceCount). Tanto
+  // "Capturar huella" (WebSocket) como "Capturar desde servidor" usan el lector del
+  // servidor, así que este es el estado autoritativo para ambos botones.
+  useEffect(() => {
+    if (tab !== 'fingerprints' || !form?.id) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const { data } = await api.get('/fingerprints/biometric-status');
+        if (cancelled) return;
+        // readerConnected ya es "usable de verdad" (el backend prueba abrir el lector).
+        // Si NO es usable pero deviceCount>0, está detectado pero bloqueado/no se puede abrir.
+        if (data.readerConnected) setReaderStatus(READER_STATUS.READY);
+        else if ((data.deviceCount ?? 0) > 0) setReaderStatus(READER_STATUS.CONNECTING);
+        else setReaderStatus(READER_STATUS.NO_DEVICE);
+      } catch {
+        if (!cancelled) setReaderStatus(READER_STATUS.ERROR);
+      }
+    };
+    setReaderStatus(READER_STATUS.CONNECTING);
+    poll();
+    const t = setInterval(poll, 3000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [tab, form?.id]);
 
   const filtered = useMemo(() => {
     if (statusFilter === 'ALL') return items;
@@ -253,28 +281,7 @@ export default function Employees() {
     }
   }
 
-  async function enrollFromServer() {
-    if (!form?.id) return;
-    const targetId = form.id;
-    const isStale = () => formIdRef.current !== targetId;
-    setBioMsg('');
-    if (fingerprints.length >= 3) { setBioMsg('Máximo 3 huellas por empleado.'); return; }
-    try {
-      setBioStatus('connecting');
-      setBioMsg('Conectando con el lector del servidor...');
-      const { data } = await api.post(`/fingerprints/enroll-from-server/${targetId}/${Number(fingerIndex)}`, null, {
-        timeout: 130000,
-      });
-      if (isStale()) return;
-      setBioStatus('idle');
-      setBioMsg('Huella registrada correctamente desde el servidor.');
-      loadFp(targetId);
-    } catch (err) {
-      if (isStale()) return;
-      setBioStatus('idle');
-      setBioMsg(err.response?.data?.message || err.message || 'Error al registrar la huella desde el servidor');
-    }
-  }
+
 
   function removeFp(fpId) {
     setConfirmDialog({
@@ -467,9 +474,12 @@ export default function Employees() {
                   </p>
                 ) : (
                   <>
-                    <h4 style={{ margin: '0 0 12px' }}>
-                      Huellas digitales ({fingerprints.length}/3)
-                    </h4>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '0 0 12px' }}>
+                      <h4 style={{ margin: 0 }}>
+                        Huellas digitales ({fingerprints.length}/3)
+                      </h4>
+                      <ReaderStatusPill status={readerStatus} />
+                    </div>
                     <table>
                       <thead>
                         <tr><th>Dedo</th><th>Registrada</th><th></th></tr>
@@ -516,11 +526,6 @@ export default function Employees() {
                             {bioStatus === 'capturing'  && 'Leyendo huellas (3×)…'}
                             {bioStatus === 'saving'     && 'Guardando…'}
                           </button>
-                          {isAdmin && (
-                            <button onClick={enrollFromServer} disabled={bioStatus !== 'idle'}>
-                              Capturar desde servidor
-                            </button>
-                          )}
                         </div>
                         {bioMsg && (
                           <p style={{
