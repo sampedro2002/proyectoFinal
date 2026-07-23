@@ -302,10 +302,11 @@ public class ScanService {
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         OffsetDateTime now = OffsetDateTime.now(BUSINESS_ZONE);
         String proxyName = proxy.getFullName();
-        
+
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
         if (sch == null || !sch.isActive() || !sch.contains(now.toLocalTime())) {
-            return new ManualScanResponse("OUT_OF_SCHEDULE", "Fuera del horario permitido para registros manuales", proxyName, null, 0);
+            return new ManualScanResponse("OUT_OF_SCHEDULE",
+                    "Fuera del horario permitido para registros manuales", proxyName, null, 0);
         }
 
         int created = 0;
@@ -454,6 +455,15 @@ public class ScanService {
             return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null, 0);
         }
 
+        // El horario se valida ANTES de crear el empleado externo: si se validara
+        // después, un intento fuera de horario dejaría un empleado INACTIVE huérfano
+        // (sin consumo asociado) en la base.
+        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE))) {
+            return new ManualScanResponse("OUT_OF_SCHEDULE",
+                    "Fuera del horario permitido para registros externos", req.fullName(), null, 0);
+        }
+
         Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(identityCard)
                 .orElseGet(() -> {
                     Employee e = new Employee();
@@ -471,12 +481,6 @@ public class ScanService {
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
-        
-        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE))) {
-            return new ManualScanResponse("OUT_OF_SCHEDULE", "Fuera del horario permitido para registros externos", req.fullName(), null, 0);
-        }
-
         String mealName = mealNameForCode(req.mealTypeCode());
         // No permitir registrar dos veces el mismo plato el mismo día para esta persona
         // externa (misma cédula/pasaporte). En un externo recién creado la lista está vacía.

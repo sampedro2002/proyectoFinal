@@ -1000,9 +1000,9 @@ fun ExtraMealsScreen() {
             Spacer(Modifier.height(4.dp))
             Text(
                 if (mode == "proxy")
-                    "Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. No se valida horario; sí se evita duplicar un plato ya registrado."
+                    "Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
                 else
-                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de empleados.",
+                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de empleados. Solo se puede registrar dentro del horario configurado.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

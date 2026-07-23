@@ -24,6 +24,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 // ───────────────────────────── Reportes ──────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
@@ -118,7 +122,6 @@ fun ReportsScreen() {
                         title = "${index + 1}. ${r.employeeName ?: "—"} · ${r.mealName ?: ""}",
                         subtitle = "${r.businessDate ?: ""} ${timeOf(r.consumedAt)} · CI ${r.identityCard ?: "—"} · ${r.restaurantName ?: ""}\n" +
                                 "Tipo: ${methodLabel(r.method)} · ${buildDescription(r)}" +
-                                (if (!r.proxyEmployeeName.isNullOrBlank()) "\nRetira: ${r.proxyEmployeeName}" else "") +
                                 (if (r.cancelled) "\nCANCELADO" else ""),
                         trailing = when {
                             r.cancelled -> "Cancelado"
@@ -144,8 +147,19 @@ private fun buildDescription(r: ConsumptionRow): String {
     return "—"
 }
 
-private fun timeOf(iso: String?): String =
-    iso?.let { runCatching { it.substringAfter('T').take(8) }.getOrNull() } ?: ""
+/**
+ * Hora del consumo en formato 12 horas con AM/PM ("6:23:49 AM"), igual que la columna
+ * "Hora" del reporte web y de los exports (CSV/Excel/PDF) del backend.
+ * Si la fecha no se puede parsear se cae al tramo horario crudo del ISO.
+ */
+private fun timeOf(iso: String?): String {
+    if (iso.isNullOrBlank()) return ""
+    return runCatching { OffsetDateTime.parse(iso).format(TIME_FMT) }
+        .recoverCatching { LocalDateTime.parse(iso).format(TIME_FMT) }
+        .getOrElse { iso.substringAfter('T').take(8) }
+}
+
+private val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("h:mm:ss a", Locale.US)
 
 // ───────────────────────────── Auditoría ─────────────────────────────────────
 @Composable

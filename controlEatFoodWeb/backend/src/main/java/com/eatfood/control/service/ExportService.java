@@ -773,9 +773,8 @@ public class ExportService {
         };
     }
 
-    /** Descripción compuesta para los reportes: prioriza observation si existe;
-     *  si es MANUAL y no tiene observation (la data histórica), muestra
-     *  "X retira de Y" cuando proxyEmployeeName está disponible. */
+    /** Descripción del registro para los reportes: la observación del consumo
+     *  (en los manuales ya viene autogenerada como "X retira de Y"), o vacío. */
     private String buildDescription(ConsumptionRow r) {
         String obs = r.observation();
         if (obs != null && !obs.isBlank()) return obs;

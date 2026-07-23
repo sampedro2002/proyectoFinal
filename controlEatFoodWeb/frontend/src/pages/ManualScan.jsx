@@ -12,10 +12,12 @@ import { isValidCedulaEC } from '../utils/cedula.js';
  *                  Para cada titular se marcan los tipos de comida. El backend
  *                  crea una fila de consumption por (titular x comida) con
  *                  method='MANUAL', empleado_apoderado_id=Pepe y observacion
- *                  "Pepe retira de Juan" autogenerada. No se valida horario,
- *                  permisos ni duplicados de los titulares (override admin).
+ *                  "Pepe retira de Juan" autogenerada. Solo se permite dentro
+ *                  del horario configurado; los platos no permitidos o ya
+ *                  registrados hoy se omiten y se informan en el mensaje.
  *   - 'external' : persona externa (visitante / contratista) con cédula o
- *                  pasaporte, sin retira-por. method='EXTERNAL'.
+ *                  pasaporte, sin retira-por. method='EXTERNAL'. También exige
+ *                  estar dentro del horario configurado.
  */
 /**
  * Buscador de empleados con autosugerencias. DEBE estar a nivel de módulo (no dentro
@@ -335,6 +337,12 @@ export default function ManualScan() {
             restaurantId: Number(restaurantId),
             observation: observation.trim() || null,
           });
+          // El endpoint responde 200 también cuando NO registró (OUT_OF_SCHEDULE,
+          // DUPLICATE…), así que el éxito se decide por data.status, no por el HTTP.
+          if (data.status !== 'SUCCESS') {
+            lastError = data.message || 'No se pudo registrar el consumo';
+            break;
+          }
           successResults.push(data);
         } catch (err) {
           lastError = err.response?.data?.message || 'No se pudo registrar el consumo';
@@ -391,8 +399,8 @@ export default function ManualScan() {
 
         <p style={{ color: '#94a3b8', marginTop: 0, fontSize: 13 }}>
           {mode === 'proxy'
-            ? 'Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. No se valida horario, permisos ni duplicados.'
-            : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de empleados. El consumo aparecerá en el feed del kiosk y en reportes.'}
+            ? 'Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. Solo se puede registrar dentro del horario configurado; se omiten los platos no permitidos o ya registrados hoy.'
+            : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de empleados. Solo se puede registrar dentro del horario configurado. El consumo aparecerá en el feed del kiosk y en reportes.'}
         </p>
 
         <form onSubmit={submit}>
