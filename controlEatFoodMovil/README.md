@@ -122,7 +122,7 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
 | Recursos Humanos | `rrhh` | `Rrhh123*` |
-| Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `catering123` |
+| Catering (1 por restaurante) | `restauranteNorte`, `restauranteCentro`, `restauranteSur` | `restaurant123` |
 
 > Las contraseñas se cifran con BCrypt al primer arranque del backend.
 
@@ -132,13 +132,13 @@ O abre el proyecto en Android Studio y ejecuta directamente.
 
 | Pantalla | Descripción |
 |----------|-------------|
-| **Login** | Autenticación con JWT (mismas credenciales que el panel web). Roles: ADMIN, CATERING |
+| **Login** | Autenticación con JWT (mismas credenciales que el panel web). Roles: ADMIN, RECURSOS_HUMANOS, CATERING |
 | **Dashboard** | Resumen de consumos del día + tendencia de 7 días |
 | **Empleados** | CRUD de empleados (crear, editar, inactivar, gestionar huellas) |
 | **Cargos** | CRUD de cargos/posiciones |
 | **Caterings** | CRUD de caterings |
 | **Horarios** | Editar horarios de Almuerzo/Merienda |
-| **Almuerzos Extra** | Registro manual de consumos para empleados existentes (búsqueda por nombre) o **personas externas** (cédula + nombre), con selector de catering y tipo de comida (Almuerzo/Merienda). No valida horario, permiso ni duplicado. |
+| **Almuerzos Extra** | Registro manual de consumos para empleados existentes o **personas externas** (cédula + nombre), con selector de catering y comida. Soporta **"Retira por otro"** (proxy). No valida horario/permiso/duplicado. |
 | **Reportes** | Consulta por fecha/catering/comida, exportación a CSV/Excel/PDF |
 | **Auditoría** | Log de acciones críticas con filtros |
 | **Kiosco** | Modo kiosco con lector biométrico USB OTG + cola offline (Room) y descarga de reportes diarios (PDF/Excel/CSV) |

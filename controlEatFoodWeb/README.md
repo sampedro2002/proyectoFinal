@@ -150,7 +150,7 @@ npm run dev              # http://localhost:5173
 |-----|---------|-----------|
 | Administrador | `admin` | `Admin123*` |
 | Recursos Humanos | `rrhh` | `Rrhh123*` |
-| Catering (1 por catering) | `cateringNorte`, `cateringCentro`, `cateringSur` | `restaurant123` |
+| Catering (1 por restaurante) | `restauranteNorte`, `restauranteCentro`, `restauranteSur` | `restaurant123` |
 
 > Las contraseñas se cifran con BCrypt al primer arranque (`DataInitializer`).
 > **Cámbialas en producción.**
@@ -283,7 +283,7 @@ Existe una aplicación móvil complementaria en **[`../controlEatFoodMovil`](../
 - Login con JWT (mismas credenciales que el panel web).
 - Dashboard con estadísticas del día.
 - CRUD de empleados, cargos, caterings, horarios y huellas (con lector ZK9500 vía USB OTG).
-- **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas** (visitantes/contratistas), con selector de catering y tipo de comida.
+- **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas**, con selector de comida y soporte para **"Retira por otro"** (proxy).
 - Reportes y auditoría.
 - Modo kiosco con lector biométrico USB OTG, cola offline (Room) y exportación de reportes diarios (PDF/Excel/CSV).
 
