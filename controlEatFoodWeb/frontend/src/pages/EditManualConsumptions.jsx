@@ -196,11 +196,21 @@ export default function EditManualConsumptions() {
     try {
       const res = await api.get(`/manual-consumptions/${row.id}`);
       const d = res.data;
+
+      let avail = null;
+      if (d.employeeId) {
+        try {
+          const availRes = await api.get(`/manual-consumptions/availability/${d.employeeId}`);
+          avail = availRes.data;
+        } catch (e) {}
+      }
+
       setEditTarget({
         ...d,
-        /* campos adicionales para los pickers */
+        _originalMealName: d.mealName,
         _titularLabel: d.employeeName ? `${d.employeeName} · ${d.identityCard || ''}` : '',
         _proxyLabel:   d.proxyEmployeeName ? `${d.proxyEmployeeName}` : '',
+        _avail: avail,
       });
       setTitularTerm(d.employeeName ? `${d.employeeName}${d.identityCard ? ' · ' + d.identityCard : ''}` : '');
       setProxyTerm(d.proxyEmployeeName || '');
@@ -271,8 +281,8 @@ export default function EditManualConsumptions() {
     return d.toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
   };
 
-  const pickTitular = (emp) => {
-    if (!emp) { setEditTarget(t => t ? { ...t, employeeId: null } : t); return; }
+  const pickTitular = async (emp) => {
+    if (!emp) { setEditTarget(t => t ? { ...t, employeeId: null, mealName: null, _avail: null } : t); return; }
     // Bloquear si la persona seleccionada es el mismo que el apoderado actual
     if (editTarget?.proxyEmployeeId && editTarget.proxyEmployeeId === emp.id) {
       setFormError('El titular no puede ser el mismo que el empleado que retira. Primero quita al apoderado o elige a otra persona.');
@@ -281,12 +291,21 @@ export default function EditManualConsumptions() {
       setShowTitular(false);
       return;
     }
+    
+    let avail = null;
+    try {
+      const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`);
+      avail = data;
+    } catch (e) {}
+
     setFormError('');
     setTitularTerm(`${emp.fullName} · ${emp.identityCard}`);
     setEditTarget(t => ({
       ...t,
       employeeId:    emp.id,
+      mealName:      null, // force re-selection of meal
       _titularLabel: `${emp.fullName} · ${emp.identityCard}`,
+      _avail: avail || { allowsLunch: emp.allowsLunch, allowsSnack: emp.allowsSnack ?? emp.effectiveSnack, hadAlmuerzo: false, hadMerienda: false }
     }));
     setShowTitular(false);
   };
@@ -498,23 +517,63 @@ export default function EditManualConsumptions() {
               </select>
             </div>
 
-            {/* ── Tipo de comida (checkboxes, igual que ManualScan) ── */}
+            {/* ── Tipo de comida (checkboxes validados) ── */}
             <div className="field">
               <label>Tipo de comida</label>
               <div className="row" style={{ gap: 16 }}>
-                {MEALS.map(m => (
-                  <label
-                    key={m.value}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal', cursor: 'pointer', margin: 0 }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={editTarget.mealName === m.value}
-                      onChange={() => setEditTarget({ ...editTarget, mealName: m.value })}
-                    />
-                    {m.label}
-                  </label>
-                ))}
+                {(() => {
+                  if (!editTarget.employeeId) {
+                    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Seleccione un titular primero.</span>;
+                  }
+                  const avail = editTarget._avail;
+                  if (!avail) {
+                    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Cargando disponibilidad...</span>;
+                  }
+
+                  const allowedMeals = MEALS.filter(m => m.value === 'Almuerzo' ? avail.allowsLunch : avail.allowsSnack);
+                  if (allowedMeals.length === 0) {
+                    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para este empleado.</span>;
+                  }
+
+                  const consumedMeals = allowedMeals.filter(m => {
+                    const consumed = m.value === 'Almuerzo' ? avail.hadAlmuerzo : avail.hadMerienda;
+                    return consumed && editTarget._originalMealName !== m.value;
+                  });
+
+                  return (
+                    <div style={{ width: '100%' }}>
+                      <div className="row" style={{ gap: 16 }}>
+                        {allowedMeals.map(m => {
+                          const consumed = m.value === 'Almuerzo' ? avail.hadAlmuerzo : avail.hadMerienda;
+                          // Permitir si la comida es la que ya tiene guardada ESTE registro
+                          const isDisabled = consumed && editTarget._originalMealName !== m.value;
+                          
+                          return (
+                            <label
+                              key={m.value}
+                              style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal', cursor: isDisabled ? 'not-allowed' : 'pointer', margin: 0, opacity: isDisabled ? 0.5 : 1 }}
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={isDisabled}
+                                checked={editTarget.mealName === m.value}
+                                onChange={(e) => {
+                                  if (e.target.checked) setEditTarget({ ...editTarget, mealName: m.value });
+                                }}
+                              />
+                              {m.label}{isDisabled ? ' (ya registrada hoy)' : ''}
+                            </label>
+                          );
+                        })}
+                      </div>
+                      {consumedMeals.length > 0 && (
+                        <div style={{ color: 'var(--err, #ef4444)', fontSize: 13, marginTop: 6, fontWeight: 500 }}>
+                          El titular ya consumió su {consumedMeals.map(m => m.label).join(' y ')} hoy.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 

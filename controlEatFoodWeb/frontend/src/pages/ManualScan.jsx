@@ -460,20 +460,34 @@ export default function ManualScan() {
                             if (allowedMeals.length === 0) {
                               return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para este empleado.</span>;
                             }
-                            return allowedMeals.map((m) => {
-                              const consumed = m.code === 'LUNCH' ? t.hadMerienda : t.hadAlmuerzo;
-                              return (
-                                <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal', cursor: consumed ? 'not-allowed' : 'pointer', margin: 0, opacity: consumed ? 0.5 : 1 }}>
-                                  <input
-                                    type="checkbox"
-                                    disabled={consumed}
-                                    checked={!consumed && t.mealCodes.includes(m.code)}
-                                    onChange={(e) => setTitularMeals(t.id, m.code, e.target.checked)}
-                                  />
-                                  {m.name}{consumed ? ' (ya registrada hoy)' : ''}
-                                </label>
-                              );
-                            });
+                            
+                            const consumedMeals = allowedMeals.filter(m => m.code === 'LUNCH' ? t.hadMerienda : t.hadAlmuerzo);
+
+                            return (
+                              <div style={{ width: '100%' }}>
+                                <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
+                                  {allowedMeals.map((m) => {
+                                    const consumed = m.code === 'LUNCH' ? t.hadMerienda : t.hadAlmuerzo;
+                                    return (
+                                      <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal', cursor: consumed ? 'not-allowed' : 'pointer', margin: 0, opacity: consumed ? 0.5 : 1 }}>
+                                        <input
+                                          type="checkbox"
+                                          disabled={consumed}
+                                          checked={!consumed && t.mealCodes.includes(m.code)}
+                                          onChange={(e) => setTitularMeals(t.id, m.code, e.target.checked)}
+                                        />
+                                        {m.name}{consumed ? ' (ya registrada hoy)' : ''}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                                {consumedMeals.length > 0 && (
+                                  <div style={{ color: 'var(--err, #ef4444)', fontSize: 13, marginTop: 6, fontWeight: 500 }}>
+                                    {t.fullName} ya consumió su {consumedMeals.map(m => m.name).join(' y ')}.
+                                  </div>
+                                )}
+                              </div>
+                            );
                           })()}
                         </div>
                       </div>
