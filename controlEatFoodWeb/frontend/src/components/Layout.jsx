@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext.jsx';
+import BiometricReaderBanner from './BiometricReaderBanner.jsx';
 
 const ROLE_LABELS = { ADMIN: 'Administrador', CATERING: 'Restaurante', RECURSOS_HUMANOS: 'Recursos Humanos' };
 const roleLabel = (name) => ROLE_LABELS[name] || name;
@@ -35,6 +36,7 @@ export default function Layout() {
         <button className="ghost" onClick={logout}>Cerrar sesión</button>
       </aside>
       <main className="content">
+        {hasRole('ADMIN') && <BiometricReaderBanner />}
         <div className="topbar">
           <div />
           <div className="user">{user?.fullName} · {user?.roles?.map(roleLabel).join(', ')}</div>
