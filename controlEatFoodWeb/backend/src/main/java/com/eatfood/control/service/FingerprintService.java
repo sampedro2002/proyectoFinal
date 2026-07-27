@@ -160,12 +160,20 @@ public class FingerprintService {
         boolean isZk = matcher instanceof com.eatfood.control.biometric.ZkBiometricMatcher;
         var zk = isZk ? (com.eatfood.control.biometric.ZkBiometricMatcher) matcher : null;
         boolean readerConnected = zk != null && zk.isReaderReady();
+        // readerEverConnected: para el aviso de "activación" del panel admin (conectar el
+        // ZK9500 tras instalar/reinstalar/reiniciar). A diferencia de readerConnected, una vez
+        // en true YA NO vuelve a false en este arranque del proceso, aunque el lector se
+        // desconecte despues -- el aviso debe aparecer una sola vez por arranque, no cada vez
+        // que alguien desenchufa el lector durante el uso normal. Sin matcher ZK (mock/dev) no
+        // aplica el concepto de lector fisico: se reporta true para no mostrar el aviso.
+        boolean readerEverConnected = zk == null || zk.isEverConnectedSinceStartup();
         // deviceCount y sdkInitialized son diagnóstico del SDK nativo: si readerConnected=false
         // pero el lector está enchufado, estos valores indican dónde está el problema
         // (deviceCount=0 con sdkInitialized=false → ZKFPM_Init aún no arranca en este equipo).
         return Map.of(
                 "engineReady", matcher.isReady(),
                 "readerConnected", readerConnected,
+                "readerEverConnected", readerEverConnected,
                 "deviceCount", zk != null ? zk.getLastDeviceCount() : -1,
                 "sdkInitialized", zk != null && zk.isSdkInitialized(),
                 "indexSize", matcher.indexSize(),

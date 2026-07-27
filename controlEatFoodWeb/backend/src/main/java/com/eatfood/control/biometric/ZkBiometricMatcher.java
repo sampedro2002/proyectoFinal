@@ -56,6 +56,14 @@ public class ZkBiometricMatcher implements BiometricMatcher {
      * no dependen de esto.
      */
     private volatile boolean readerReady = false;
+    /**
+     * {@code true} desde la PRIMERA vez que el lector quedó usable en este arranque del
+     * proceso (se pone en {@code true} una sola vez y ya no se resetea aunque el lector se
+     * desconecte después). Sirve para el aviso de "activación" del panel admin: debe
+     * aparecer tras una reinstalación/reinicio hasta que se conecte el ZK9500 una vez, y
+     * no volver a molestar en el resto de la sesión aunque el lector se desenchufe luego.
+     */
+    private volatile boolean everConnectedSinceStartup = false;
     /** Último conteo de dispositivos observado por el poll (diagnóstico; -1 = aún no consultado). */
     private volatile int lastDeviceCount = -1;
     /** Evita reintentar la recuperación del SDK en cada ciclo del poll (una vez por episodio de bloqueo). */
@@ -334,6 +342,7 @@ public class ZkBiometricMatcher implements BiometricMatcher {
                 log.info("ZK9500 detectado — captura/enrolamiento habilitado.");
             }
             readerReady = true;
+            everConnectedSinceStartup = true;
         } else {
             log.warn("ZK9500 desconectado — captura/enrolamiento deshabilitado " +
                     "(la validación 1:N sigue activa mientras el índice esté cargado).");
@@ -630,6 +639,11 @@ public class ZkBiometricMatcher implements BiometricMatcher {
      */
     public boolean isReaderReady() {
         return readerReady;
+    }
+
+    /** True desde la primera vez que el lector quedó usable en este arranque (ver campo). */
+    public boolean isEverConnectedSinceStartup() {
+        return everConnectedSinceStartup;
     }
 
     public ZkfpSdk getSdk() {
