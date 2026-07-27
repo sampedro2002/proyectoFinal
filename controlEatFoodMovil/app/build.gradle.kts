@@ -100,9 +100,16 @@ dependencies {
     // Persistencia segura de tokens
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
-    // Escáner de códigos QR de Google Play Services (sin permiso de cámara ni UI propia).
+    // Escáner de QR de la app (QrScannerActivity): CameraX + ML Kit empaquetado en el APK.
     // Se usa para aprovisionar la URL del servidor desde un QR (el usuario no la teclea).
-    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    // No depende de Play Services: antes se usaba play-services-code-scanner, que exige GMS
+    // actualizado más un módulo descargable, y no abría en Redmi/POCO, Infinix ni ROMs sin GMS.
+    val camerax_version = "1.3.4"
+    implementation("androidx.camera:camera-core:$camerax_version")
+    implementation("androidx.camera:camera-camera2:$camerax_version")
+    implementation("androidx.camera:camera-lifecycle:$camerax_version")
+    implementation("androidx.camera:camera-view:$camerax_version")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
 
     // Generación de QR (pantalla Conexión del admin): codifica la URL del servidor en un
     // bitmap para que otros dispositivos la escaneen. zxing:core es Java puro (sin UI).

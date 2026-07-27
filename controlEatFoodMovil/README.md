@@ -52,6 +52,7 @@ controlEatFoodMovil/
 │       │   ├── AdminScreens.kt      # Pantallas admin (empleados, cargos)
 │       │   ├── ReportScreens.kt     # Pantallas de reportes
 │       │   ├── Common.kt            # Componentes reutilizables
+│       │   ├── QrScannerActivity.kt # Escáner QR (CameraX + ML Kit, sin Play Services)
 │       │   ├── kiosk/KioskActivity.kt # Modo kiosco
 │       │   └── theme/Theme.kt       # Material3 tema
 │       └── util/ToneFeedback.kt     # Feedback sonoro

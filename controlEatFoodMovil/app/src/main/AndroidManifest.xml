@@ -8,6 +8,12 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
+    <!-- Cámara: la usa QrScannerActivity para leer el QR del servidor. Se pide en
+         caliente, solo al pulsar "Escanear QR", no al arrancar la app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <!-- USB OTG para el lector de huellas ZK9500 -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
@@ -23,11 +29,6 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:extractNativeLibs="true"
         tools:targetApi="34">
-
-        <!-- Descarga el módulo del escáner de códigos al instalar la app (no en el primer uso). -->
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="barcode_ui" />
 
         <!-- Login de administración (empleados, reportes, etc.). Se abre desde el
              enlace "Acceso Admin" de la pantalla de restaurante, no es la de arranque. -->
@@ -50,6 +51,12 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Escáner de QR de la app. Lo lanza la pantalla de Configuración; no es exportado. -->
+        <activity
+            android:name=".ui.QrScannerActivity"
+            android:exported="false"
+            android:theme="@style/Theme.EatFood" />
 
         <!-- Trampolín invisible para USB_DEVICE_ATTACHED: concede el permiso USB
              a la app y abre el kiosco SOLO si la app estaba cerrada. Si el admin

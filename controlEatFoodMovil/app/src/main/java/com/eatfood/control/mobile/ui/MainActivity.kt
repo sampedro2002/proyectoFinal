@@ -40,9 +40,6 @@ import com.eatfood.control.mobile.data.remote.ApiClient
 import com.eatfood.control.mobile.data.remote.apiMessage
 import com.eatfood.control.mobile.data.remote.isConnectivityError
 import com.eatfood.control.mobile.ui.theme.EatFoodTheme
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -306,28 +303,44 @@ fun SettingsScreen(onClose: () -> Unit) {
     var serverUrl by remember { mutableStateOf(store.serverUrl) }
     val sdkAvailable = remember { com.eatfood.control.mobile.biometric.ZkBiometricReader.sdkAvailable() }
 
-    // Aprovisiona la URL del servidor escaneando un QR. La dirección NO se puede teclear
-    // ni borrar manualmente: solo se establece escaneando un código válido.
+    // Aplica el texto leído del QR. La dirección NO se puede teclear ni borrar
+    // manualmente: solo se establece escaneando un código válido.
+    fun applyScannedUrl(raw: String) {
+        if (raw.isBlank()) {
+            Toast.makeText(context, "El QR está vacío o es ilegible.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        store.serverUrl = raw              // el setter normaliza (añade http:// y quita '/')
+        serverUrl = store.serverUrl
+        ApiClient.reset()
+        Toast.makeText(context, "Servidor configurado: ${store.serverUrl}", Toast.LENGTH_LONG).show()
+    }
+
+    // Escáner único de la app: QrScannerActivity (CameraX + ML Kit empaquetados en el APK).
+    // Antes se usaba el de Play Services, que no trae cámara propia y depende de un módulo
+    // descargable ("barcode_ui"): en Redmi/POCO, Infinix y ROMs sin GMS completo no se abría.
+    val scannerLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            applyScannedUrl(result.data?.getStringExtra(QrScannerActivity.EXTRA_RESULT)?.trim().orEmpty())
+        }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) scannerLauncher.launch(Intent(context, QrScannerActivity::class.java))
+        else Toast.makeText(
+            context,
+            "Se necesita permiso de cámara para escanear el QR del servidor.",
+            Toast.LENGTH_LONG
+        ).show()
+    }
     fun scanServerQr() {
-        val options = GmsBarcodeScannerOptions.Builder()
-            .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-            .build()
-        GmsBarcodeScanning.getClient(context, options).startScan()
-            .addOnSuccessListener { barcode ->
-                val raw = barcode.rawValue?.trim().orEmpty()
-                if (raw.isBlank()) {
-                    Toast.makeText(context, "El QR está vacío o es ilegible.", Toast.LENGTH_SHORT).show()
-                    return@addOnSuccessListener
-                }
-                store.serverUrl = raw          // el setter normaliza (añade http:// y quita '/')
-                serverUrl = store.serverUrl
-                ApiClient.reset()
-                Toast.makeText(context, "Servidor configurado: ${store.serverUrl}", Toast.LENGTH_LONG).show()
-            }
-            .addOnCanceledListener { /* el usuario canceló el escaneo */ }
-            .addOnFailureListener { e ->
-                Toast.makeText(context, "No se pudo escanear el QR: ${e.message}", Toast.LENGTH_LONG).show()
-            }
+        val granted = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        if (granted) scannerLauncher.launch(Intent(context, QrScannerActivity::class.java))
+        else cameraPermission.launch(Manifest.permission.CAMERA)
     }
 
     Scaffold(topBar = {
