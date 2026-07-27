@@ -57,14 +57,18 @@ export default function Schedules() {
                 onChange={(ev) => changeTime('startTime', ev.target.value)} /></td>
               <td><input type="time" value={(schedule.endTime || '').slice(0,5)}
                 onChange={(ev) => changeTime('endTime', ev.target.value)} /></td>
-              <td style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <td>
                 <button onClick={save}>Guardar</button>
-                {error && <span className="error-text">{error}</span>}
-                {savedMsg && <span className="badge ok" style={{ fontSize: '13px', padding: '6px 12px' }}>✓ {savedMsg}</span>}
               </td>
             </tr>
           </tbody>
         </table>
+        {(error || savedMsg) && (
+          <div style={{ marginTop: '16px' }}>
+            {error && <span className="error-text">{error}</span>}
+            {savedMsg && <span className="badge ok" style={{ fontSize: '13px', padding: '6px 12px' }}>✓ {savedMsg}</span>}
+          </div>
+        )}
       </div>
     </div>
   );
