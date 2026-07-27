@@ -1025,10 +1025,32 @@ function Install-FrontendDependencies {
     }
 }
 
+# Detecta si el SDK del lector ZK9500 ya esta instalado A NIVEL DE SISTEMA.
+# setup.exe copia libzkfp.dll (y libzkfpcsharp.dll) a System32/SysWOW64; esa
+# instalacion es permanente y sobrevive a redespliegues del proyecto y a desinstalar
+# la app. Es la MISMA DLL que el backend carga con Native.load("libzkfp") desde
+# System32 (ver ZkBiometricMatcher, "Prioridad 1"). Detectarla es la fuente de verdad:
+# evita reinstalar el SDK en cada puesta en produccion aunque falte el marcador local.
+function Test-BiometricSdkInstalled {
+    foreach ($dir in @("$env:WINDIR\System32", "$env:WINDIR\SysWOW64")) {
+        if (Test-Path (Join-Path $dir "libzkfp.dll")) { return $true }
+    }
+    return $false
+}
+
 function Invoke-BiometricSetup {
     Write-Log "Verificando setup.exe (SDK biometrico)..." 'STEP'
     if (Test-Path $LockFile) {
         Write-Log "setup.exe ya fue ejecutado previamente en esta maquina." 'SUCCESS'
+        return
+    }
+    # El SDK se instala UNA vez y queda de por vida en el sistema (libzkfp.dll en System32).
+    # Si ya esta presente NO reinstalamos: solo re-creamos el marcador para que los arranques
+    # futuros tomen la ruta rapida. Cubre el caso de redesplegar el proyecto en un servidor
+    # donde el SDK ya se instalo antes (marcador perdido pero DLL presente en el sistema).
+    if (Test-BiometricSdkInstalled) {
+        Write-Log "SDK del lector ZK9500 ya instalado en el sistema (libzkfp.dll en System32). Se omite setup.exe." 'SUCCESS'
+        "OK (SDK ya presente en System32; setup.exe omitido)" | Set-Content -Path $LockFile -Encoding ASCII
         return
     }
     if (-not (Test-Path $SetupExe)) {
@@ -1981,8 +2003,10 @@ function Uninstall-App {
         Write-Log "Directorio config/ eliminado." 'SUCCESS'
     }
 
-    # Eliminar el lock del SDK biométrico para que una reinstalación vuelva
-    # a ejecutar setup.exe y reinstale correctamente las librerías del ZK9500.
+    # Eliminar el marcador local del SDK biométrico para que una reinstalación vuelva
+    # a VERIFICAR el SDK. Nota: setup.exe solo se re-ejecutará si libzkfp.dll ya no está
+    # en System32; si sigue instalada (lo normal, el SDK es de por vida y sobrevive a la
+    # desinstalación de la app), Invoke-BiometricSetup lo detecta y omite setup.exe.
     if (Test-Path $LockFile) {
         Remove-Item -Path $LockFile -Force
         Write-Log "Lock del SDK biométrico (.setup_completado.lock) eliminado." 'SUCCESS'

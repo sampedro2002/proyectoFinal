@@ -158,7 +158,7 @@ Las huellas se guardan **cifradas** en la base de datos. Si la clave de cifrado 
    export DB_USER=tu_usuario
    export DB_PASSWORD=tu_password_seguro
    export JWT_SECRET=tu_clave_jwt_base64_muy_larga_256bits
-   export BIOMETRIC_ENCRYPTION_KEY=tu_clave_aes_128_minimo_16_bytes
+   export BIOMETRIC_ENCRYPTION_KEY=tu_clave_segura_para_cifrar_huellas
    export PUBLIC_URL=https://tu-dominio.com
    
    java -jar target/backend-0.0.1-SNAPSHOT.jar

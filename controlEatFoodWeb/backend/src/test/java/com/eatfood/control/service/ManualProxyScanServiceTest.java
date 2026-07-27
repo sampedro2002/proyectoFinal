@@ -5,6 +5,7 @@ import com.eatfood.control.dto.ScanDtos.*;
 import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.RestaurantRepository;
+import com.eatfood.control.repository.ScheduleRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -33,6 +35,7 @@ class ManualProxyScanServiceTest {
     @Autowired private ConsumptionRepository consumptionRepository;
     @Autowired private EmployeeRepository employeeRepository;
     @Autowired private RestaurantRepository restaurantRepository;
+    @Autowired private ScheduleRepository scheduleRepository;
 
     private Employee pepe;
     private Employee juan;
@@ -41,6 +44,16 @@ class ManualProxyScanServiceTest {
 
     @BeforeEach
     void setUp() {
+        // Horario que cubre cualquier hora, para que manualScan() no dependa del reloj real.
+        // En el contexto de test Flyway esta deshabilitado y no se siembra ningun Schedule,
+        // asi que sin esto scheduleRepository.findFirstByOrderByIdAsc() devuelve vacio y
+        // manualScan corta con OUT_OF_SCHEDULE.
+        scheduleRepository.save(Schedule.builder()
+                .startTime(LocalTime.MIN)
+                .endTime(LocalTime.of(23, 59, 59))
+                .active(true)
+                .build());
+
         restaurant = restaurantRepository.save(Restaurant.builder()
                 .name("Comedor Test " + UUID.randomUUID())
                 .active(true)

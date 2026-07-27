@@ -40,5 +40,19 @@ export default defineConfig({
       '/api': { target: 'http://localhost:3000', changeOrigin: true },
       '/zkfinger-ws': { target: 'ws://localhost:3000', ws: true }
     }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // Separa las librerias pesadas en chunks propios para que el bundle
+        // principal no supere el umbral de 500 kB y el navegador cachee por
+        // separado lo que cambia poco (vendor) de lo que cambia con la app.
+        manualChunks: {
+          'react-vendor': ['react', 'react-dom', 'react-router-dom'],
+          'charts': ['recharts'],
+          'qr': ['qrcode']
+        }
+      }
+    }
   }
 });

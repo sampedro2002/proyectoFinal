@@ -124,7 +124,7 @@ mvn spring-boot:run
 | `JWT_SECRET` | — | Clave Base64 (mín. 256 bits). **Definir siempre en producción.** |
 | `BIOMETRIC_PROVIDER` | `zk` | `zk` (SDK real) \| `sim` (sin hardware) |
 | `ZK_NATIVE_PATH` | `./native` | Ruta de las DLL/.so del SDK ZK9500 |
-| `BIOMETRIC_ENCRYPTION_KEY` | — | Clave AES-128 para cifrar plantillas (mín. 16 bytes). **Definir siempre en producción.** |
+| `BIOMETRIC_ENCRYPTION_KEY` | — | Clave para cifrar plantillas (usa AES-256/GCM). **Definir siempre en producción.** |
 | `CORS_ORIGINS` | `http://localhost:5173,...` | Orígenes CORS permitidos (separados por coma) |
 
 </details>
@@ -221,7 +221,7 @@ Si prefieres instalar manualmente o en Linux:
 ## 🔐 Roles y permisos
 
 - **Administrador (ADMIN) / Recursos Humanos (RRHH):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **administra consumos manuales** (registro, edición, cancelación y reactivación) sin validar horario/permiso/duplicado.
-- **Catering (CATERING):** registra consumos desde su dispositivo; ve solo lo propio. Usuarios: `cateringNorte`, `cateringCentro`, `cateringSur`.
+- **Catering (CATERING):** registra consumos desde su dispositivo; ve solo lo propio. Usuarios: `restauranteNorte`, `restauranteCentro`, `restauranteSur`.
 
 > *Nota: El rol SUPERVISOR fue eliminado en la migración V7.*
 
@@ -252,7 +252,7 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  
  ## 🛡️ Seguridad y Privacidad
  
- - **Cifrado de Plantillas**: Las huellas digitales no se guardan en texto plano; se utiliza **cifrado AES-128/CBC** para proteger las plantillas biométricas en la base de datos. La clave se configura vía `BIOMETRIC_ENCRYPTION_KEY` (no se deja clave por defecto en producción).
+ - **Cifrado de Plantillas**: Las huellas digitales no se guardan en texto plano; se utiliza **cifrado AES-256/GCM** para proteger las plantillas biométricas en la base de datos. La clave se configura vía `BIOMETRIC_ENCRYPTION_KEY` (no se deja clave por defecto en producción).
  - **Seguridad JWT**: Acceso protegido mediante tokens JWT con roles definidos. Anti-fuerza-bruta con bloqueo temporal de cuenta tras 5 intentos fallidos (persistente en transacción independiente para no revertirse con el rollback del login fallido).
  - **Auditoría Completa**: Cada acción crítica es registrada en un log de auditoría (`AuditLog`) con usuario, fecha y acción realizada.
  - **Manejo de Errores**: El backend no expone detalles internos (SQL/stack) al cliente; los errores genéricos se loguean internamente y devuelven un mensaje neutro.
