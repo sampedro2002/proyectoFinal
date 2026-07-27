@@ -1609,6 +1609,12 @@ logging:
     com.eatfood: INFO
     org.springframework.security: WARN
 "@
+    # ConfigDir se crea al arrancar el script (una sola vez), pero el menu
+    # principal corre en bucle dentro del MISMO proceso: si en esta sesion se
+    # eligio "Desinstalar" antes (borra RunWindowns\config por completo) y
+    # despues se reintenta Instalar/Reparar sin cerrar el instalador, la
+    # carpeta ya no existe y WriteAllText falla con ruta no encontrada.
+    if (-not (Test-Path $ConfigDir)) { New-Item -ItemType Directory -Path $ConfigDir -Force | Out-Null }
     $utf8NoBom = New-Object System.Text.UTF8Encoding $False
     [System.IO.File]::WriteAllText($ProdYmlPath, $ymlContent, $utf8NoBom)
     Write-Log "application-prod.yml generado en: $ProdYmlPath" 'SUCCESS'
