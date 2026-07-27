@@ -48,6 +48,9 @@ interface ApiService {
     @DELETE("fingerprints/{id}")
     suspend fun deleteFingerprint(@Path("id") id: Long): Response<Unit>
 
+    @GET("fingerprints/biometric-status")
+    suspend fun biometricStatus(): BiometricStatusResponse
+
     // ── Catálogos ───────────────────────────────────────────────────────────--
     @GET("restaurants")
     suspend fun restaurants(): List<RestaurantResponse>

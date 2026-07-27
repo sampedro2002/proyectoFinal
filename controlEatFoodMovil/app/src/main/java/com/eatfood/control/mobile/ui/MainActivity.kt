@@ -201,19 +201,22 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                 )
             }
         ) { padding ->
-            Box(Modifier.padding(padding).fillMaxSize()) {
-                when (current) {
-                    Screen.MY_RESTAURANT -> MyRestaurantScreen()
-                    Screen.DASHBOARD -> DashboardScreen()
-                    Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
-                    Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
-                    Screen.USERS -> UsersScreen()
-                    Screen.SCHEDULES -> SchedulesScreen()
-                    Screen.REPORTS -> ReportsScreen()
-                    Screen.AUDIT -> AuditScreen()
-                    Screen.EXTRA_MEALS -> ExtraMealsScreen()
-                    Screen.EDIT_CONSUMOS -> EditConsumptionsScreen()
-                    Screen.CONEXION -> ConexionScreen()
+            Column(Modifier.padding(padding).fillMaxSize()) {
+                if ("ADMIN" in roles || "RECURSOS_HUMANOS" in roles) BiometricReaderBanner()
+                Box(Modifier.weight(1f).fillMaxSize()) {
+                    when (current) {
+                        Screen.MY_RESTAURANT -> MyRestaurantScreen()
+                        Screen.DASHBOARD -> DashboardScreen()
+                        Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
+                        Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
+                        Screen.USERS -> UsersScreen()
+                        Screen.SCHEDULES -> SchedulesScreen()
+                        Screen.REPORTS -> ReportsScreen()
+                        Screen.AUDIT -> AuditScreen()
+                        Screen.EXTRA_MEALS -> ExtraMealsScreen()
+                        Screen.EDIT_CONSUMOS -> EditConsumptionsScreen()
+                        Screen.CONEXION -> ConexionScreen()
+                    }
                 }
             }
         }

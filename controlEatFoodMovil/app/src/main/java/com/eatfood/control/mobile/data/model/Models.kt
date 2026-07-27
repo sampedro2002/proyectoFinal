@@ -73,6 +73,21 @@ data class FingerprintResponse(
     val active: Boolean
 )
 
+// Refleja el Map que devuelve FingerprintService.biometricStatus() (mismo endpoint que
+// sondea BiometricReaderBanner.jsx en la web). readerEverConnected es la bandera de
+// "activación": queda en true desde la primera vez que el ZK9500 quedó usable en ESTE
+// arranque del backend y ya no vuelve a false aunque el lector se desconecte después.
+data class BiometricStatusResponse(
+    val engineReady: Boolean = false,
+    val readerConnected: Boolean = false,
+    val readerEverConnected: Boolean = false,
+    val deviceCount: Int = -1,
+    val sdkInitialized: Boolean = false,
+    val indexSize: Int = 0,
+    val activeInDb: Long = 0,
+    val indexMatchesDb: Boolean = false
+)
+
 // ── Catálogos ────────────────────────────────────────────────────────────────
 data class RestaurantRequest(
     val name: String, val location: String?, val representative: String?,

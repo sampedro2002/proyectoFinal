@@ -36,7 +36,7 @@ export default function Layout() {
         <button className="ghost" onClick={logout}>Cerrar sesión</button>
       </aside>
       <main className="content">
-        {hasRole('ADMIN') && <BiometricReaderBanner />}
+        {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <BiometricReaderBanner />}
         <div className="topbar">
           <div />
           <div className="user">{user?.fullName} · {user?.roles?.map(roleLabel).join(', ')}</div>

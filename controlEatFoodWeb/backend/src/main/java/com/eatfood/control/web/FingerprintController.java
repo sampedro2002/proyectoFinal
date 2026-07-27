@@ -78,9 +78,14 @@ public class FingerprintController {
         return fingerprintService.deleteAll();
     }
 
-    /** Diagnóstico: estado actual del motor biométrico y su índice en memoria. */
+    /**
+     * Diagnóstico: estado actual del motor biométrico y su índice en memoria.
+     * Abierto también a RECURSOS_HUMANOS (no solo ADMIN): es de solo lectura y RRHH
+     * necesita ver el mismo aviso de "conecte el ZK9500 al servidor" que ADMIN, ya que
+     * también gestiona empleados/huellas desde su panel.
+     */
     @GetMapping("/biometric-status")
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or hasRole('RECURSOS_HUMANOS')")
     public Map<String, Object> biometricStatus() {
         return fingerprintService.biometricStatus();
     }
