@@ -754,8 +754,8 @@ function New-ControlMysql8Container {
     param([hashtable]$DbConfig)
     # Tag "mysql:8.0" (serie LTS de la 8): el sistema esta homologado a MySQL 8.
     # La imagen ya usa utf8mb4 por defecto, pero se fija la collation
-    # utf8mb4_unicode_ci explicitamente para que coincida con la que usan los
-    # scripts de RunWindowns\db y el aprovisionamiento de MySQL local.
+    # utf8mb4_unicode_ci explicitamente para que coincida con la que usan
+    # Ensure-Database y el aprovisionamiento de MySQL local.
     Write-Log "Descargando imagen MySQL 8.0..."
     & docker pull mysql:8.0 2>&1 | Out-Null
     Write-Log "Creando contenedor Docker MySQL 8.0..."
@@ -816,13 +816,23 @@ function Ensure-ControlMysql8 {
 }
 
 # ---------------------------------------------------------------------------
-# ESQUEMA DE BASE DE DATOS (scripts en RunWindowns\db)
+# BASE DE DATOS
 # ---------------------------------------------------------------------------
-# db\01_esquema.sql y db\02_datos.sql crean la estructura y los datos iniciales
-# cuando la base aun NO tiene la estructura (se detecta por la tabla 'empleado');
-# si ya existe, se omiten. El backend conserva Flyway como respaldo
-# (baseline-on-migrate): si estos scripts no corren, el esquema se crea igual
-# al arrancar la aplicacion.
+# El instalador solo se asegura de que la BASE exista. La estructura (tablas) y
+# los datos iniciales son responsabilidad EXCLUSIVA de Flyway, que corre al
+# arrancar el backend con las migraciones de
+# controlEatFoodWeb\backend\src\main\resources\db\migration (V1 esquema, V2 seed).
+#
+# Antes habia aqui unos scripts db\01_esquema.sql y db\02_datos.sql que creaban
+# el esquema por fuera. Eran una copia manual de V1/V2 y se desincronizaron:
+# poblaban la base sin dejar flyway_schema_history, y el backend no arrancaba
+# ("Found non-empty schema but no schema history table"). Una sola fuente de
+# verdad evita esa clase de fallo, y ademas los scripts no sabian ACTUALIZAR un
+# esquema ya existente (CREATE TABLE IF NOT EXISTS no altera columnas), cosa que
+# Flyway si hace al agregar V3, V4, ... sobre instalaciones con datos.
+#
+# Regla: todo cambio de esquema es una migracion V*.sql nueva; jamas se edita
+# una migracion ya aplicada.
 
 $script:MySqlExePath = $null
 function Get-MySqlExe {
@@ -904,62 +914,43 @@ function Invoke-MySqlClient {
     else                { & (Get-MySqlExe) @mysqlArgs 2>&1 }
 }
 
-function Ensure-DatabaseSchema {
+function Ensure-Database {
     param([hashtable]$DbConfig)
 
-    $dbScriptsDir = Join-Path $ScriptRoot "db"
-    $scripts = @()
-    if (Test-Path $dbScriptsDir) {
-        $scripts = @(Get-ChildItem $dbScriptsDir -Filter '*.sql' -File | Sort-Object Name)
-    }
-    if ($scripts.Count -eq 0) {
-        Write-Log "No hay scripts .sql en $dbScriptsDir; el esquema lo creara Flyway al arrancar el backend." 'WARN'
-        return
-    }
+    # Solo garantiza que exista la BASE (CREATE DATABASE). Las tablas y los datos
+    # iniciales los crea Flyway al arrancar el backend. Es idempotente: sobre una
+    # instalacion que ya tiene datos no toca absolutamente nada.
     if (-not $DbConfig.Password) {
-        Write-Log "Sin credenciales de BD (configuracion omitida): no se ejecutan los scripts de db\." 'WARN'
+        Write-Log "Sin credenciales de BD (configuracion omitida): no se verifica la existencia de la base." 'WARN'
         return
     }
+
+    # En instalacion local la URL lleva createDatabaseIfNotExist=true, asi que el
+    # propio driver JDBC crea la base al conectar y el cliente mysql es opcional.
+    # En BD remota la URL no lo lleva: ahi la base tiene que existir si o si.
+    $driverCreaLaBase = $DbConfig.Url -match 'createDatabaseIfNotExist=true'
 
     $useDocker = Test-UseDockerClient -DbConfig $DbConfig
     if (-not $useDocker -and -not (Test-MySqlClientExists)) {
-        Write-Log "No se encontro el cliente 'mysql' (ni en PATH ni instalado, ni contenedor Docker): no puedo ejecutar db\*.sql." 'WARN'
-        Write-Log "No es un problema: Flyway creara el esquema automaticamente al arrancar el backend." 'INFO'
+        if ($driverCreaLaBase) {
+            Write-Log "Sin cliente 'mysql', pero la URL lleva createDatabaseIfNotExist: el backend creara la base al conectar." 'INFO'
+        } else {
+            Write-Log "No se encontro el cliente 'mysql' (ni en PATH ni instalado, ni contenedor Docker)." 'WARN'
+            Write-Log "La base '$($DbConfig.Name)' debe existir YA en $($DbConfig.Host) o el backend no podra arrancar." 'WARN'
+        }
         return
     }
 
-    Write-Log "Verificando estructura de la base '$($DbConfig.Name)'..." 'STEP'
-
-    # 1) Asegurar que la base exista (mismo charset que usa el instalador local)
+    Write-Log "Verificando que exista la base '$($DbConfig.Name)'..." 'STEP'
     Invoke-MySqlClient -DbConfig $DbConfig -Query "CREATE DATABASE IF NOT EXISTS ``$($DbConfig.Name)`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Log "No se pudo conectar a MySQL con esas credenciales; scripts de db\ omitidos (Flyway queda como respaldo)." 'WARN'
-        return
-    }
-
-    # 2) Si ya hay estructura (tabla empleado), no hay nada que hacer.
-    # La salida se filtra a la linea puramente numerica: mysql agrega por stderr
-    # el aviso "Using a password on the command line..." que 2>&1 mezcla aqui.
-    $tableCount = Invoke-MySqlClient -DbConfig $DbConfig -Silent -Query "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$($DbConfig.Name)' AND table_name='empleado';"
-    $countLine = @($tableCount) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1
-    if ($LASTEXITCODE -eq 0 -and $countLine -and ([int]$countLine) -ge 1) {
-        Write-Log "La base ya tiene la estructura (tabla 'empleado' presente): scripts de db\ omitidos." 'SUCCESS'
-        return
-    }
-
-    # 3) Base vacia: ejecutar los scripts en orden alfabetico (01_, 02_, ...)
-    Write-Log "Base sin estructura: ejecutando scripts de $dbScriptsDir..."
-    foreach ($s in $scripts) {
-        Write-Log "Ejecutando $($s.Name)..."
-        $out = Invoke-MySqlClient -DbConfig $DbConfig -SqlFile $s.FullName -SelectDb
-        if ($LASTEXITCODE -ne 0) {
-            Write-Log "Fallo $($s.Name): $out" 'ERROR'
-            Write-Log "Puedes corregir y relanzar; Flyway tambien puede crear el esquema al arrancar el backend." 'WARN'
-            return
+        Write-Log "No se pudo crear ni verificar la base con esas credenciales." 'WARN'
+        if (-not $driverCreaLaBase) {
+            Write-Log "Comprueba que '$($DbConfig.Name)' exista en $($DbConfig.Host) y que el usuario '$($DbConfig.User)' tenga permisos sobre ella." 'WARN'
         }
-        Write-Log "$($s.Name) ejecutado correctamente." 'SUCCESS'
+        return
     }
-    Write-Log "Estructura y datos iniciales creados desde RunWindowns\db." 'SUCCESS'
+    Write-Log "Base '$($DbConfig.Name)' lista; Flyway creara las tablas al arrancar el backend." 'SUCCESS'
 }
 
 function Step-ConfigureDatabase {
@@ -1179,11 +1170,11 @@ function Step-ConfigureDatabase {
         Write-Log "Datos de conexion a BD guardados en ProgramData para futuras reinstalaciones." 'SUCCESS'
     }
 
-    # Crear la estructura y los datos iniciales desde RunWindowns\db si la base
-    # aun no los tiene (si ya existen, el paso se salta solo). Nunca es fatal:
-    # Flyway queda como respaldo al arrancar el backend.
-    try { Ensure-DatabaseSchema -DbConfig $dbConfig }
-    catch { Write-Log "Ensure-DatabaseSchema fallo: $_" 'WARN' }
+    # Asegurar solo que la BASE exista; las tablas y el seed los crea Flyway al
+    # arrancar el backend. Nunca es fatal: si algo falta, el log del backend lo
+    # dira con precision.
+    try { Ensure-Database -DbConfig $dbConfig }
+    catch { Write-Log "Ensure-Database fallo: $_" 'WARN' }
 
     return $dbConfig
 }
@@ -1713,7 +1704,14 @@ spring:
     open-in-view: false
   flyway:
     enabled: true
-    baseline-on-migrate: false
+    # Debe coincidir con el application.yml del backend, porque este archivo lo pisa
+    # (--spring.config.additional-location). Flyway es el unico dueno del esquema.
+    # baseline-on-migrate queda por compatibilidad con instalaciones creadas por el
+    # instalador antiguo, que poblaba la BD con db\*.sql sin dejar historial: sin el,
+    # el backend no arranca ("non-empty schema but no schema history table") y NSSM
+    # lo reinicia en bucle. NO subir baseline-version al agregar V3, V4...
+    baseline-on-migrate: true
+    baseline-version: 2
     locations: classpath:db/migration
   jackson:
     time-zone: America/Guayaquil

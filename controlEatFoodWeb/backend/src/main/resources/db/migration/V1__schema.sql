@@ -6,12 +6,13 @@
 -- distinción de método de registro (consumo.metodo = FINGERPRINT/MANUAL/
 -- EXTERNAL) con el proxy de "retira por otro" (consumo.empleado_apoderado_id),
 -- que antes vivían en una migración V3 aparte, ahora fusionada aquí.
--- Debe mantenerse idéntico en estructura a RunWindowns\db\01_esquema.sql
--- (los scripts del instalador).
+-- Esta migración es la ÚNICA fuente de verdad del esquema. El instalador
+-- (RunWindowns\Inicio.ps1) solo crea la BASE de datos vacía; las tablas las
+-- crea Flyway al arrancar el backend.
 --
 -- Todas las tablas usan CREATE TABLE IF NOT EXISTS para poder correr esta
--- migración contra una base de datos ya creada (por ejemplo, por los scripts
--- del instalador o en una máquina nueva) sin que falle por "tabla ya existe".
+-- migración contra una base de datos ya creada (por ejemplo, una poblada por
+-- el instalador antiguo, o una máquina nueva) sin que falle por "tabla ya existe".
 -- Los índices y UNIQUE KEY van definidos dentro del propio CREATE TABLE: si
 -- la tabla ya existe, MySQL salta la sentencia completa (índices incluidos).
 --

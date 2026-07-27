@@ -90,7 +90,11 @@ Las migraciones incrementales históricas se **consolidaron en dos archivos**, a
 - `V1__schema.sql`: **esquema completo**. Incluye ya todo lo que antes eran migraciones separadas: renombre de platos (Almuerzo/Merienda), eliminación del código público de empleado, ajustes de vistas y zona horaria, `consumption.meal_name`, y la distinción de método de registro (`consumption.method` = `FINGERPRINT`/`MANUAL`/`EXTERNAL`) con el proxy de "retira por otro" (`consumption.proxy_employee_id`). El límite de 3 huellas activas por empleado lo impone `FingerprintService.MAX_FINGERPRINTS` (no la BD).
 - `V2__seed.sql`: **datos iniciales** (roles, usuario `admin`, restaurantes y horario). Idempotente (`INSERT IGNORE` / `WHERE NOT EXISTS`).
 
-Estos dos archivos son un espejo de los scripts del instalador `RunWindowns\db\01_esquema.sql` + `02_datos.sql`; si cambias uno, cambia el otro. `spring.flyway.baseline-version=2` hace que, si la base la crean los scripts del instalador (sin `flyway_schema_history`), Flyway la baselinee en la v2 y no re-ejecute V1..V2.
+**Flyway es el único dueño del esquema.** El instalador (`RunWindowns\Inicio.ps1`) solo se asegura de que la *base* exista; las tablas y el seed los crea Flyway al arrancar el backend. Antes el instalador traía una copia manual de estas migraciones en `RunWindowns\db\*.sql`, que se desincronizó y dejaba la base poblada sin `flyway_schema_history`, impidiendo el arranque; esos scripts se eliminaron.
+
+`spring.flyway.baseline-on-migrate=true` con `baseline-version=2` queda solo por compatibilidad con instalaciones creadas por aquel instalador: Flyway las baselinea en la v2 y no re-ejecuta V1..V2, preservando sus datos. **No subas `baseline-version` al agregar `V3`, `V4`...**: esas migraciones tienen que aplicarse sobre las bases existentes, no saltarse.
+
+*Regla:* todo cambio de esquema es una migración `V*.sql` nueva; nunca se edita una ya aplicada.
 
 > Si modificas una migración ya aplicada sobre una base existente, ejecuta `flyway repair` para alinear el checksum en `flyway_schema_history`. (Con una base nueva no aplica.)
 
