@@ -198,7 +198,10 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                 )
             }
         ) { padding ->
-            Column(Modifier.padding(padding).fillMaxSize()) {
+            // padding ya incluye la barra de navegación (botones) y la de estado; consumirlo
+            // evita que los Scaffold de cada pantalla interna la vuelvan a descontar y dejen
+            // un hueco doble abajo.
+            Column(Modifier.padding(padding).consumeWindowInsets(padding).fillMaxSize()) {
                 if ("ADMIN" in roles || "RECURSOS_HUMANOS" in roles) BiometricReaderBanner()
                 Box(Modifier.weight(1f).fillMaxSize()) {
                     when (current) {
@@ -232,9 +235,17 @@ fun LoginScreen(onLoggedIn: () -> Unit, onSettings: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    // safeDrawing = barras de estado/navegación + teclado; con navegación por botones el
+    // formulario quedaba tapado por abajo.
+    Box(
+        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Card(Modifier.fillMaxWidth().widthIn(max = 440.dp)) {
-            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 Image(
                     painter = painterResource(R.drawable.ic_logo),
                     contentDescription = "Club Castillo Amaguaña",

@@ -45,6 +45,7 @@
             android:theme="@style/Theme.EatFood.Kiosk"
             android:screenOrientation="unspecified"
             android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize"
             tools:ignore="LockedOrientationActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

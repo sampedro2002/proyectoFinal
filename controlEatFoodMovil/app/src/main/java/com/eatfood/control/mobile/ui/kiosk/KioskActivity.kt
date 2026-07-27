@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -130,7 +131,12 @@ private fun ConnectPanel(onConnected: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
+    // safeDrawing = barras de estado/navegación + teclado: en teléfonos con botones de
+    // navegación el formulario quedaba cortado por abajo.
+    Box(
+        Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
         Card(Modifier.fillMaxWidth().widthIn(max = 440.dp)) {
             Column(
                 Modifier.padding(24.dp).verticalScroll(rememberScrollState()),
@@ -557,7 +563,17 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
     }
 
     Surface(color = bg, modifier = Modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize().padding(horizontal = 20.dp, vertical = 24.dp)) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                // Barra de estado y barra de navegación: en los teléfonos que usan botones
+                // (no gestos) la barra inferior tapaba el final de la pantalla.
+                .windowInsetsPadding(WindowInsets.systemBars)
+                // Con la tabla de registros desplegada el contenido puede pasarse del alto
+                // disponible en pantallas cortas; así se baja con scroll en vez de recortarse.
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 24.dp)
+        ) {
             // ── Fila superior: Estado del Lector (Pill centralizada) ───────────────
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 ReaderStatusPill(readerStatus)
@@ -568,7 +584,10 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
             // ── Centro: Título de Restaurant y Animación/Estado ─────────────────────
             val r = result
             Column(
-                Modifier.weight(1f).fillMaxWidth(),
+                // Ya no puede usar weight(): la columna raíz es scrollable (alto infinito) y
+                // un hijo con peso se quedaría sin espacio. Se reserva un alto mínimo, mayor
+                // cuando la tabla está plegada para que la pantalla no quede a medias.
+                Modifier.fillMaxWidth().heightIn(min = if (showTable) 220.dp else 340.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
@@ -632,8 +651,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                 reportFormat = reportFormat,
                 onFormatChange = { reportFormat = it },
                 onDownload = { scope.launch { downloadReport() } },
-                downloading = downloading,
-                modifier = Modifier.heightIn(max = 320.dp)
+                downloading = downloading
             )
             
             Spacer(Modifier.height(16.dp))
@@ -651,6 +669,12 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
         }
     }
 }
+
+/** Alto de cada fila de la tabla de registros (texto de 13sp holgado). */
+private val FEED_ROW_HEIGHT = 30.dp
+
+/** Registros visibles en la tabla antes de tener que desplazarla. */
+private const val FEED_VISIBLE_ROWS = 10
 
 /** Panel lateral de consumos del día (espejo del diseño web). */
 @Composable
@@ -670,10 +694,16 @@ private fun TodayFeedPanel(
     var feedMethod by remember { mutableStateOf("ALL") } // ALL, MANUAL, FINGERPRINT
     val filteredFeed = if (feedMethod == "ALL") feed else feed.filter { it.method == feedMethod }
 
+    // Se ven 10 registros y el resto se recorre con scroll dentro de la tabla, sin que la
+    // tabla se coma toda la pantalla en teléfonos de pantalla corta.
+    val listMaxHeight = (FEED_ROW_HEIGHT * FEED_VISIBLE_ROWS)
+        .coerceAtMost(LocalConfiguration.current.screenHeightDp.dp * 0.45f)
+
     Column(modifier.fillMaxWidth()) {
-        // Barra de controles (Descarga y Filtros)
+        // Barra de controles (Descarga y Filtros). Poco padding lateral: con tres pestañas
+        // de filtro la fila tiene que caber también en pantallas de 320dp.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -709,27 +739,14 @@ private fun TodayFeedPanel(
                 }
             }
 
-            // Sección Filtros
+            // Sección Filtros: TODOS (sin filtrar) / MANUAL / HUELLAS
             Row(
                 Modifier.border(1.dp, SurfaceVariant, RoundedCornerShape(20.dp)).clip(RoundedCornerShape(20.dp)),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .background(if (feedMethod == "MANUAL") OnSurface else Color.Transparent)
-                        .clickable { feedMethod = if (feedMethod == "MANUAL") "ALL" else "MANUAL" }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text("MANUAL", color = if (feedMethod == "MANUAL") MaterialTheme.colorScheme.surface else OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Box(
-                    modifier = Modifier
-                        .background(if (feedMethod == "FINGERPRINT") OnSurface else Color.Transparent)
-                        .clickable { feedMethod = if (feedMethod == "FINGERPRINT") "ALL" else "FINGERPRINT" }
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text("HUELLAS", color = if (feedMethod == "FINGERPRINT") MaterialTheme.colorScheme.surface else OnSurface, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
+                FeedFilterTab("TODOS", feedMethod == "ALL") { feedMethod = "ALL" }
+                FeedFilterTab("MANUAL", feedMethod == "MANUAL") { feedMethod = "MANUAL" }
+                FeedFilterTab("HUELLAS", feedMethod == "FINGERPRINT") { feedMethod = "FINGERPRINT" }
             }
         }
 
@@ -773,10 +790,12 @@ private fun TodayFeedPanel(
                             Text("No hay registros hoy", color = Muted, style = MaterialTheme.typography.bodySmall)
                         }
                     } else {
-                        LazyColumn(Modifier.heightIn(max = 180.dp)) {
+                        LazyColumn(Modifier.heightIn(max = listMaxHeight)) {
                             itemsIndexed(filteredFeed) { index, e ->
                                 Row(
-                                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                    // Alto fijo por fila: es lo que hace que entren exactamente
+                                    // FEED_VISIBLE_ROWS registros antes de tener que bajar.
+                                    Modifier.fillMaxWidth().height(FEED_ROW_HEIGHT).padding(horizontal = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("${filteredFeed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
@@ -811,6 +830,24 @@ private fun TodayFeedPanel(
                 }
             }
         }
+    }
+}
+
+/** Pestaña del filtro de la tabla de registros (TODOS / MANUAL / HUELLAS). */
+@Composable
+private fun FeedFilterTab(label: String, selected: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .background(if (selected) OnSurface else Color.Transparent)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Text(
+            label,
+            color = if (selected) MaterialTheme.colorScheme.surface else OnSurface,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 

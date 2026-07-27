@@ -4,6 +4,7 @@ import api from '../api/client.js';
 export default function Schedules() {
   const [schedule, setSchedule] = useState({ startTime: '12:00', endTime: '13:00' });
   const [error, setError] = useState('');
+  const [savedMsg, setSavedMsg] = useState('');
   const [loadError, setLoadError] = useState('');
 
   async function load() {
@@ -20,10 +21,23 @@ export default function Schedules() {
   }
   useEffect(() => { load(); }, []);
 
+  useEffect(() => {
+    if (!savedMsg) return;
+    const t = setTimeout(() => setSavedMsg(''), 3000);
+    return () => clearTimeout(t);
+  }, [savedMsg]);
+
+  function changeTime(field, value) {
+    setSavedMsg('');
+    setSchedule({ ...schedule, [field]: value });
+  }
+
   async function save() {
     setError('');
+    setSavedMsg('');
     try {
       await api.post('/schedules', { startTime: schedule.startTime, endTime: schedule.endTime, active: true });
+      setSavedMsg('Hora guardada.');
       load();
     } catch (err) {
       setError(err.response?.data?.message || 'Error al guardar');
@@ -40,12 +54,13 @@ export default function Schedules() {
           <tbody>
             <tr>
               <td><input type="time" value={(schedule.startTime || '').slice(0,5)}
-                onChange={(ev) => setSchedule({ ...schedule, startTime: ev.target.value })} /></td>
+                onChange={(ev) => changeTime('startTime', ev.target.value)} /></td>
               <td><input type="time" value={(schedule.endTime || '').slice(0,5)}
-                onChange={(ev) => setSchedule({ ...schedule, endTime: ev.target.value })} /></td>
-              <td>
+                onChange={(ev) => changeTime('endTime', ev.target.value)} /></td>
+              <td style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <button onClick={save}>Guardar</button>
-                {error && <p className="error-text" style={{ margin: '4px 0 0' }}>{error}</p>}
+                {error && <span className="error-text">{error}</span>}
+                {savedMsg && <span className="badge ok" style={{ fontSize: '13px', padding: '6px 12px' }}>✓ {savedMsg}</span>}
               </td>
             </tr>
           </tbody>
