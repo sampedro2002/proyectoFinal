@@ -42,6 +42,27 @@ Set-StrictMode -Version Latest
 # revisan $LASTEXITCODE, que no depende de esta preferencia.
 $ErrorActionPreference = 'Continue'
 
+# $LASTEXITCODE solo existe DESPUES de ejecutar el primer programa externo. Con
+# Set-StrictMode, leerlo antes de eso (p. ej. cuando "winget" no esta instalado
+# y la llamada ni siquiera llega a ejecutarse -- caso habitual en Windows 10,
+# donde winget no viene de fabrica) lanza "La variable '$LASTEXITCODE' no se
+# puede recuperar porque no se ha establecido" y tumba el instalador entero.
+# Inicializarlo aqui hace que esa lectura sea siempre segura.
+$global:LASTEXITCODE = 0
+
+# TLS 1.2 como minimo para TODAS las descargas del script (Maven portable, NSSM).
+# Windows 10 en compilaciones antiguas negocia TLS 1.0 por defecto en .NET y los
+# CDN de Apache/nssm.cc ya lo rechazan: sin esto, Invoke-WebRequest falla con un
+# error de conexion poco descriptivo. Se agrega TLS 1.3 solo si el sistema lo
+# soporta (Windows 11 / builds recientes de 10) para no romper en los que no.
+try {
+    $tlsProtocols = [Net.SecurityProtocolType]::Tls12
+    if ([enum]::GetNames([Net.SecurityProtocolType]) -contains 'Tls13') {
+        $tlsProtocols = $tlsProtocols -bor [Net.SecurityProtocolType]::Tls13
+    }
+    [Net.ServicePointManager]::SecurityProtocol = $tlsProtocols
+} catch { }
+
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # CONFIGURACION GLOBAL
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
@@ -273,16 +294,25 @@ function Get-ServerIPs {
     # vez de la IP DHCP de la red que si esta activa (ej. Wi-Fi conectado).
     # Si no se encuentra el adaptador (caso raro), se conserva la entrada por
     # seguridad en vez de descartarla a ciegas.
-    $entries = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.IPAddress -ne '127.0.0.1' -and
-            $_.IPAddress -notlike '169.254.*' -and
-            $_.PrefixOrigin -ne 'WellKnown'
-        } |
-        Where-Object {
-            $a = $adapters[$_.InterfaceIndex]
-            (-not $a) -or ($a.Status -eq 'Up')
-        })
+    # Get-NetIPAddress vive en el modulo NetTCPIP y depende de WMI/CIM: en
+    # equipos con el repositorio de WMI danado, o en ediciones recortadas de
+    # Windows, puede fallar o no devolver nada. Se encierra en try/catch para
+    # poder caer al respaldo por .NET en vez de tumbar el instalador.
+    $entries = @()
+    try {
+        $entries = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.IPAddress -ne '127.0.0.1' -and
+                $_.IPAddress -notlike '169.254.*' -and
+                $_.PrefixOrigin -ne 'WellKnown'
+            } |
+            Where-Object {
+                $a = $adapters[$_.InterfaceIndex]
+                (-not $a) -or ($a.Status -eq 'Up')
+            })
+    } catch {
+        $entries = @()
+    }
 
     $ranked = foreach ($e in $entries) {
         $adapter = $adapters[$e.InterfaceIndex]
@@ -345,14 +375,59 @@ function Get-ServerIPs {
     # Deduplica por IP (un mismo IP puede aparecer en varias interfaces) y
     # ordena por puntaje. Devuelve solo el array de IPs.
     $ordered = @($ranked | Sort-Object Score | ForEach-Object { $_.Ip } | Select-Object -Unique)
+
+    # Si los cmdlets de red no dieron nada (Windows 10 con WMI danado, equipos
+    # sin el modulo NetTCPIP, etc.), se cae al respaldo por .NET antes de
+    # rendirse: es preferible una IP detectada por API nativa que 'localhost'.
+    if ($ordered.Count -eq 0) { $ordered = @(Get-ServerIPsFallback) }
+
+    # OJO: PowerShell DESENROLLA el array al devolverlo, asi que con UNA sola IP
+    # el llamador recibe un string suelto y con Set-StrictMode "$ips.Count" sobre
+    # ese string lanza "No se encuentra la propiedad 'Count' en este objeto" y
+    # tumba el instalador -- justo el caso de un equipo con una sola IP
+    # (Windows 10 sin VMs ni Hyper-V). POR ESO todo llamador de esta funcion
+    # DEBE envolver el resultado en @(...): Get-ServerIP y Read-ServerIP lo hacen.
     return $ordered
+}
+
+function Get-ServerIPsFallback {
+    # Respaldo sin cmdlets de red: recorre las interfaces con .NET puro, que
+    # esta disponible en cualquier Windows con PowerShell 5.1 (10 y 11) y no
+    # depende de WMI/CIM. Como ultimo recurso resuelve el nombre del host.
+    $result = New-Object System.Collections.Generic.List[string]
+    try {
+        foreach ($ni in [System.Net.NetworkInformation.NetworkInterface]::GetAllNetworkInterfaces()) {
+            if ($ni.OperationalStatus -ne [System.Net.NetworkInformation.OperationalStatus]::Up) { continue }
+            if ($ni.NetworkInterfaceType -eq [System.Net.NetworkInformation.NetworkInterfaceType]::Loopback) { continue }
+            foreach ($ua in $ni.GetIPProperties().UnicastAddresses) {
+                if ($ua.Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { continue }
+                $ip = "$($ua.Address)"
+                if ($ip -eq '127.0.0.1' -or $ip -like '169.254.*') { continue }
+                if (-not $result.Contains($ip)) { $result.Add($ip) }
+            }
+        }
+    } catch { }
+    if ($result.Count -eq 0) {
+        try {
+            foreach ($addr in [System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName())) {
+                if ($addr.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork) { continue }
+                $ip = "$addr"
+                if ($ip -eq '127.0.0.1' -or $ip -like '169.254.*') { continue }
+                if (-not $result.Contains($ip)) { $result.Add($ip) }
+            }
+        } catch { }
+    }
+    # Igual que Get-ServerIPs: el llamador envuelve en @(...) para no depender
+    # de si PowerShell desenrolla o no el resultado.
+    return $result.ToArray()
 }
 
 function Get-ServerIP {
     # Mantiene la API original: devuelve UNA sola IP (la mejor candidata),
     # o 'localhost' si no se detecto ninguna.
-    $ips = Get-ServerIPs
-    if ($ips.Count -gt 0) { return $ips[0] }
+    # El @() es defensivo: garantiza un array aunque Get-ServerIPs cambie.
+    $ips = @(Get-ServerIPs)
+    if ($ips.Count -gt 0 -and $ips[0]) { return $ips[0] }
     return 'localhost'
 }
 
@@ -366,8 +441,8 @@ function Read-ServerIP {
     param([string]$Default)
 
     $recommended = if ($Default) { $Default } else { Get-ServerIP }
-    $candidates = Get-ServerIPs
-    if (-not $candidates -or $candidates.Count -eq 0) { $candidates = @($recommended) }
+    $candidates = @(Get-ServerIPs)
+    if ($candidates.Count -eq 0) { $candidates = @($recommended) }
     if ($candidates -notcontains $recommended) { $candidates = @($recommended) + $candidates }
 
     Write-Host ""
@@ -408,17 +483,46 @@ function Update-SessionPath {
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # PREREQUISITOS (compartido por Pruebas y Produccion)
 # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+function Test-WingetAvailable {
+    # winget (App Installer) viene de fabrica en Windows 11, pero en Windows 10
+    # es opcional: en muchas instalaciones -- y practicamente nunca en las
+    # ediciones LTSC/IoT, que no traen Microsoft Store -- no esta disponible.
+    # Sin esta comprobacion, "& winget ..." lanza CommandNotFoundException y,
+    # peor aun, deja $LASTEXITCODE sin actualizar.
+    return (Test-CommandExists 'winget')
+}
+
+function Invoke-Winget {
+    # Envoltura segura: nunca lanza y siempre devuelve un codigo de salida
+    # numerico (no $null), aunque winget no exista o falle a medio camino.
+    param([string[]]$Arguments)
+    if (-not (Test-WingetAvailable)) {
+        Write-Log "winget no esta disponible en este equipo (habitual en Windows 10 sin App Installer)." 'WARN'
+        return 1
+    }
+    try {
+        & winget @Arguments | Out-Null
+        if ($null -eq $LASTEXITCODE) { return 1 }
+        return $LASTEXITCODE
+    } catch {
+        Write-Log "winget fallo: $($_.Exception.Message)" 'WARN'
+        return 1
+    }
+}
+
 function Test-Java21 {
     Write-Log "Verificando Java 21..."
     try {
+        if (-not (Test-CommandExists 'java')) { throw "java no esta en el PATH" }
         $javaVer = & java -version 2>&1 | Select-String -Pattern '"(\d+)' | ForEach-Object { $_.Matches[0].Groups[1].Value }
         if ($javaVer -eq '21') { Write-Log "Java 21 encontrado." 'SUCCESS'; return $true }
         throw "Java 21 no encontrado"
     } catch {
         Write-Log "Java 21 no esta instalado. Instalando via winget..." 'WARN'
         try {
-            & winget install EclipseAdoptium.Temurin.21.JDK --accept-package-agreements --accept-source-agreements | Out-Null
-            if ($LASTEXITCODE -eq 0) { Update-SessionPath; Write-Log "Java 21 instalado correctamente." 'SUCCESS'; return $true }
+            $exit = Invoke-Winget @('install', 'EclipseAdoptium.Temurin.21.JDK', '--accept-package-agreements', '--accept-source-agreements')
+            Update-SessionPath
+            if ($exit -eq 0 -and (Test-CommandExists 'java')) { Write-Log "Java 21 instalado correctamente." 'SUCCESS'; return $true }
             throw "winget fallo"
         } catch {
             Write-Log "No se pudo instalar Java automaticamente." 'ERROR'
@@ -438,8 +542,9 @@ function Test-NodeInstalled {
     }
     Write-Log "Node.js no esta instalado. Instalando via winget..." 'WARN'
     try {
-        & winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements | Out-Null
-        if ($LASTEXITCODE -eq 0) { Update-SessionPath; Write-Log "Node.js instalado correctamente." 'SUCCESS'; return $true }
+        $exit = Invoke-Winget @('install', 'OpenJS.NodeJS.LTS', '--accept-package-agreements', '--accept-source-agreements')
+        Update-SessionPath
+        if ($exit -eq 0 -and (Test-CommandExists 'npm')) { Write-Log "Node.js instalado correctamente." 'SUCCESS'; return $true }
         throw "winget fallo"
     } catch {
         Write-Log "No se pudo instalar Node.js automaticamente." 'ERROR'
@@ -454,11 +559,17 @@ function Install-MavenViaWinget {
     # el navegador ni pedir pasos manuales. Reintenta un par de veces por si
     # el primer intento falla por caches/agreements pendientes, y refresca el
     # PATH de la sesion despues de cada intento antes de verificar "mvn".
+    # Si winget no existe (Windows 10 sin App Installer / LTSC), no tiene sentido
+    # reintentar 3 veces: se sale de inmediato para que Test-MavenInstalled pase
+    # al respaldo real, que es la descarga del ZIP portable de Apache.
+    if (-not (Test-WingetAvailable)) {
+        Write-Log "winget no disponible: se omite esta via y se usara la descarga portable de Maven." 'WARN'
+        return $false
+    }
     $maxAttempts = 3
     for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
         Write-Log "Instalando Maven via winget (intento $attempt de $maxAttempts)..."
-        & winget install --id Apache.Maven -e --accept-package-agreements --accept-source-agreements --force | Out-Null
-        $wingetExit = $LASTEXITCODE
+        $wingetExit = Invoke-Winget @('install', '--id', 'Apache.Maven', '-e', '--accept-package-agreements', '--accept-source-agreements', '--force')
         Update-SessionPath
         if (Test-CommandExists 'mvn') {
             $mvnVer = & mvn --version 2>&1 | Select-String -Pattern 'Apache Maven' | ForEach-Object { $_.Line }
@@ -1069,15 +1180,21 @@ function Invoke-BiometricSetup {
 function Stop-ExistingProcesses {
     Write-Log "Cerrando procesos anteriores del backend/frontend..." 'STEP'
     
-    # Cerrar ventanas de PowerShell con el tÃ­tulo especÃ­fico
-    $shell = New-Object -ComObject Shell.Application
-    $windows = $shell.Windows()
-    foreach ($window in $windows) {
-        if ($window.LocationName -match 'ControlEatFood') {
-            $window.Quit()
-            Start-Sleep -Milliseconds 500
+    # Cerrar ventanas del shell asociadas al proyecto. Shell.Application no
+    # esta garantizado: falla si no hay sesion de Explorer activa y, corriendo
+    # elevado, devuelve una coleccion vacia. Va en try/catch porque no es
+    # esencial -- lo importante es matar los procesos java/node de mas abajo.
+    try {
+        $shell = New-Object -ComObject Shell.Application -ErrorAction Stop
+        foreach ($window in @($shell.Windows())) {
+            try {
+                if ("$($window.LocationName)" -match 'ControlEatFood') {
+                    $window.Quit()
+                    Start-Sleep -Milliseconds 500
+                }
+            } catch { }
         }
-    }
+    } catch { }
     
     # Matar procesos de Java (backend) que estÃ©n usando el puerto 3000
     $javaProcesses = Get-Process -Name java -ErrorAction SilentlyContinue
@@ -1533,6 +1650,19 @@ logging:
     } finally { Pop-Location }
 }
 
+function ConvertFrom-NssmOutput {
+    # NSSM escribe su salida en UTF-16LE, pero PowerShell la decodifica con la
+    # codepage de la consola (un byte = un caracter), asi que cada letra llega
+    # separada por un NUL: "SERVICE_RUNNING" se convierte en "S\0E\0R\0V\0...".
+    # Consecuencia real (visible en los logs de instalacion): el
+    # "-match 'SERVICE_RUNNING'" NUNCA acertaba y el instalador avisaba
+    # "El servicio podria no haber iniciado" aunque el servicio estuviera
+    # perfectamente arriba. Esto pasa igual en Windows 10 y en Windows 11.
+    param($Raw)
+    if ($null -eq $Raw) { return '' }
+    return ((($Raw | Out-String) -replace "`0", '').Trim())
+}
+
 function Ensure-Nssm {
     # nssm.cc es un unico servidor y responde intermitente (503 "Service Unavailable"
     # observado en pruebas reales, exitoso al reintentar segundos despues). Se reintenta
@@ -1606,7 +1736,7 @@ function Step-ConfigureService {
 
     Write-Host ""
     Write-Host "  --- Cuenta del servicio de Windows ---" -ForegroundColor Yellow
-    Write-Host "    [1] Una cuenta de usuario de Windows (recomendado si aquí está conectado el lector)"
+    Write-Host "    [1] Una cuenta de usuario de Windows (recomendado si aqui esta conectado el lector)"
     Write-Host "    [2] LocalSystem (por defecto, recomendado si este equipo NO tiene el lector ZK9500)"
     $accountChoice = Read-Choice "Seleccionar opcion" -Max 2
 
@@ -1615,8 +1745,8 @@ function Step-ConfigureService {
         do {
             Write-Host ""
             Write-Host "    Importante: debe ser el NOMBRE de usuario (no el PIN de Windows Hello)," -ForegroundColor DarkGray
-            Write-Host "    y la CONTRASEÃ‘A de Windows (no el PIN). Si entrÃ¡s con PIN, necesitÃ¡s" -ForegroundColor DarkGray
-            Write-Host "    crear/recordar tu password real (Ctrl+Alt+Supr â†’ Cambiar contraseÃ±a)." -ForegroundColor DarkGray
+            Write-Host "    y la CONTRASENA de Windows (no el PIN). Si entras con PIN, necesitas" -ForegroundColor DarkGray
+            Write-Host "    crear/recordar tu password real (Ctrl+Alt+Supr -> Cambiar contrasena)." -ForegroundColor DarkGray
             Write-Host ""
             $serviceAccount = Read-Default "Usuario (sin dominio, ej: $defaultUser)" $defaultUser
             $servicePassword = Read-SecureInput "Contrasena de Windows para '$serviceAccount' (se usa solo aqui, no se guarda)"
@@ -1632,8 +1762,8 @@ function Step-ConfigureService {
             } catch { Write-Log "No se pudo validar la cuenta: $($_.Exception.Message)" 'WARN' }
 
             if (-not $validated) {
-                Write-Host "    Las credenciales NO validan contra Windows. El servicio no arrancarÃ¡." -ForegroundColor Red
-                Write-Host "    VerificÃ¡ usuario/contraseÃ±a (recordÃ¡: password real, no PIN de Windows Hello)." -ForegroundColor Red
+                Write-Host "    Las credenciales NO validan contra Windows. El servicio no arrancara." -ForegroundColor Red
+                Write-Host "    Verifica usuario/contrasena (recorda: password real, no PIN de Windows Hello)." -ForegroundColor Red
                 $retry = Read-Host "    Reintentar? (s/n, ENTER para 's')"
                 if ($retry -eq 'n') { Write-Log "Cuenta invalida; volviendo a LocalSystem." 'WARN'; $serviceAccount = "LocalSystem"; $servicePassword = $null; break }
             }
@@ -1653,7 +1783,16 @@ function Step-ConfigureService {
     }
 
     Write-Log "Registrando servicio '$ServiceName'..."
-    $javaExe = (Get-Command java).Source
+    # Sin este control, en un equipo donde Java no quedo en el PATH,
+    # (Get-Command java).Source accede a una propiedad de $null y con
+    # Set-StrictMode revienta el instalador en vez de dar un mensaje util.
+    $javaCmd = Get-Command java -ErrorAction SilentlyContinue
+    if (-not $javaCmd) {
+        Write-Log "No se encontro 'java' en el PATH: no se puede registrar el servicio." 'ERROR'
+        Write-Log "Instala Java 21 (o reabre Inicio.bat para refrescar el PATH) y reintenta." 'WARN'
+        return $false
+    }
+    $javaExe = $javaCmd.Source
     $jarPath = $jarFile.FullName
 
     & $NssmExe install $ServiceName $javaExe "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
@@ -1663,11 +1802,11 @@ function Step-ConfigureService {
     # con un usuario real, NSSM otorga automÃ¡ticamente el derecho
     # "SeServiceLogonRight" y registra el password para el inicio automÃ¡tico.
     if ($serviceAccount -eq "LocalSystem") {
-        & $NssmExe set $ServiceName ObjectName "LocalSystem" 2>&1 | ForEach-Object { Write-Log $_ }
+        $setOut = ConvertFrom-NssmOutput (& $NssmExe set $ServiceName ObjectName "LocalSystem" 2>&1)
     } else {
-        $acctShort = $serviceAccount -replace '^\.\\',''
-        & $NssmExe set $ServiceName ObjectName $serviceAccount $servicePassword 2>&1 | ForEach-Object { Write-Log $_ }
+        $setOut = ConvertFrom-NssmOutput (& $NssmExe set $ServiceName ObjectName $serviceAccount $servicePassword 2>&1)
     }
+    if ($setOut) { Write-Log $setOut }
 
     $credentialsFile = Join-Path $ScriptRoot "credenciales.txt"
     & $NssmExe set $ServiceName AppEnvironmentExtra "DB_URL=$($DbConfig.Url)" "DB_USER=$($DbConfig.User)" "DB_PASSWORD=$($DbConfig.Password)" "JWT_SECRET=$($ProdConfig.JwtSecret)" "CORS_ORIGINS=$($ProdConfig.CorsOrigins)" "PUBLIC_URL=$($ProdConfig.PublicUrl)" "BIOMETRIC_ENCRYPTION_KEY=$($ProdConfig.BiometricEncryptionKey)" "RATE_LIMIT_ENABLED=$($ProdConfig.RateLimitEnabled)" "ZK_NATIVE_PATH=$ZkNativePath" "CREDENTIALS_FILE=$credentialsFile" | Out-Null
@@ -1702,7 +1841,7 @@ function Step-ConfigureService {
     & $NssmExe start $ServiceName | Out-Null
     Start-Sleep -Seconds 5
 
-    $status = & $NssmExe status $ServiceName 2>&1
+    $status = ConvertFrom-NssmOutput (& $NssmExe status $ServiceName 2>&1)
     if ($status -match 'SERVICE_RUNNING') {
         Write-Log "Servicio '$ServiceName' iniciado correctamente." 'SUCCESS'
         if ($serviceAccount -ne "LocalSystem") {
@@ -1862,8 +2001,9 @@ function Update-App {
         }
         & $NssmExe start $ServiceName 2>&1 | Out-Null
         Start-Sleep -Seconds 3
-        $status = & $NssmExe status $ServiceName 2>&1
-        Write-Log "Servicio reiniciado. Estado: $status" 'SUCCESS'
+        $status = ConvertFrom-NssmOutput (& $NssmExe status $ServiceName 2>&1)
+        if ($status -match 'SERVICE_RUNNING') { Write-Log "Servicio reiniciado y corriendo. Estado: $status" 'SUCCESS' }
+        else { Write-Log "El servicio no reporta SERVICE_RUNNING. Estado: $status" 'WARN' }
     }
     Write-Log "Actualizacion completada." 'SUCCESS'
 }
@@ -1878,7 +2018,10 @@ function Repair-App {
     if ($choice -eq 5) { return }
 
     $config = $null
-    if (Test-Path $ConfigFile) { $config = Get-Content $ConfigFile | ConvertFrom-Json }
+    if (Test-Path $ConfigFile) {
+        try { $config = Get-Content $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json }
+        catch { Write-Log "install_config.json ilegible o corrupto: $($_.Exception.Message)" 'WARN'; $config = $null }
+    }
 
     switch ($choice) {
         1 {
@@ -1913,8 +2056,13 @@ function Uninstall-App {
 
     $config = $null
     if (Test-Path $ConfigFile) {
-        $config = Get-Content $ConfigFile | ConvertFrom-Json
-        Write-Log "Configuracion encontrada: $($config.installDate)"
+        try {
+            $config = Get-Content $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            Write-Log "Configuracion encontrada: $($config.installDate)"
+        } catch {
+            Write-Log "install_config.json ilegible; se continua con desinstalacion generica." 'WARN'
+            $config = $null
+        }
     } else {
         Write-Log "No se encontro config previa. Desinstalacion generica." 'WARN'
     }
@@ -1994,7 +2142,7 @@ function Uninstall-App {
         & docker stop control-mysql 2>&1 | Out-Null
         & docker rm control-mysql 2>&1 | Out-Null
         Write-Log "Contenedor Docker 'control-mysql' eliminado." 'SUCCESS'
-    } elseif ($config -and $config.database.Type -eq 'local') {
+    } elseif ($config -and ($config.PSObject.Properties['database']) -and ($config.database.PSObject.Properties['Type']) -and $config.database.Type -eq 'local') {
         Write-Log "MySQL local sin contenedor: elimina la BD manualmente con: DROP DATABASE $($config.database.Name);" 'WARN'
     }
 
@@ -2009,7 +2157,7 @@ function Uninstall-App {
     # desinstalación de la app), Invoke-BiometricSetup lo detecta y omite setup.exe.
     if (Test-Path $LockFile) {
         Remove-Item -Path $LockFile -Force
-        Write-Log "Lock del SDK biométrico (.setup_completado.lock) eliminado." 'SUCCESS'
+        Write-Log "Lock del SDK biometrico (.setup_completado.lock) eliminado." 'SUCCESS'
     }
 
     # La clave de cifrado (ProgramData\ControlEatFood) se CONSERVA a proposito: si
@@ -2042,7 +2190,10 @@ function Show-Diagnostics {
 
     if (Test-Path $NssmExe) { Write-Host "    NSSM:         Instalado" -ForegroundColor Green } else { Write-Host "    NSSM:         NO INSTALADO" -ForegroundColor Red }
     if (Test-Path $NssmExe) {
-        $svcStatus = & $NssmExe status $ServiceName 2>&1
+        $svcStatus = ConvertFrom-NssmOutput (& $NssmExe status $ServiceName 2>&1)
+        # Si el servicio no existe, NSSM devuelve un volcado de varias lineas
+        # ("Can't open service!..."). Se resume en una sola linea legible.
+        if ($svcStatus -notmatch 'SERVICE_') { $svcStatus = 'NO INSTALADO' }
         Write-Host "    Servicio:     $svcStatus" -ForegroundColor $(if ($svcStatus -match 'RUNNING') { 'Green' } else { 'Yellow' })
     }
     if (Test-Path $ConfigFile) { Write-Host "    Config:       EXISTE" -ForegroundColor Green } else { Write-Host "    Config:       NO EXISTE" -ForegroundColor Red }
@@ -2096,18 +2247,31 @@ function Show-MainMenu {
             continue
         }
         
-        switch ($selection) {
-            1 { Start-TestSetup }
-            2 { Install-Full }
-            3 { Install-Full -Reinstall }
-            4 { Update-App }
-            5 { Repair-App }
-            6 { Uninstall-App }
-            7 { Show-Diagnostics }
-            8 {
-                Write-Host "  Saliendo... Hasta luego!" -ForegroundColor Yellow
-                $salir = $true
+        # Cada opcion va en su propio try/catch: antes, cualquier error no
+        # controlado dentro de una opcion subia hasta el try de INICIO, imprimia
+        # "Error inesperado" y CERRABA el instalador, obligando a relanzarlo y a
+        # reescribir toda la configuracion. Ahora el error se reporta y se vuelve
+        # al menu, que es lo util para quien esta instalando en sitio.
+        try {
+            switch ($selection) {
+                1 { Start-TestSetup }
+                2 { Install-Full }
+                3 { Install-Full -Reinstall }
+                4 { Update-App }
+                5 { Repair-App }
+                6 { Uninstall-App }
+                7 { Show-Diagnostics }
+                8 {
+                    Write-Host "  Saliendo... Hasta luego!" -ForegroundColor Yellow
+                    $salir = $true
+                }
             }
+        } catch {
+            Write-Log "La opcion $selection fallo: $_" 'ERROR'
+            Write-Log "Detalle: $($_.ScriptStackTrace)" 'ERROR'
+            Write-Host ""
+            Write-Host "  El instalador sigue abierto: podes reintentar u elegir otra opcion." -ForegroundColor Yellow
+            Write-Host "  El detalle completo quedo en: $LogFile" -ForegroundColor DarkGray
         }
         
         if (-not $salir) {
