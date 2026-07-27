@@ -87,6 +87,7 @@ $ZkNativePath = Join-Path $ScriptRoot "native"
 $SecretsDir       = Join-Path $env:ProgramData "ControlEatFood"
 $BiometricKeyFile = Join-Path $SecretsDir "biometric.key"
 $JwtSecretFile    = Join-Path $SecretsDir "jwt.secret"
+$DbConfigFile     = Join-Path $SecretsDir "db_config.dat"
 
 @($ConfigDir, $LogsDir, $NssmDir) | ForEach-Object {
     if (-not (Test-Path $_)) { New-Item -ItemType Directory -Path $_ -Force | Out-Null }
@@ -1010,6 +1011,25 @@ function Step-ConfigureDatabase {
         $dbConfig.User = ''
         $dbConfig.Password = ''
 
+        # En Produccion se precargan host/puerto/nombre/usuario/password de la
+        # ultima conexion que funciono (persistida fuera de config/, sobrevive
+        # a un Desinstalar). Asi una Reinstalacion reconecta con ENTER, ENTER,
+        # ENTER... en vez de forzar a retipear todo de memoria y arriesgarse a
+        # apuntar a una BD distinta (o vacia) donde las huellas ya cifradas no
+        # sirven de nada.
+        if ($Mode -eq 'Prod') {
+            $savedDb = Read-PersistedDbConfig
+            if ($savedDb) {
+                $dbConfig.Host = $savedDb.Host
+                $dbConfig.Port = $savedDb.Port
+                $dbConfig.Name = $savedDb.Name
+                $dbConfig.User = $savedDb.User
+                $dbConfig.Password = $savedDb.Password
+                if ($savedDb.SslMode) { $dbConfig.SslMode = $savedDb.SslMode }
+                Write-Log "Datos de conexion a BD recuperados de la ultima instalacion (ProgramData)." 'SUCCESS'
+            }
+        }
+
         $connSuccess = $false
         do {
             $dbConfig.Host = if ($dbConfig.Host) { Read-Default "IP/Host del servidor MySQL" $dbConfig.Host } else { Read-RequiredInput "IP/Host del servidor MySQL" }
@@ -1060,7 +1080,9 @@ function Step-ConfigureDatabase {
         # no tienen TLS configurado, asi que el usuario debe poder indicar 'n'.
         Write-Host ""
         Write-Host "  --- Cifrado de la conexion a MySQL (SSL/TLS) ---" -ForegroundColor Yellow
-        $useSsl = Read-Host "  El servidor MySQL soporta conexion SSL/TLS? (s = si / n = no, ENTER = s)"
+        $sslDefault = if ($dbConfig.SslMode -eq 'DISABLED') { 'n' } else { 's' }
+        $useSsl = Read-Host "  El servidor MySQL soporta conexion SSL/TLS? (s = si / n = no, ENTER = $sslDefault)"
+        if ([string]::IsNullOrWhiteSpace($useSsl)) { $useSsl = $sslDefault }
         if ($useSsl -ne 'n') {
             # REQUIRED cifra la conexion pero no valida el certificado contra una CA
             # (apropiado para un MySQL con certificado autofirmado/por defecto, sin CA propia).
@@ -1075,6 +1097,11 @@ function Step-ConfigureDatabase {
     }
 
     Write-Log "DB_URL = $($dbConfig.Url)" 'SUCCESS'
+
+    if ($Mode -eq 'Prod' -and $dbConfig.Password) {
+        Save-PersistedDbConfig -DbConfig $dbConfig
+        Write-Log "Datos de conexion a BD guardados en ProgramData para futuras reinstalaciones." 'SUCCESS'
+    }
 
     # Crear la estructura y los datos iniciales desde RunWindowns\db si la base
     # aun no los tiene (si ya existen, el paso se salta solo). Nunca es fatal:
@@ -1447,6 +1474,22 @@ function Get-OrCreateBiometricKey {
         Write-Log "Clave de cifrado biometrico reutilizada (las huellas existentes seguiran siendo legibles)." 'SUCCESS'
         return $existing
     }
+    Write-Log "No se encontro clave persistida en $BiometricKeyFile (o no se pudo descifrar)." 'WARN'
+
+    # El archivo protegido con DPAPI no esta o no se pudo leer. Antes de generar
+    # una clave NUEVA (que volveria ilegibles las huellas ya registradas en la
+    # BD), se recupera automaticamente del respaldo en texto plano que
+    # Save-BiometricKeyBackup guarda junto a la clave cifrada en cada
+    # generacion -- asi una reinstalacion reconecta sin pedir nada al usuario.
+    $backupPath = Join-Path $SecretsDir "biometric-key-RESPALDO-NO-BORRAR.txt"
+    if (Test-Path $backupPath) {
+        $backupKey = (Get-Content -Path $backupPath -Encoding UTF8 | Where-Object { $_ -and -not $_.StartsWith('#') } | Select-Object -Last 1).Trim()
+        if ($backupKey) {
+            Save-PersistedSecret -Path $BiometricKeyFile -Value $backupKey
+            Write-Log "Clave de cifrado biometrico recuperada automaticamente desde el respaldo: $backupPath" 'SUCCESS'
+            return $backupKey
+        }
+    }
     if ($Reinstall) {
         Write-Host ""
         Write-Host "  [!] No se encontro la clave de cifrado guardada en este equipo." -ForegroundColor Yellow
@@ -1478,6 +1521,33 @@ function Get-OrCreateJwtSecret {
     Save-PersistedSecret -Path $JwtSecretFile -Value $secret
     Write-Log "Nuevo JWT Secret generado y persistido." 'SUCCESS'
     return $secret
+}
+
+# La conexion a BD de produccion (host/puerto/nombre/usuario/password) vivia
+# SOLO en RunWindowns\config\install_config.json -- y "Desinstalar" borra esa
+# carpeta por completo. Resultado: cada Reinstalacion pedia todos los datos de
+# la BD desde cero, con el nombre/usuario en blanco, invitando a errores de
+# tipeo que apuntan a una BD distinta (o vacia) donde las huellas ya cifradas
+# no sirven de nada. Se guarda una copia en ProgramData (protegida con DPAPI,
+# igual que las claves), fuera de config/, para que sobreviva a Desinstalar.
+function Save-PersistedDbConfig {
+    param([hashtable]$DbConfig)
+    $json = $DbConfig | ConvertTo-Json -Compress
+    Save-PersistedSecret -Path $DbConfigFile -Value $json
+}
+
+function Read-PersistedDbConfig {
+    $raw = Read-PersistedSecret -Path $DbConfigFile
+    if (-not $raw) { return $null }
+    try {
+        $obj = $raw | ConvertFrom-Json
+        $result = @{}
+        $obj.PSObject.Properties | ForEach-Object { $result[$_.Name] = $_.Value }
+        return $result
+    } catch {
+        Write-Log "No se pudo leer la configuracion de BD persistida en $DbConfigFile" 'WARN'
+        return $null
+    }
 }
 
 function Step-ConfigureProduction {
