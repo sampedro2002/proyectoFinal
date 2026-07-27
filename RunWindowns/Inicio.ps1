@@ -810,6 +810,48 @@ function Ensure-ControlMysql8 {
 # (baseline-on-migrate): si estos scripts no corren, el esquema se crea igual
 # al arrancar la aplicacion.
 
+$script:MySqlExePath = $null
+function Get-MySqlExe {
+    # Devuelve la ruta de mysql.exe, o $null si no aparece por ningun lado.
+    # El instalador oficial de MySQL para Windows NO agrega su 'bin' al PATH, asi
+    # que buscar solo con Get-Command daba "no encontrado" aunque el servidor
+    # estuviera instalado y corriendo. Se busca en PATH y, si no, en las rutas
+    # habituales (MySQL Server, MariaDB, XAMPP, Laragon, WAMP).
+    if ($script:MySqlExePath) { return $script:MySqlExePath }
+
+    $cmd = Get-Command 'mysql' -ErrorAction SilentlyContinue
+    if ($cmd) { $script:MySqlExePath = $cmd.Source; return $script:MySqlExePath }
+
+    $roots = @(
+        "$env:ProgramFiles\MySQL", "${env:ProgramFiles(x86)}\MySQL",
+        "$env:ProgramFiles\MariaDB", "${env:ProgramFiles(x86)}\MariaDB"
+    ) | Where-Object { $_ -and (Test-Path $_) }
+    foreach ($root in $roots) {
+        # -Depth 2 alcanza "MySQL Server 8.0\bin\mysql.exe" sin recorrer todo el arbol.
+        $found = Get-ChildItem -Path $root -Filter 'mysql.exe' -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+                 Sort-Object FullName -Descending | Select-Object -First 1
+        if ($found) { $script:MySqlExePath = $found.FullName; return $script:MySqlExePath }
+    }
+    foreach ($p in @("$env:SystemDrive\xampp\mysql\bin\mysql.exe", "$env:SystemDrive\laragon\bin\mysql\bin\mysql.exe", "$env:SystemDrive\wamp64\bin\mysql\bin\mysql.exe")) {
+        if (Test-Path $p) { $script:MySqlExePath = $p; return $script:MySqlExePath }
+    }
+    return $null
+}
+
+function Test-MySqlClientExists { return $null -ne (Get-MySqlExe) }
+
+function Test-UseDockerClient {
+    # Decide si las sentencias SQL se ejecutan dentro del contenedor 'control-mysql'
+    # o con el mysql.exe del PATH. Si el usuario eligio motor explicitamente
+    # (Engine), esa eleccion manda; si no (config antigua sin el campo), se cae a
+    # la deteccion de siempre: hay docker y existe el contenedor.
+    param([hashtable]$DbConfig)
+    if ($DbConfig.Type -ne 'local') { return $false }
+    if ($DbConfig.Engine -eq 'mysql')  { return $false }
+    if ($DbConfig.Engine -eq 'docker') { return ((Test-CommandExists 'docker') -and [bool](Get-ControlMysqlImage)) }
+    return ((Test-CommandExists 'docker') -and [bool](Get-ControlMysqlImage))
+}
+
 function Invoke-MySqlClient {
     param(
         [hashtable]$DbConfig,
@@ -819,7 +861,7 @@ function Invoke-MySqlClient {
         [switch]$Silent      # -N -s: sin cabeceras, salida cruda (para SELECT)
     )
     # Ejecutor: el contenedor Docker 'control-mysql' (modo local) o mysql.exe del PATH.
-    $useDocker = ($DbConfig.Type -eq 'local') -and (Test-CommandExists 'docker') -and (Get-ControlMysqlImage)
+    $useDocker = Test-UseDockerClient -DbConfig $DbConfig
     $mysqlArgs = @(
         '--protocol=TCP',
         "--host=$(if ($useDocker) { '127.0.0.1' } else { $DbConfig.Host })",
@@ -841,11 +883,11 @@ function Invoke-MySqlClient {
         try {
             $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
             if ($useDocker) { $sql | & docker exec -i control-mysql mysql @mysqlArgs 2>&1 }
-            else            { $sql | & mysql @mysqlArgs 2>&1 }
+            else            { $sql | & (Get-MySqlExe) @mysqlArgs 2>&1 }
         } finally { $OutputEncoding = $prevEnc }
     }
     elseif ($useDocker) { & docker exec control-mysql mysql @mysqlArgs 2>&1 }
-    else                { & mysql @mysqlArgs 2>&1 }
+    else                { & (Get-MySqlExe) @mysqlArgs 2>&1 }
 }
 
 function Ensure-DatabaseSchema {
@@ -865,9 +907,9 @@ function Ensure-DatabaseSchema {
         return
     }
 
-    $useDocker = ($DbConfig.Type -eq 'local') -and (Test-CommandExists 'docker') -and (Get-ControlMysqlImage)
-    if (-not $useDocker -and -not (Test-CommandExists 'mysql')) {
-        Write-Log "No se encontro el cliente 'mysql' en PATH (ni contenedor Docker): no puedo ejecutar db\*.sql." 'WARN'
+    $useDocker = Test-UseDockerClient -DbConfig $DbConfig
+    if (-not $useDocker -and -not (Test-MySqlClientExists)) {
+        Write-Log "No se encontro el cliente 'mysql' (ni en PATH ni instalado, ni contenedor Docker): no puedo ejecutar db\*.sql." 'WARN'
         Write-Log "No es un problema: Flyway creara el esquema automaticamente al arrancar el backend." 'INFO'
         return
     }
@@ -912,7 +954,7 @@ function Step-ConfigureDatabase {
     Write-Log "Configurar conexion a base de datos ($Mode)..." 'STEP'
 
     $dbConfig = @{
-        Type = ''; Host = 'localhost'; Port = '3306'
+        Type = ''; Engine = ''; Host = 'localhost'; Port = '3306'
         Name = 'control_almuerzos'; User = 'admin'; Password = ''; Url = ''; SslMode = 'PREFERRED'
     }
 
@@ -930,68 +972,89 @@ function Step-ConfigureDatabase {
     if ($choice -eq 1) {
         # ============ LOCAL (solo disponible en modo Pruebas) ============
         $dbConfig.Type = 'local'
-        $dbConfig.Name = Read-Default "Nombre de base de datos" $dbConfig.Name
 
-        # Se consulta la imagen del contenedor 'control-mysql' ANTES de mirar el puerto.
-        # Un contenedor viejo (p. ej. la antigua mysql:5.6) tambien abre el 3306, y antes
-        # eso hacia que se asumiera "MySQL OK" y se corriera contra la version equivocada,
-        # dando luego "Access denied for user 'admin'". Ahora se detecta y se ofrece recrearlo.
-        $controlImage = if (Test-CommandExists 'docker') { Get-ControlMysqlImage } else { $null }
-        $portOpen = Test-TcpPort -HostName 'localhost' -Port 3306
+        # Se muestra tambien la imagen del contenedor 'control-mysql': un contenedor
+        # viejo (p. ej. la antigua mysql:5.6) tambien abre el 3306, y saberlo evita
+        # elegir Docker creyendo que es MySQL 8 y terminar con "Access denied for
+        # user 'admin'" (si se elige, Ensure-ControlMysql8 ofrece recrearlo).
+        $dockerOk    = Test-CommandExists 'docker'
+        $controlImage = if ($dockerOk) { Get-ControlMysqlImage } else { $null }
+        $mysqlExe    = Get-MySqlExe
+        $mysqlOk     = $null -ne $mysqlExe
+        $portOpen    = Test-TcpPort -HostName 'localhost' -Port 3306
 
-        if ($controlImage -and ($controlImage -notmatch '^mysql:8')) {
-            Write-Log "Contenedor 'control-mysql' con imagen '$controlImage' (no es MySQL 8)." 'WARN'
-            $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
-            $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
-            Ensure-ControlMysql8 -DbConfig $dbConfig | Out-Null
+        # La deteccion ya no decide por el usuario: solo se muestra como pista y
+        # es el usuario quien elige contra que motor local se va a trabajar.
+        Write-Host ""
+        Write-Host "  --- Deteccion del entorno local ---" -ForegroundColor Cyan
+        if ($dockerOk) {
+            if ($controlImage) { Write-Host "    Docker: disponible (contenedor 'control-mysql' con imagen '$controlImage')" }
+            else               { Write-Host "    Docker: disponible (sin contenedor 'control-mysql')" }
+        } else {
+            Write-Host "    Docker: no instalado"
         }
-        elseif ($portOpen) {
-            Write-Log "Se detecto un servicio en el puerto 3306 (MySQL ya esta corriendo)." 'SUCCESS'
-            if ($controlImage -match '^mysql:8') {
-                Write-Log "Contenedor Docker 'control-mysql' (MySQL 8) en ejecucion." 'SUCCESS'
-            }
-            $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
+        Write-Host "    Cliente mysql.exe: $(if ($mysqlOk) { $mysqlExe } else { 'no encontrado' })"
+        Write-Host "    Puerto 3306: $(if ($portOpen) { 'en uso (hay un MySQL corriendo)' } else { 'libre' })"
+        Write-Host ""
+
+        Show-Menu "Donde esta el MySQL local que vas a usar?" @(
+            "Contenedor Docker (control-mysql, MySQL 8.0)",
+            "MySQL instalado en esta maquina (servicio local)",
+            "Omitir (lo configuro despues)"
+        )
+        $mysqlChoice = Read-Choice "Seleccionar opcion" -Max 3
+
+        # Credenciales: se piden siempre (salvo al omitir), sea Docker o MySQL local.
+        if ($mysqlChoice -ne 3) {
+            $dbConfig.Name     = Read-Default "Nombre de base de datos" $dbConfig.Name
+            $dbConfig.User     = Read-Default "Usuario de MySQL" $dbConfig.User
             $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
         }
-        else {
-            Show-Menu "Como deseas levantar MySQL local?" @(
-                "Docker (contenedor control-mysql, MySQL 8.0)",
-                "MySQL instalado localmente (requiere mysql en PATH)",
-                "Omitir (lo configuro despues)"
-            )
-            $mysqlChoice = Read-Choice "Seleccionar opcion" -Max 3
-            switch ($mysqlChoice) {
-                1 {
-                    if (-not (Test-CommandExists 'docker')) {
-                        Write-Log "Docker no esta instalado." 'ERROR'
-                        Start-Process "https://www.docker.com/products/docker-desktop/"
-                        Read-Host "  Presione ENTER cuando Docker este instalado"
-                    }
-                    $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
-                    $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
-                    Ensure-ControlMysql8 -DbConfig $dbConfig | Out-Null
+
+        # 'Engine' deja registrado contra que motor eligio trabajar el usuario, para
+        # que el cliente mysql (Invoke-MySqlClient) no lo vuelva a adivinar: con un
+        # contenedor 'control-mysql' presente pero habiendo elegido el MySQL de la
+        # maquina, adivinar mandaba los scripts al contenedor equivocado.
+        $dbConfig.Engine = @{ 1 = 'docker'; 2 = 'mysql'; 3 = '' }[$mysqlChoice]
+
+        switch ($mysqlChoice) {
+            1 {
+                if (-not $dockerOk) {
+                    Write-Log "Docker no esta instalado." 'ERROR'
+                    Start-Process "https://www.docker.com/products/docker-desktop/"
+                    Read-Host "  Presione ENTER cuando Docker este instalado"
                 }
-                2 {
-                    if (-not (Test-CommandExists 'mysql')) {
-                        Write-Log "'mysql' no encontrado en PATH." 'ERROR'
-                        Read-Host "  Presione ENTER cuando MySQL este configurado"
-                    } else {
-                        $dbConfig.User = Read-Default "Usuario de MySQL" "admin"
-                        $dbConfig.Password = Read-RequiredInput "Contrasena para el usuario '$($dbConfig.User)' de MySQL (obligatoria)"
-                        $rootPass = Read-Host "  Contrasena de root en MySQL local (ENTER para omitir)"
-                        if ($rootPass) {
-                            # Sintaxis de MySQL 8: "GRANT ... IDENTIFIED BY" (idioma de 5.6)
-                            # fue eliminado; el usuario se crea/actualiza con CREATE USER IF
-                            # NOT EXISTS + ALTER USER (fija la password aunque ya existiera)
-                            # y el GRANT va aparte.
-                            & mysql -u root -p"$rootPass" -e "CREATE DATABASE IF NOT EXISTS $($dbConfig.Name) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; ALTER USER '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; GRANT ALL PRIVILEGES ON $($dbConfig.Name).* TO '$($dbConfig.User)'@'localhost'; FLUSH PRIVILEGES;" 2>&1 | Out-Null
-                            if ($LASTEXITCODE -eq 0) { Write-Log "Base de datos y usuario configurados localmente." 'SUCCESS' }
-                            else { Write-Log "Error al configurar MySQL local." 'ERROR' }
-                        }
-                    }
-                }
-                3 { Write-Log "Configuracion de DB omitida. Configurala manualmente." 'WARN' }
+                # Ensure-ControlMysql8 cubre los tres casos: no existe (lo crea),
+                # existe con otra imagen (ofrece recrearlo) y existe en mysql:8
+                # (lo inicia y valida la password).
+                Ensure-ControlMysql8 -DbConfig $dbConfig | Out-Null
             }
+            2 {
+                if (-not $mysqlOk) {
+                    Write-Log "No se encontro mysql.exe (ni en PATH ni en las rutas de instalacion habituales)." 'ERROR'
+                    Write-Log "Instala MySQL 8, o agrega su carpeta 'bin' al PATH, y vuelve a intentarlo." 'WARN'
+                    Read-Host "  Presione ENTER cuando MySQL este configurado"
+                    $script:MySqlExePath = $null   # forzar una nueva busqueda tras el ENTER
+                    $mysqlExe = Get-MySqlExe
+                    $mysqlOk  = $null -ne $mysqlExe
+                } else {
+                    Write-Log "Cliente mysql: $mysqlExe" 'SUCCESS'
+                }
+                if ($portOpen) {
+                    Write-Log "Se detecto un servicio en el puerto 3306 (MySQL ya esta corriendo)." 'SUCCESS'
+                }
+                $rootPass = Read-Host "  Contrasena de root en MySQL local (ENTER para omitir el aprovisionamiento)"
+                if ($rootPass -and $mysqlOk) {
+                    # Sintaxis de MySQL 8: "GRANT ... IDENTIFIED BY" (idioma de 5.6)
+                    # fue eliminado; el usuario se crea/actualiza con CREATE USER IF
+                    # NOT EXISTS + ALTER USER (fija la password aunque ya existiera)
+                    # y el GRANT va aparte.
+                    & $mysqlExe -u root -p"$rootPass" -e "CREATE DATABASE IF NOT EXISTS $($dbConfig.Name) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci; CREATE USER IF NOT EXISTS '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; ALTER USER '$($dbConfig.User)'@'localhost' IDENTIFIED BY '$($dbConfig.Password)'; GRANT ALL PRIVILEGES ON $($dbConfig.Name).* TO '$($dbConfig.User)'@'localhost'; FLUSH PRIVILEGES;" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { Write-Log "Base de datos y usuario configurados localmente." 'SUCCESS' }
+                    else { Write-Log "Error al configurar MySQL local." 'ERROR' }
+                }
+            }
+            3 { Write-Log "Configuracion de DB omitida. Configurala manualmente." 'WARN' }
         }
         # allowPublicKeyRetrieval=true: necesario con la autenticacion por defecto
         # de MySQL 8 (caching_sha2_password) cuando la conexion no usa SSL.
