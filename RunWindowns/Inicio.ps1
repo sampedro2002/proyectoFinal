@@ -116,10 +116,23 @@ function Write-Log {
 
 function Write-Banner {
     param([string]$Subtitle = '')
+    # La enye y la tilde se construyen con [char] en lugar de escribirse
+    # literalmente: este .ps1 se guarda sin BOM y PowerShell 5.1 lo interpreta
+    # como ANSI, con lo que un "Amaguana" con enye literal saldria en pantalla
+    # como "AmaguaA+-a". Asi el archivo sigue siendo ASCII puro y el caracter se
+    # resuelve en tiempo de ejecucion, que si respeta la pagina de codigos de la
+    # consola.
+    $n = [char]0xF1  # n con enye
+    $o = [char]0xD3  # O mayuscula con tilde
+    $line = "=" * 70
+    $center = { param([string]$t) (' ' * [Math]::Max(0, [int]((70 - $t.Length) / 2))) + $t }
+
     Write-Host ""
-    Write-Host "======================================================================" -ForegroundColor Cyan
-    Write-Host "     CONTROL EAT FOOD $Subtitle" -ForegroundColor Cyan
-    Write-Host "======================================================================" -ForegroundColor Cyan
+    Write-Host $line -ForegroundColor Cyan
+    Write-Host (& $center "INSTALACI${o}N - CONTROL DE ALMUERZOS") -ForegroundColor White
+    Write-Host (& $center "Castillo de Amagua${n}a") -ForegroundColor White
+    Write-Host (& $center ("ControlEatFood $Subtitle").Trim()) -ForegroundColor DarkGray
+    Write-Host $line -ForegroundColor Cyan
     Write-Host ""
 }
 
