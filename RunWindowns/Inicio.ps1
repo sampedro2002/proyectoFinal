@@ -1084,6 +1084,7 @@ function Step-ConfigureDatabase {
         # ENTER... en vez de forzar a retipear todo de memoria y arriesgarse a
         # apuntar a una BD distinta (o vacia) donde las huellas ya cifradas no
         # sirven de nada.
+        $savedDb = $null
         if ($Mode -eq 'Prod') {
             $savedDb = Read-PersistedDbConfig
             if ($savedDb) {
@@ -1097,70 +1098,99 @@ function Step-ConfigureDatabase {
             }
         }
 
-        $connSuccess = $false
-        do {
-            $dbConfig.Host = if ($dbConfig.Host) { Read-Default "IP/Host del servidor MySQL" $dbConfig.Host } else { Read-RequiredInput "IP/Host del servidor MySQL" }
-            $dbConfig.Port = Read-Port "Puerto" $dbConfig.Port
-            $dbConfig.Name = if ($dbConfig.Name) { Read-Default "Nombre de base de datos" $dbConfig.Name } else { Read-RequiredInput "Nombre de base de datos" }
-            $dbConfig.User = if ($dbConfig.User) { Read-Default "Usuario" $dbConfig.User } else { Read-RequiredInput "Usuario" }
-            
-            if ($Mode -eq 'Prod') {
-                if ($dbConfig.Password) {
-                    $newPass = Read-SecureInput "Contrasena (ENTER para mantener actual)"
-                    if (-not [string]::IsNullOrWhiteSpace($newPass)) { $dbConfig.Password = $newPass }
-                } else {
-                    $dbConfig.Password = Read-SecureInput "Contrasena"
-                }
-            } else {
-                $dbConfig.Password = if ($dbConfig.Password) { Read-Default "Contrasena" $dbConfig.Password } else { Read-RequiredInput "Contrasena" }
-            }
-
+        # Si ya hay datos guardados de una instalacion previa (tipicamente una
+        # Reinstalacion), se muestran de una vez y se pide UNA sola confirmacion
+        # en vez de repreguntar host/puerto/nombre/usuario/password/SSL uno por
+        # uno: con 's' o ENTER se acepta todo tal cual esta guardado y se sigue
+        # de largo. Con 'n' cae al flujo de siempre (editar campo por campo).
+        $dbConfirmed = $false
+        if ($savedDb) {
             Write-Host ""
-            Write-Host "  --- Resumen de configuracion ---" -ForegroundColor Cyan
+            Write-Host "  --- Datos de conexion guardados (ultima instalacion) ---" -ForegroundColor Cyan
             Write-Host "    Host: $($dbConfig.Host):$($dbConfig.Port)"
             Write-Host "    Base de datos: $($dbConfig.Name)"
             Write-Host "    Usuario: $($dbConfig.User)"
+            Write-Host "    SSL/TLS: $(if ($dbConfig.SslMode -eq 'DISABLED') { 'No' } else { 'Si' })"
             Write-Host ""
-            
-            $confirm = Read-Host "  Los datos son correctos? (s/n, ENTER para 's')"
-            if ($confirm -eq 'n') {
-                continue
-            }
-
-            Write-Log "Probando conexion a $($dbConfig.Host):$($dbConfig.Port)..."
-            $connSuccess = Test-TcpPort -HostName $dbConfig.Host -Port ([int]$dbConfig.Port)
-            if ($connSuccess) {
-                Write-Log "Conexion TCP exitosa a $($dbConfig.Host):$($dbConfig.Port)." 'SUCCESS'
-            } else {
-                Write-Log "No se pudo conectar a $($dbConfig.Host):$($dbConfig.Port)." 'ERROR'
-                Write-Log "Verifica firewall, que MySQL acepte conexiones remotas, y las credenciales." 'WARN'
-                
-                $retry = Read-Host "  La conexion TCP fallo. Reintentar configuracion? (s/n, n para continuar de todos modos)"
-                if ($retry -eq 'n') {
-                    $connSuccess = $true
+            $confirm = Read-Host "  Son estos los datos correctos? (s/n, ENTER = s)"
+            if ($confirm -ne 'n') {
+                $dbConfirmed = $true
+                Write-Log "Probando conexion a $($dbConfig.Host):$($dbConfig.Port)..."
+                if (Test-TcpPort -HostName $dbConfig.Host -Port ([int]$dbConfig.Port)) {
+                    Write-Log "Conexion TCP exitosa a $($dbConfig.Host):$($dbConfig.Port)." 'SUCCESS'
+                } else {
+                    Write-Log "No se pudo conectar a $($dbConfig.Host):$($dbConfig.Port); se continua con los datos guardados de todos modos." 'WARN'
                 }
+                $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?sslMode=$($dbConfig.SslMode)&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
             }
-        } until ($connSuccess)
-
-        # Cifrado de la conexion a MySQL: se pregunta SIEMPRE que la conexion sea
-        # remota (tanto en Pruebas como en Produccion). Muchos servidores MySQL
-        # no tienen TLS configurado, asi que el usuario debe poder indicar 'n'.
-        Write-Host ""
-        Write-Host "  --- Cifrado de la conexion a MySQL (SSL/TLS) ---" -ForegroundColor Yellow
-        $sslDefault = if ($dbConfig.SslMode -eq 'DISABLED') { 'n' } else { 's' }
-        $useSsl = Read-Host "  El servidor MySQL soporta conexion SSL/TLS? (s = si / n = no, ENTER = $sslDefault)"
-        if ([string]::IsNullOrWhiteSpace($useSsl)) { $useSsl = $sslDefault }
-        if ($useSsl -ne 'n') {
-            # REQUIRED cifra la conexion pero no valida el certificado contra una CA
-            # (apropiado para un MySQL con certificado autofirmado/por defecto, sin CA propia).
-            $dbConfig.SslMode = 'REQUIRED'
-            Write-Log "Conexion a MySQL: sslMode=REQUIRED (cifrada, sin verificar CA)." 'SUCCESS'
-        } else {
-            $dbConfig.SslMode = 'DISABLED'
-            Write-Log "Conexion a MySQL SIN cifrar (sslMode=DISABLED)." 'WARN'
         }
 
-        $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?sslMode=$($dbConfig.SslMode)&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
+        if (-not $dbConfirmed) {
+            $connSuccess = $false
+            do {
+                $dbConfig.Host = if ($dbConfig.Host) { Read-Default "IP/Host del servidor MySQL" $dbConfig.Host } else { Read-RequiredInput "IP/Host del servidor MySQL" }
+                $dbConfig.Port = Read-Port "Puerto" $dbConfig.Port
+                $dbConfig.Name = if ($dbConfig.Name) { Read-Default "Nombre de base de datos" $dbConfig.Name } else { Read-RequiredInput "Nombre de base de datos" }
+                $dbConfig.User = if ($dbConfig.User) { Read-Default "Usuario" $dbConfig.User } else { Read-RequiredInput "Usuario" }
+
+                if ($Mode -eq 'Prod') {
+                    if ($dbConfig.Password) {
+                        $newPass = Read-SecureInput "Contrasena (ENTER para mantener actual)"
+                        if (-not [string]::IsNullOrWhiteSpace($newPass)) { $dbConfig.Password = $newPass }
+                    } else {
+                        $dbConfig.Password = Read-SecureInput "Contrasena"
+                    }
+                } else {
+                    $dbConfig.Password = if ($dbConfig.Password) { Read-Default "Contrasena" $dbConfig.Password } else { Read-RequiredInput "Contrasena" }
+                }
+
+                Write-Host ""
+                Write-Host "  --- Resumen de configuracion ---" -ForegroundColor Cyan
+                Write-Host "    Host: $($dbConfig.Host):$($dbConfig.Port)"
+                Write-Host "    Base de datos: $($dbConfig.Name)"
+                Write-Host "    Usuario: $($dbConfig.User)"
+                Write-Host ""
+
+                $confirm = Read-Host "  Los datos son correctos? (s/n, ENTER para 's')"
+                if ($confirm -eq 'n') {
+                    continue
+                }
+
+                Write-Log "Probando conexion a $($dbConfig.Host):$($dbConfig.Port)..."
+                $connSuccess = Test-TcpPort -HostName $dbConfig.Host -Port ([int]$dbConfig.Port)
+                if ($connSuccess) {
+                    Write-Log "Conexion TCP exitosa a $($dbConfig.Host):$($dbConfig.Port)." 'SUCCESS'
+                } else {
+                    Write-Log "No se pudo conectar a $($dbConfig.Host):$($dbConfig.Port)." 'ERROR'
+                    Write-Log "Verifica firewall, que MySQL acepte conexiones remotas, y las credenciales." 'WARN'
+
+                    $retry = Read-Host "  La conexion TCP fallo. Reintentar configuracion? (s/n, n para continuar de todos modos)"
+                    if ($retry -eq 'n') {
+                        $connSuccess = $true
+                    }
+                }
+            } until ($connSuccess)
+
+            # Cifrado de la conexion a MySQL: se pregunta SIEMPRE que la conexion sea
+            # remota (tanto en Pruebas como en Produccion). Muchos servidores MySQL
+            # no tienen TLS configurado, asi que el usuario debe poder indicar 'n'.
+            Write-Host ""
+            Write-Host "  --- Cifrado de la conexion a MySQL (SSL/TLS) ---" -ForegroundColor Yellow
+            $sslDefault = if ($dbConfig.SslMode -eq 'DISABLED') { 'n' } else { 's' }
+            $useSsl = Read-Host "  El servidor MySQL soporta conexion SSL/TLS? (s = si / n = no, ENTER = $sslDefault)"
+            if ([string]::IsNullOrWhiteSpace($useSsl)) { $useSsl = $sslDefault }
+            if ($useSsl -ne 'n') {
+                # REQUIRED cifra la conexion pero no valida el certificado contra una CA
+                # (apropiado para un MySQL con certificado autofirmado/por defecto, sin CA propia).
+                $dbConfig.SslMode = 'REQUIRED'
+                Write-Log "Conexion a MySQL: sslMode=REQUIRED (cifrada, sin verificar CA)." 'SUCCESS'
+            } else {
+                $dbConfig.SslMode = 'DISABLED'
+                Write-Log "Conexion a MySQL SIN cifrar (sslMode=DISABLED)." 'WARN'
+            }
+
+            $dbConfig.Url = "jdbc:mysql://$($dbConfig.Host):$($dbConfig.Port)/$($dbConfig.Name)?sslMode=$($dbConfig.SslMode)&serverTimezone=America/Guayaquil&allowPublicKeyRetrieval=true"
+        }
     }
 
     Write-Log "DB_URL = $($dbConfig.Url)" 'SUCCESS'

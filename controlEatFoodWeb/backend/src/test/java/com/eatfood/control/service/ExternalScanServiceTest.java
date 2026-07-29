@@ -195,7 +195,7 @@ class ExternalScanServiceTest {
 
         ManualScanRequest req = new ManualScanRequest(
                 null, ana.getId(), restaurant.getId(),
-                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+                List.of(new ManualScanItem(empleado.getId(), null, List.of("BREAKFAST"))));
 
         ManualScanResponse res = scanService.manualScan(req);
 
@@ -217,7 +217,7 @@ class ExternalScanServiceTest {
 
         ManualScanRequest req = new ManualScanRequest(
                 null, misma.getId(), restaurant.getId(),
-                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+                List.of(new ManualScanItem(empleado.getId(), null, List.of("BREAKFAST"))));
 
         ManualScanResponse res = scanService.manualScan(req);
 
@@ -232,7 +232,7 @@ class ExternalScanServiceTest {
 
         ManualScanRequest req = new ManualScanRequest(
                 empleado.getId(), ana.getId(), restaurant.getId(),
-                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+                List.of(new ManualScanItem(empleado.getId(), null, List.of("BREAKFAST"))));
 
         ManualScanResponse res = scanService.manualScan(req);
 

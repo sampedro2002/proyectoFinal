@@ -95,8 +95,8 @@ class ManualProxyScanServiceTest {
                 null,
                 restaurant.getId(),
                 List.of(
-                        new ManualScanItem(juan.getId(), List.of("BREAKFAST", "LUNCH")), // Almuerzo + Merienda
-                        new ManualScanItem(luis.getId(), List.of("BREAKFAST"))         // solo Almuerzo
+                        new ManualScanItem(juan.getId(), null, List.of("BREAKFAST", "LUNCH")), // Almuerzo + Merienda
+                        new ManualScanItem(luis.getId(), null, List.of("BREAKFAST"))         // solo Almuerzo
                 ));
 
         ManualScanResponse res = scanService.manualScan(req);
