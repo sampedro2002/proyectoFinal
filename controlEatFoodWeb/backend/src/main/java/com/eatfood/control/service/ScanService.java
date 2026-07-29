@@ -337,8 +337,7 @@ public class ScanService {
         final Employee proxyEmp = proxy;
         final ExternalPerson proxyExternal = proxyExt;
 
-        // El proxy empleado no puede ser titular de sí mismo (el proxy externo se
-        // valida por cédula dentro del bucle, al conocer al titular)
+        // El proxy no puede ser titular de sí mismo. Verificamos por ID si se envió
         if (proxyEmp != null) {
             boolean proxyIsAlsoTitular = req.titulars().stream()
                     .anyMatch(item -> proxyEmp.getId().equals(item.employeeId()));
@@ -348,50 +347,92 @@ public class ScanService {
                         proxyName, null, 0);
             }
         }
+        if (proxyExternal != null) {
+            boolean proxyIsAlsoTitular = req.titulars().stream()
+                    .anyMatch(item -> proxyExternal.getId().equals(item.externalPersonId()));
+            if (proxyIsAlsoTitular) {
+                return new ManualScanResponse("ERROR",
+                        "La persona externa que retira no puede ser al mismo tiempo titular de sí misma.",
+                        proxyName, null, 0);
+            }
+        }
+
         for (ManualScanItem item : req.titulars()) {
-            // Lock pesimista igual que el escaneo por huella: serializa registros
-            // concurrentes del mismo empleado (manual + kiosco a la vez) para que el
-            // chequeo "ya consumió este plato hoy" no compita con otra transacción.
-            Employee titular = employeeRepository.findByIdForUpdate(item.employeeId())
-                    .orElse(null);
-            if (titular == null || titular.isDeleted()) {
-                skipped.add("Empleado ID " + item.employeeId() + " no encontrado");
+            Employee titularEmp = null;
+            ExternalPerson titularExt = null;
+            String titularName;
+            String titularIdentityCard;
+            boolean allowsLunch = true;
+            boolean allowsSnack = true;
+
+            if (item.employeeId() != null) {
+                // Lock pesimista igual que el escaneo por huella: serializa registros
+                // concurrentes del mismo empleado (manual + kiosco a la vez).
+                titularEmp = employeeRepository.findByIdForUpdate(item.employeeId()).orElse(null);
+                if (titularEmp == null || titularEmp.isDeleted()) {
+                    skipped.add("Empleado ID " + item.employeeId() + " no encontrado");
+                    continue;
+                }
+                if (titularEmp.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+                    skipped.add(titularEmp.getFullName() + ": Empleado inactivo");
+                    continue;
+                }
+                titularName = titularEmp.getFullName();
+                titularIdentityCard = titularEmp.getIdentityCard();
+                allowsLunch = titularEmp.isAllowsLunch();
+                allowsSnack = titularEmp.effectiveSnack();
+            } else if (item.externalPersonId() != null) {
+                titularExt = externalPersonRepository.findById(item.externalPersonId()).orElse(null);
+                if (titularExt == null) {
+                    skipped.add("Persona externa ID " + item.externalPersonId() + " no encontrada");
+                    continue;
+                }
+                titularName = titularExt.getFullName();
+                titularIdentityCard = titularExt.getIdentityCard();
+            } else {
+                skipped.add("Ítem sin titular válido");
                 continue;
             }
-            if (titular.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
-                skipped.add(titular.getFullName() + ": Empleado inactivo");
+
+            // Quien retira no puede ser la misma persona que el titular (incluso cruzando tablas por cédula)
+            if (proxyExternal != null && proxyExternal.getIdentityCard().equals(titularIdentityCard)) {
+                skipped.add(titularName + ": quien retira no puede ser el mismo titular");
                 continue;
             }
-            // Quien retira (persona externa) no puede ser la misma persona que el titular
-            if (proxyExternal != null && proxyExternal.getIdentityCard().equals(titular.getIdentityCard())) {
-                skipped.add(titular.getFullName() + ": quien retira no puede ser el mismo titular");
+            if (proxyEmp != null && proxyEmp.getIdentityCard().equals(titularIdentityCard)) {
+                skipped.add(titularName + ": quien retira no puede ser el mismo titular");
                 continue;
             }
+
             if (item.mealTypeCodes() == null || item.mealTypeCodes().isEmpty()) {
                 continue;
             }
-            // Comidas ya registradas hoy para este titular. Se usa un Set mutable para
-            // también bloquear duplicados dentro de la MISMA petición (código repetido).
-            Set<String> consumedToday = new HashSet<>(
-                    consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), businessDate));
-            String observation = proxyName + " retira de " + titular.getFullName();
+
+            // Comidas ya registradas hoy para este titular.
+            List<String> todayList = titularEmp != null
+                    ? consumptionRepository.findMealNamesByEmployeeIdAndBusinessDate(titularEmp.getId(), businessDate)
+                    : consumptionRepository.findMealNamesByExternalPersonIdAndBusinessDate(titularExt.getId(), businessDate);
+            Set<String> consumedToday = new HashSet<>(todayList);
+
+            String observation = proxyName + " retira de " + titularName;
             for (String code : item.mealTypeCodes()) {
                 String mealName = mealNameForCode(code);
-                // Permiso del empleado: Merienda requiere allowsSnack; Almuerzo, allowsLunch.
-                boolean allowed = "Merienda".equals(mealName) ? titular.effectiveSnack() : titular.isAllowsLunch();
+                // Permiso del empleado: Merienda requiere allowsSnack; Almuerzo, allowsLunch. (Externos siempre true)
+                boolean allowed = "Merienda".equals(mealName) ? allowsSnack : allowsLunch;
                 if (!allowed) {
-                    skipped.add(titular.getFullName() + ": " + mealName + " (no permitido)");
-                    log.info("[MANUAL] omitido (no permitido): '{}' comida='{}'", titular.getFullName(), mealName);
+                    skipped.add(titularName + ": " + mealName + " (no permitido)");
+                    log.info("[MANUAL] omitido (no permitido): '{}' comida='{}'", titularName, mealName);
                     continue;
                 }
-                // No permitir volver a registrar un plato ya consumido hoy (huella o manual).
+                // No permitir volver a registrar un plato ya consumido hoy
                 if (consumedToday.contains(mealName)) {
-                    skipped.add(titular.getFullName() + ": " + mealName + " (ya registrada)");
-                    log.info("[MANUAL] omitido (duplicado): '{}' comida='{}'", titular.getFullName(), mealName);
+                    skipped.add(titularName + ": " + mealName + " (ya registrada)");
+                    log.info("[MANUAL] omitido (duplicado): '{}' comida='{}'", titularName, mealName);
                     continue;
                 }
                 Consumption consumption = Consumption.builder()
-                        .employee(titular)
+                        .employee(titularEmp)
+                        .externalPerson(titularExt)
                         .restaurant(restaurant)
                         .proxyEmployee(proxyEmp)
                         .proxyExternalPerson(proxyExternal)
@@ -409,7 +450,7 @@ public class ScanService {
                 created++;
                 lastMealName = mealName;
                 log.info("[MANUAL] ✓ '{}' retira de '{}' (comida='{}')",
-                        proxyName, titular.getFullName(), mealName);
+                        proxyName, titularName, mealName);
             }
         }
 

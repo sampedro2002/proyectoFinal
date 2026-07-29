@@ -87,7 +87,8 @@ public final class ScanDtos {
 
     /** Un titular y los tipos de comida que el proxy retira por el. */
     public record ManualScanItem(
-            @NotNull Long employeeId,
+            Long employeeId,
+            Long externalPersonId,
             @NotNull List<String> mealTypeCodes) {}
 
     public record ManualScanResponse(

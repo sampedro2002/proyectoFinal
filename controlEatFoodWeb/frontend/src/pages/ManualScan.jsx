@@ -177,11 +177,10 @@ export default function ManualScan() {
     }
     const t = setTimeout(() => {
       const seq = ++proxySeqRef.current;
-      api.get('/employees', { params: { term: proxyTerm.trim(), size: 8 } })
+      api.get('/manual-consumptions/proxy-candidates', { params: { term: proxyTerm.trim() } })
         .then((r) => {
           if (seq !== proxySeqRef.current) return;
-          const data = r.data.content || r.data || [];
-          setProxySuggestions(data.filter(e => e.status === 'ACTIVE'));
+          setProxySuggestions(r.data || []);
           setShowProxySuggest(true);
         })
         .catch(() => { if (seq === proxySeqRef.current) setProxySuggestions([]); });
@@ -196,11 +195,10 @@ export default function ManualScan() {
     }
     const t = setTimeout(() => {
       const seq = ++titularSeqRef.current;
-      api.get('/employees', { params: { term: titularTerm.trim(), size: 8 } })
+      api.get('/manual-consumptions/proxy-candidates', { params: { term: titularTerm.trim() } })
         .then((r) => {
           if (seq !== titularSeqRef.current) return;
-          const data = r.data.content || r.data || [];
-          setTitularSuggestions(data.filter(e => e.status === 'ACTIVE'));
+          setTitularSuggestions(r.data || []);
           setShowTitularSuggest(true);
         })
         .catch(() => { if (seq === titularSeqRef.current) setTitularSuggestions([]); });
@@ -216,11 +214,10 @@ export default function ManualScan() {
     }
     const t = setTimeout(() => {
       const seq = ++extProxySeqRef.current;
-      api.get('/employees', { params: { term: extProxyTerm.trim(), size: 8 } })
+      api.get('/manual-consumptions/proxy-candidates', { params: { term: extProxyTerm.trim() } })
         .then((r) => {
           if (seq !== extProxySeqRef.current) return;
-          const data = r.data.content || r.data || [];
-          setExtProxySuggestions(data.filter(e => e.status === 'ACTIVE'));
+          setExtProxySuggestions(r.data || []);
           setShowExtProxySuggest(true);
         })
         .catch(() => { if (seq === extProxySeqRef.current) setExtProxySuggestions([]); });
@@ -277,7 +274,7 @@ export default function ManualScan() {
     // que ya lo actualizó el propio onChange) y sin dereferenciar emp.
     if (!emp) { setProxy(null); setResult(null); setError(''); return; }
     // Bloquear si la persona que retira ya está en la lista de titulares
-    if (titulars.find((t) => t.id === emp.id)) {
+    if (titulars.find((t) => t.id === emp.id && t.type === emp.type)) {
       setError('El empleado que retira no puede ser al mismo tiempo titular. Quítalo de la lista de titulares primero.');
       setProxyTerm('');
       setProxySuggestions([]);
@@ -295,37 +292,41 @@ export default function ManualScan() {
     // agrega al elegirlo de las sugerencias, así que con null no se hace nada.
     if (!emp) return;
     // Bloquear si el titular seleccionado es el mismo que quien retira
-    if (proxy && proxy.id === emp.id) {
-      setError('El titular no puede ser el mismo que el empleado que retira.');
+    if (proxy && proxy.id === emp.id && proxy.type === emp.type) {
+      setError('El titular no puede ser el mismo que la persona que retira.');
       setTitularTerm('');
       setTitularSuggestions([]);
       setShowTitularSuggest(false);
       return;
     }
-    if (titulars.find((t) => t.id === emp.id)) {
+    if (titulars.find((t) => t.id === emp.id && t.type === emp.type)) {
       setTitularTerm(''); setTitularSuggestions([]); setShowTitularSuggest(false);
       return;
     }
 
-    // Se consulta al backend qué comidas puede registrarse HOY este empleado:
-    // las permitidas (allowsLunch/allowsSnack) y que aún no consumió. Con eso se
-    // pre-seleccionan solo las disponibles y se bloquean las ya registradas.
     let avail = null;
-    try {
-      const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`);
-      avail = data;
-    } catch { /* si falla, se cae a los flags del propio empleado (sin datos de consumo de hoy) */ }
+    let allowsLunch = true;
+    let allowsSnack = true;
+    let hadAlmuerzo = false;
+    let hadMerienda = false;
 
-    const allowsLunch = avail ? avail.allowsLunch : !!emp.allowsLunch;
-    const allowsSnack = avail ? avail.allowsSnack : !!(emp.allowsSnack ?? emp.effectiveSnack);
-    const hadAlmuerzo = avail ? avail.hadAlmuerzo : false;
-    const hadMerienda = avail ? avail.hadMerienda : false;
+    // Solo consultar disponibilidad si es empleado
+    if (emp.type === 'EMPLOYEE') {
+      try {
+        const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`);
+        avail = data;
+      } catch { /* ignorar */ }
+      allowsLunch = avail ? avail.allowsLunch : false;
+      allowsSnack = avail ? avail.allowsSnack : false;
+      hadAlmuerzo = avail ? avail.hadAlmuerzo : false;
+      hadMerienda = avail ? avail.hadMerienda : false;
+    }
     const availableCodes = avail ? avail.availableCodes : [
       ...(allowsLunch ? ['BREAKFAST'] : []),
       ...(allowsSnack ? ['LUNCH'] : []),
     ];
 
-    setTitulars((arr) => arr.find((t) => t.id === emp.id)
+    setTitulars((arr) => arr.find((t) => t.id === emp.id && t.type === emp.type)
       ? arr
       : [...arr, { ...emp, allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, mealCodes: [...availableCodes] }]);
     setTitularTerm('');
@@ -334,12 +335,12 @@ export default function ManualScan() {
     setResult(null); setError('');
   }
 
-  function removeTitular(id) {
-    setTitulars((arr) => arr.filter((t) => t.id !== id));
+  function removeTitular(id, type) {
+    setTitulars((arr) => arr.filter((t) => !(t.id === id && t.type === type)));
   }
 
-  function setTitularMeals(id, code, checked) {
-    setTitulars((arr) => arr.map((t) => t.id === id
+  function setTitularMeals(id, type, code, checked) {
+    setTitulars((arr) => arr.map((t) => (t.id === id && t.type === type)
       ? { ...t, mealCodes: checked ? [...t.mealCodes, code] : t.mealCodes.filter((c) => c !== code) }
       : t));
   }
@@ -365,13 +366,18 @@ export default function ManualScan() {
       if (titulars.length === 0) { setError('Agregue al menos un titular.'); return; }
       const items = titulars
         .filter((t) => t.mealCodes.length > 0)
-        .map((t) => ({ employeeId: t.id, mealTypeCodes: t.mealCodes }));
+        .map((t) => ({
+          employeeId: t.type === 'EMPLOYEE' ? t.id : null,
+          externalPersonId: t.type === 'EXTERNAL' ? t.id : null,
+          mealTypeCodes: t.mealCodes
+        }));
       if (items.length === 0) { setError('Seleccione al menos un tipo de comida por titular.'); return; }
 
       setLoading(true);
       try {
         const { data } = await api.post('/manual-consumptions', {
-          proxyEmployeeId: proxy.id,
+          proxyEmployeeId: proxy.type === 'EMPLOYEE' ? proxy.id : null,
+          proxyExternalPersonId: proxy.type === 'EXTERNAL' ? proxy.id : null,
           restaurantId: Number(restaurantId),
           titulars: items,
         });
@@ -412,7 +418,8 @@ export default function ManualScan() {
             mealTypeCode: code,
             restaurantId: Number(restaurantId),
             observation: observation.trim() || null,
-            proxyEmployeeId: extProxyEnabled && extProxy ? extProxy.id : null,
+            proxyEmployeeId: extProxyEnabled && extProxy && extProxy.type === 'EMPLOYEE' ? extProxy.id : null,
+            proxyExternalPersonId: extProxyEnabled && extProxy && extProxy.type === 'EXTERNAL' ? extProxy.id : null,
           });
           // El endpoint responde 200 también cuando NO registró (OUT_OF_SCHEDULE,
           // DUPLICATE…), así que el éxito se decide por data.status, no por el HTTP.
@@ -518,7 +525,7 @@ export default function ManualScan() {
                   <label>Titulares ({titulars.length})</label>
                   <div style={{ display: 'grid', gap: 8 }}>
                     {titulars.map((t) => (
-                      <div key={t.id} style={{
+                      <div key={t.id + '-' + t.type} style={{
                         border: '1px solid var(--border, #334155)',
                         borderRadius: 8, padding: '8px 10px',
                         background: 'rgba(255,255,255,0.02)',
@@ -532,7 +539,7 @@ export default function ManualScan() {
                             type="button"
                             className="ghost"
                             style={{ padding: '2px 8px', fontSize: 12 }}
-                            onClick={() => removeTitular(t.id)}
+                            onClick={() => removeTitular(t.id, t.type)}
                           >
                             Quitar
                           </button>
@@ -561,7 +568,7 @@ export default function ManualScan() {
                                           type="checkbox"
                                           disabled={consumed}
                                           checked={!consumed && t.mealCodes.includes(m.code)}
-                                          onChange={(e) => setTitularMeals(t.id, m.code, e.target.checked)}
+                                          onChange={(e) => setTitularMeals(t.id, t.type, m.code, e.target.checked)}
                                         />
                                         {m.name}{consumed ? ' (ya registrada hoy)' : ''}
                                       </label>
