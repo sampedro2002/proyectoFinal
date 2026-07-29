@@ -7,7 +7,8 @@
 -- EXTERNAL) con el proxy de "retira por otro" (consumo.empleado_apoderado_id),
 -- y la tabla persona_externa: las personas externas (visitantes/contratistas)
 -- viven SEPARADAS de empleado — sus consumos referencian persona_externa_id y
--- también pueden ser quien retira (persona_externa_apoderada_id).
+-- también pueden ser quien retira (persona_externa_apoderada_id). Todo esto
+-- vivía en migraciones V3 aparte, ahora fusionado aquí.
 -- Esta migración es la ÚNICA fuente de verdad del esquema. El instalador
 -- (RunWindowns\Inicio.ps1) solo crea la BASE de datos vacía; las tablas las
 -- crea Flyway al arrancar el backend.
