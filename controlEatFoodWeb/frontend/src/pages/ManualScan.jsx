@@ -275,7 +275,7 @@ export default function ManualScan() {
     if (!emp) { setProxy(null); setResult(null); setError(''); return; }
     // Bloquear si la persona que retira ya está en la lista de titulares
     if (titulars.find((t) => t.id === emp.id && t.type === emp.type)) {
-      setError('El empleado que retira no puede ser al mismo tiempo titular. Quítalo de la lista de titulares primero.');
+      setError('La persona que retira no puede ser al mismo tiempo titular. Quítalo de la lista de titulares primero.');
       setProxyTerm('');
       setProxySuggestions([]);
       setShowProxySuggest(false);
@@ -361,7 +361,7 @@ export default function ManualScan() {
     setError(''); setResult(null);
 
     if (mode === 'proxy') {
-      if (!proxy) { setError('Seleccione el empleado que retira.'); return; }
+      if (!proxy) { setError('Seleccione la persona que retira.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (titulars.length === 0) { setError('Agregue al menos un titular.'); return; }
       const items = titulars
@@ -404,7 +404,7 @@ export default function ManualScan() {
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (selectedMealCodes.length === 0) { setError('Seleccione al menos un tipo de comida.'); return; }
-      if (extProxyEnabled && !extProxy) { setError('Seleccione el empleado que retira.'); return; }
+      if (extProxyEnabled && !extProxy) { setError('Seleccione la persona que retira.'); return; }
 
       setLoading(true);
       const successResults = [];
@@ -485,15 +485,15 @@ export default function ManualScan() {
 
         <p style={{ color: '#94a3b8', marginTop: 0, fontSize: 13 }}>
           {mode === 'proxy'
-            ? 'Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. Solo se puede registrar dentro del horario configurado; se omiten los platos no permitidos o ya registrados hoy.'
-            : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de empleados. Solo se puede registrar dentro del horario configurado. El consumo aparecerá en el feed del kiosk y en reportes.'}
+            ? 'Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. Solo se puede registrar dentro del horario configurado; se omiten los platos no permitidos o ya registrados hoy.'
+            : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de personas registradas. Solo se puede registrar dentro del horario configurado. El consumo aparecerá en el feed del kiosk y en reportes.'}
         </p>
 
         <form onSubmit={submit}>
           {mode === 'proxy' ? (
             <>
               <EmployeePicker
-                label="Empleado que retira"
+                label="Persona que retira"
                 term={proxyTerm}
                 setTerm={setProxyTerm}
                 suggestions={proxySuggestions}
@@ -552,7 +552,7 @@ export default function ManualScan() {
                             const allowedMeals = meals.filter((m) =>
                               m.code === 'LUNCH' ? t.allowsSnack : t.allowsLunch);
                             if (allowedMeals.length === 0) {
-                              return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para este empleado.</span>;
+                              return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para esta persona.</span>;
                             }
                             
                             const consumedMeals = allowedMeals.filter(m => m.code === 'LUNCH' ? t.hadMerienda : t.hadAlmuerzo);
@@ -663,12 +663,12 @@ export default function ManualScan() {
                       setResult(null);
                     }}
                   />
-                  Retira otra persona (empleado)
+                  Retira otra persona
                 </label>
               </div>
               {extProxyEnabled && (
                 <EmployeePicker
-                  label="Empleado que retira"
+                  label="Persona que retira"
                   term={extProxyTerm}
                   setTerm={setExtProxyTerm}
                   suggestions={extProxySuggestions}

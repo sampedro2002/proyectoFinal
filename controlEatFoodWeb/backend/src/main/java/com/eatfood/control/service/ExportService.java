@@ -85,7 +85,7 @@ public class ExportService {
     }
 
     private static final String[] HEADERS =
-            {"N°", "Hora", "Cédula", "Empleado", "Restaurante", "Comida",
+            {"N°", "Hora", "Cédula", "Persona", "Restaurante", "Comida",
              "Tipo", "Descripción"};
     private static final String[] EMP_HEADERS =
             {"Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
@@ -768,7 +768,7 @@ public class ExportService {
         if (method == null) return "Huella";
         return switch (method) {
             case "MANUAL"   -> "Manual";
-            case "EXTERNAL" -> "Externo";
+            case "EXTERNAL" -> "MANUAL - EXTERNO";
             default         -> "Huella";
         };
     }

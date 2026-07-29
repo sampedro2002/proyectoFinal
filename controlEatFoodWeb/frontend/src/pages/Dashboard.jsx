@@ -59,9 +59,9 @@ export default function Dashboard() {
         <Stat value={stats.meriendaCount} label="Meriendas" />
       </div>
       <div className="grid cols-4">
-        <Stat value={stats.expectedEmployees} label="Empleados esperados" />
-        <Stat value={stats.employeesConsumed} label="Empleados que consumieron" />
-        <Stat value={stats.employeesPending} label="Empleados pendientes" />
+        <Stat value={stats.expectedEmployees} label="Personas esperadas" />
+        <Stat value={stats.employeesConsumed} label="Personas que consumieron" />
+        <Stat value={stats.employeesPending} label="Personas pendientes" />
         <Stat value={`${stats.consumptionPercentage ?? 0}%`} label="Porcentaje de consumo" />
       </div>
       <div className="grid cols-2">

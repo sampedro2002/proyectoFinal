@@ -83,7 +83,7 @@ export default function Employees() {
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setItems([]);
-      setError(err.response?.data?.message || 'No se pudieron cargar los empleados');
+      setError(err.response?.data?.message || 'No se pudieron cargar las personas');
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
@@ -296,7 +296,7 @@ export default function Employees() {
         load();
       } else {
         const { data } = await api.post('/employees', payload);
-        setSavedMsg('Empleado creado correctamente. Ahora puede registrar hasta 3 huellas.');
+        setSavedMsg('Persona creada correctamente. Ahora puede registrar hasta 3 huellas.');
         setForm({
           ...data,
           observation:   data.observation ?? '',
@@ -319,7 +319,7 @@ export default function Employees() {
     const targetId = form.id;
     const isStale = () => formIdRef.current !== targetId;
     setBioMsg('');
-    if (fingerprints.length >= 3) { setBioMsg('Máximo 3 huellas por empleado.'); return; }
+    if (fingerprints.length >= 3) { setBioMsg('Máximo 3 huellas por persona.'); return; }
     try {
       setBioStatus('connecting');
       const client = new ZkFingerClient({
@@ -405,7 +405,7 @@ export default function Employees() {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      setError('No se pudo exportar la base de empleados.');
+      setError('No se pudo exportar la base de personas.');
     }
   }
 
@@ -422,7 +422,7 @@ export default function Employees() {
           type="button"
           className={`tab ${personType === 'employee' ? 'active' : ''}`}
           onClick={() => setPersonType('employee')}
-        >Empleados</button>
+        >Personas</button>
         <button
           type="button"
           className={`tab ${personType === 'external' ? 'active' : ''}`}
@@ -430,7 +430,7 @@ export default function Employees() {
         >Personas externas</button>
       </div>
 
-      {/* ══════════════ EMPLEADOS ══════════════ */}
+      {/* ══════════════ PERSONAS ══════════════ */}
       {personType === 'employee' && (
         <>
           <div className="topbar">
@@ -444,7 +444,7 @@ export default function Employees() {
                 <option value="ACTIVE">Activo</option>
                 <option value="INACTIVE">Inactivo</option>
               </select>
-              {isAdmin && <button onClick={openNew}>+ Nuevo empleado</button>}
+              {isAdmin && <button onClick={openNew}>+ Nueva persona</button>}
               {isAdmin && <button className="ghost" onClick={() => exportDb('excel')}>Exportar Excel</button>}
               {isAdmin && <button className="ghost" onClick={() => exportDb('csv')}>Exportar CSV</button>}
             </div>
@@ -484,7 +484,7 @@ export default function Employees() {
                   <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
                 )}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
+                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin personas registradas.</td></tr>
                 )}
               </tbody>
             </table>
@@ -546,7 +546,7 @@ export default function Employees() {
         <div className="modal-overlay">
           <div className="card modal-card">
             <div className="topbar" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>{form.id ? 'Editar empleado' : 'Nuevo empleado'}</h3>
+              <h3 style={{ margin: 0 }}>{form.id ? 'Editar persona' : 'Nueva persona'}</h3>
               <button type="button" className="ghost" onClick={closeForm}>✕</button>
             </div>
 
@@ -561,7 +561,7 @@ export default function Employees() {
                 className={`tab ${tab === 'fingerprints' ? 'active' : ''}`}
                 onClick={() => form.id && setTab('fingerprints')}
                 disabled={!form.id}
-                title={!form.id ? 'Guarde el empleado para registrar huellas' : ''}
+                title={!form.id ? 'Guarde la persona para registrar huellas' : ''}
               >Huellas</button>
             </div>
 
@@ -617,7 +617,7 @@ export default function Employees() {
 
                 {error && <p className="error-text">{error}</p>}
                 <div className="row" style={{ marginTop: 12 }}>
-                  <button type="submit">{form.id ? 'Guardar cambios' : 'Crear empleado'}</button>
+                  <button type="submit">{form.id ? 'Guardar cambios' : 'Crear persona'}</button>
                   <button type="button" className="ghost" onClick={closeForm}>
                     {form.id ? 'Cerrar' : 'Cancelar'}
                   </button>
@@ -629,7 +629,7 @@ export default function Employees() {
               <div style={{ marginTop: 12 }}>
                 {!form.id ? (
                   <p style={{ color: 'var(--muted)' }}>
-                    Guarde el empleado para poder registrar huellas.
+                    Guarde la persona para poder registrar huellas.
                   </p>
                 ) : (
                   <>

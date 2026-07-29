@@ -954,7 +954,7 @@ function Ensure-Database {
 }
 
 function Step-ConfigureDatabase {
-    param([ValidateSet('Dev', 'Prod')][string]$Mode)
+    param([ValidateSet('Dev', 'Prod')][string]$Mode, [switch]$Reinstall)
 
     Write-Log "Configurar conexion a base de datos ($Mode)..." 'STEP'
 
@@ -1098,13 +1098,17 @@ function Step-ConfigureDatabase {
             }
         }
 
-        # Si ya hay datos guardados de una instalacion previa (tipicamente una
-        # Reinstalacion), se muestran de una vez y se pide UNA sola confirmacion
-        # en vez de repreguntar host/puerto/nombre/usuario/password/SSL uno por
-        # uno: con 's' o ENTER se acepta todo tal cual esta guardado y se sigue
-        # de largo. Con 'n' cae al flujo de siempre (editar campo por campo).
+        # El atajo de "una sola confirmacion" SOLO aplica en Reinstalacion (-Reinstall):
+        # en una instalacion nueva, aunque haya datos guardados de un intento anterior
+        # (sobreviven a un Desinstalar), se debe poder repreguntar todo campo por campo
+        # sin problema, por si se esta apuntando a un servidor/BD distinto.
+        # En Reinstalacion, en cambio, se muestran los datos guardados de una vez y se
+        # pide UNA sola confirmacion en vez de repreguntar host/puerto/nombre/usuario/
+        # password/SSL uno por uno: con 's' o ENTER se acepta todo tal cual esta
+        # guardado y se sigue de largo. Con 'n' cae al flujo de siempre (editar campo
+        # por campo).
         $dbConfirmed = $false
-        if ($savedDb) {
+        if ($Reinstall -and $savedDb) {
             Write-Host ""
             Write-Host "  --- Datos de conexion guardados (ultima instalacion) ---" -ForegroundColor Cyan
             Write-Host "    Host: $($dbConfig.Host):$($dbConfig.Port)"
@@ -2112,7 +2116,7 @@ function Install-Full {
 
     if ((Read-Host "  Continuar con la instalacion? (s/n)") -ne 's') { Write-Log "Instalacion cancelada por el usuario."; return }
 
-    $dbConfig = Step-ConfigureDatabase -Mode 'Prod'
+    $dbConfig = Step-ConfigureDatabase -Mode 'Prod' -Reinstall:$Reinstall
     $prodConfig = Step-ConfigureProduction -Reinstall:$Reinstall
 
     if (-not (Install-FrontendDependencies)) { Write-Log "Error en dependencias del frontend. Abortando." 'ERROR'; return }

@@ -4,11 +4,11 @@ import EmployeeSelect from '../components/EmployeeSelect.jsx';
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
-const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'Externo' };
+const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'MANUAL - EXTERNO' };
 const METHOD_OPTIONS = [
   { value: 'FINGERPRINT', label: 'Huella' },
   { value: 'MANUAL', label: 'Manual' },
-  { value: 'EXTERNAL', label: 'Externo' },
+  { value: 'EXTERNAL', label: 'MANUAL - EXTERNO' },
 ];
 
 export default function Reports() {
@@ -92,7 +92,7 @@ export default function Reports() {
               {restaurants.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select></div>
 
-          <div className="field" style={{ flex: 1, minWidth: '220px' }}><label>Empleado</label>
+          <div className="field" style={{ flex: 1, minWidth: '220px' }}><label>Persona</label>
             <EmployeeSelect
               employees={employees}
               value={filters.employeeId}
@@ -118,7 +118,7 @@ export default function Reports() {
         <p>{rows.length} registros</p>
         <table>
           <thead><tr>
-            <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Empleado</th>
+            <th>N°</th><th>Fecha</th><th>Hora</th><th>Cédula</th><th>Persona</th>
             <th>Restaurante</th><th>Comida</th><th>Tipo</th><th>Descripción</th>
           </tr></thead>
           <tbody>

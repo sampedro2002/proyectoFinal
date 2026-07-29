@@ -249,10 +249,10 @@ export default function EditManualConsumptions() {
   const handleEdit = async (e) => {
     e.preventDefault();
     const isExternal = editTarget.method === 'EXTERNAL';
-    if (!isExternal && !editTarget.employeeId) { setFormError('Seleccione un empleado titular.'); return; }
+    if (!isExternal && !editTarget.employeeId) { setFormError('Seleccione una persona titular.'); return; }
     if (!editTarget.mealName)   { setFormError('Seleccione el tipo de comida.'); return; }
     if (editTarget.proxyEmployeeId && editTarget.proxyEmployeeId === editTarget.employeeId) {
-      setFormError('El empleado que retira no puede ser el mismo que el titular.');
+      setFormError('La persona que retira no puede ser la misma que la titular.');
       return;
     }
     setSaving(true);
@@ -279,7 +279,7 @@ export default function EditManualConsumptions() {
     if (!emp) { setEditTarget(t => t ? { ...t, employeeId: null, mealName: null, _avail: null } : t); return; }
     // Bloquear si la persona seleccionada es el mismo que el apoderado actual
     if (editTarget?.proxyEmployeeId && editTarget.proxyEmployeeId === emp.id) {
-      setFormError('El titular no puede ser el mismo que el empleado que retira. Primero quita al apoderado o elige a otra persona.');
+      setFormError('La persona titular no puede ser la misma que la persona que retira. Primero quita al apoderado o elige a otra persona.');
       setTitularTerm('');
       setTitularSugg([]);
       setShowTitular(false);
@@ -308,7 +308,7 @@ export default function EditManualConsumptions() {
     if (!emp) { setEditTarget(t => t ? { ...t, proxyEmployeeId: null } : t); return; }
     // Bloquear si es el mismo que el titular
     if (editTarget?.employeeId && editTarget.employeeId === emp.id) {
-      setFormError('El empleado que retira no puede ser el mismo que el titular.');
+      setFormError('La persona que retira no puede ser la misma que la titular.');
       setProxyTerm('');
       setProxySugg([]);
       setShowProxy(false);
@@ -347,7 +347,7 @@ export default function EditManualConsumptions() {
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
           <input
-            placeholder="Buscar empleado o cédula..."
+            placeholder="Buscar persona o cédula..."
             value={search}
             onChange={e => setSearch(e.target.value)}
             style={{ flex: '1 1 180px' }}
@@ -377,7 +377,7 @@ export default function EditManualConsumptions() {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Empleado</th>
+              <th>Persona</th>
               <th>Cédula</th>
               <th>Retira por</th>
               <th>Restaurante</th>
@@ -394,7 +394,7 @@ export default function EditManualConsumptions() {
                 <td>
                   {r.employeeName}
                   {r.method === 'EXTERNAL' && (
-                    <span className="badge external" style={{ marginLeft: 6 }}>Externo</span>
+                    <span className="badge external" style={{ marginLeft: 6 }}>MANUAL - EXTERNO</span>
                   )}
                 </td>
                 <td>{r.identityCard || '—'}</td>
@@ -476,7 +476,7 @@ export default function EditManualConsumptions() {
               </div>
             ) : (
               <EmployeePicker
-                label="Empleado titular"
+                label="Persona titular"
                 term={titularTerm}
                 setTerm={setTitularTerm}
                 suggestions={titularSuggestions}
@@ -564,7 +564,7 @@ export default function EditManualConsumptions() {
 
                   const allowedMeals = MEALS.filter(m => m.value === 'Almuerzo' ? avail.allowsLunch : avail.allowsSnack);
                   if (allowedMeals.length === 0) {
-                    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para este empleado.</span>;
+                    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Sin comidas habilitadas para esta persona.</span>;
                   }
 
                   const consumedMeals = allowedMeals.filter(m => {

@@ -54,7 +54,7 @@ class MainActivity : ComponentActivity() {
 enum class Screen(val title: String, val roles: List<String>) {
     MY_RESTAURANT("Mi Restaurante", listOf("CATERING")),
     DASHBOARD("Dashboard", listOf("ADMIN", "RECURSOS_HUMANOS")),
-    EMPLOYEES("Empleados", listOf("ADMIN", "RECURSOS_HUMANOS")),
+    EMPLOYEES("Personas", listOf("ADMIN", "RECURSOS_HUMANOS")),
     RESTAURANTS("Restaurantes", listOf("ADMIN")),
     USERS("Usuarios", listOf("ADMIN")),
     SCHEDULES("Horarios", listOf("ADMIN")),

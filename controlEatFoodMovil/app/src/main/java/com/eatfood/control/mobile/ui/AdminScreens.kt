@@ -66,7 +66,7 @@ fun DashboardScreen() {
             "Consumos de hoy" to s.totalConsumptions.toString(),
             "Almuerzos" to s.almuerzoCount.toString(),
             "Meriendas" to s.meriendaCount.toString(),
-            "Empleados esperados" to s.expectedEmployees.toString(),
+            "Personas esperadas" to s.expectedEmployees.toString(),
             "Consumieron" to s.employeesConsumed.toString(),
             "Pendientes" to s.employeesPending.toString(),
             "% de consumo" to "${s.consumptionPercentage}%",
@@ -258,7 +258,7 @@ private fun EmployeeDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (existing == null) "Nuevo empleado" else "Editar empleado") },
+        title = { Text(if (existing == null) "Nueva persona" else "Editar persona") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1002,9 +1002,9 @@ fun ExtraMealsScreen() {
             Spacer(Modifier.height(4.dp))
             Text(
                 if (mode == "proxy")
-                    "Un empleado retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
+                    "Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
                 else
-                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de empleados. Solo se puede registrar dentro del horario configurado.",
+                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de personas registradas. Solo se puede registrar dentro del horario configurado.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1057,7 +1057,7 @@ fun ExtraMealsScreen() {
 
             if (mode == "proxy") {
                 // ── Empleado que retira ────────────────────────────────────────────
-                Text("Empleado que retira", style = MaterialTheme.typography.labelLarge)
+                Text("Persona que retira", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
                 if (proxy == null) {
                     EmployeeSearchField("Busque por nombre o cédula a quien retira…", api) { proxy = it }
@@ -1100,7 +1100,7 @@ fun ExtraMealsScreen() {
                                     }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
                                 }
                                 if (!t.allowsLunch && !t.allowsSnack) {
-                                    Text("Sin comidas habilitadas para este empleado.",
+                                    Text("Sin comidas habilitadas para esta persona.",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 } else {
@@ -1199,7 +1199,7 @@ fun ExtraMealsScreen() {
                         extProxyEnabled = it
                         if (!it) extProxy = null
                     })
-                    Text("Retira otra persona (empleado)", Modifier.clickable {
+                    Text("Retira otra persona", Modifier.clickable {
                         extProxyEnabled = !extProxyEnabled
                         if (!extProxyEnabled) extProxy = null
                     })
@@ -1350,7 +1350,7 @@ fun EditConsumptionsScreen() {
         Column(Modifier.padding(padding).fillMaxSize()) {
             OutlinedTextField(
                 value = search, onValueChange = { search = it },
-                label = { Text("Buscar empleado…") }, singleLine = true,
+                label = { Text("Buscar persona…") }, singleLine = true,
                 trailingIcon = { TextButton(onClick = { scope.launch { reload() } }) { Text("Buscar") } },
                 modifier = Modifier.fillMaxWidth().padding(12.dp)
             )
@@ -1447,7 +1447,7 @@ fun EditConsumptionsScreen() {
                         value = c.employeeName ?: "",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Empleado actual") },
+                        label = { Text("Persona actual") },
                         modifier = Modifier.fillMaxWidth()
                     )
                     Spacer(Modifier.height(8.dp))
