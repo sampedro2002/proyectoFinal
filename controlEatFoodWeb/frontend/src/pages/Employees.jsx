@@ -17,6 +17,10 @@ const empty = {
   status: 'ACTIVE', allowsLunch: true, allowsSnack: false,
 };
 
+const emptyExt = {
+  identityCard: '', isPassport: false, fullName: '', observation: '',
+};
+
 function isoDaysAgo(days) {
   const d = new Date();
   d.setDate(d.getDate() - days);
@@ -30,12 +34,24 @@ export default function Employees() {
   const { hasRole } = useAuth();
   const isAdmin = hasRole('ADMIN');
 
+  // ── Selector de tipo de persona ──
+  const [personType, setPersonType] = useState('employee'); // 'employee' | 'external'
+
   const [items, setItems]         = useState([]);
   const [term, setTerm]           = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [error, setError]         = useState('');
   const [loading, setLoading]     = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(null);
+
+  // ── Personas externas ──
+  const [extItems, setExtItems]       = useState([]);
+  const [extTerm, setExtTerm]         = useState('');
+  const [extError, setExtError]       = useState('');
+  const [extLoading, setExtLoading]   = useState(false);
+  const [extForm, setExtForm]         = useState(null);
+  const [extSavedMsg, setExtSavedMsg] = useState('');
+  const extLoadSeq = useRef(0);
 
   // modal (crear/editar)
   const [form, setForm]     = useState(null);
@@ -88,6 +104,78 @@ export default function Employees() {
     const t = setTimeout(() => { load(); }, 350);
     return () => clearTimeout(t);
   }, [term]);
+
+  // ── Carga de personas externas con debounce ──
+  async function loadExternals() {
+    const seq = ++extLoadSeq.current;
+    setExtLoading(true);
+    try {
+      const { data } = await api.get('/external-persons', { params: { term: extTerm || null, size: 200 } });
+      if (seq !== extLoadSeq.current) return;
+      setExtItems(data.content || data);
+      setExtError('');
+    } catch (err) {
+      if (seq !== extLoadSeq.current) return;
+      setExtItems([]);
+      setExtError(err.response?.data?.message || 'No se pudieron cargar las personas externas');
+    } finally {
+      if (seq === extLoadSeq.current) setExtLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (personType !== 'external') return;
+    const t = setTimeout(() => { loadExternals(); }, 350);
+    return () => clearTimeout(t);
+  }, [extTerm, personType]);
+
+  // ── Funciones para editar persona externa ──
+  function openExtEdit(p) {
+    setExtError(''); setExtSavedMsg('');
+    setExtForm({
+      ...p,
+      isPassport: p.identityCard && !isValidCedulaEC(p.identityCard),
+      observation: p.observation ?? '',
+    });
+  }
+
+  function closeExtForm() {
+    setExtForm(null);
+    setExtSavedMsg('');
+    loadExternals();
+  }
+
+  async function saveExt(e) {
+    e.preventDefault();
+    setExtError('');
+    setExtSavedMsg('');
+    const identityCard = extForm.identityCard.trim();
+    if (!extForm.isPassport && !isValidCedulaEC(identityCard)) {
+      setExtError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
+      return;
+    }
+    const payload = {
+      identityCard,
+      isPassport: extForm.isPassport,
+      fullName: extForm.fullName,
+      observation: extForm.observation || null,
+    };
+    try {
+      await api.put(`/external-persons/${extForm.id}`, payload);
+      setExtSavedMsg('Cambios guardados.');
+      closeExtForm();
+    } catch (err) {
+      setExtError(err.response?.data?.message || 'Error al guardar');
+    }
+  }
+
+  // Cerrar modal externo con Escape
+  useEffect(() => {
+    if (!extForm) return;
+    const handler = (e) => { if (e.key === 'Escape') closeExtForm(); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [extForm]);
 
   useEffect(() => {
     formIdRef.current = form?.id ?? null;
@@ -325,62 +413,133 @@ export default function Employees() {
   return (
     <div>
       <div className="topbar">
-        <h2 style={{ margin: 0 }}>Empleados</h2>
-        <div className="row">
-          <input placeholder="Buscar…" value={term}
-                 onChange={e => setTerm(e.target.value)}
-                 onKeyDown={e => e.key === 'Enter' && load()} />
-          <button onClick={load}>Buscar</button>
-          <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-            <option value="ALL">Todos</option>
-            <option value="ACTIVE">Activo</option>
-            <option value="INACTIVE">Inactivo</option>
-          </select>
-          {isAdmin && <button onClick={openNew}>+ Nuevo empleado</button>}
-          {isAdmin && <button className="ghost" onClick={() => exportDb('excel')}>Exportar Excel</button>}
-          {isAdmin && <button className="ghost" onClick={() => exportDb('csv')}>Exportar CSV</button>}
-        </div>
+        <h2 style={{ margin: 0 }}>Personas</h2>
       </div>
 
-      {error && !form && <p className="error-text">{error}</p>}
-
-      <div className="card">
-        <table>
-          <thead>
-            <tr>
-              <th>Cédula</th><th>Nombre</th>
-              <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(e => (
-              <tr key={e.id}>
-                <td>{e.identityCard}</td>
-                <td>{e.fullName}</td>
-                <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
-                <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
-                <td>{e.fingerprintCount}/3</td>
-                <td>
-                  <span className={`badge ${e.status === 'ACTIVE' ? 'ok' : 'off'}`}>
-                    {e.status}
-                  </span>
-                </td>
-                <td className="row">
-                  {isAdmin && (
-                    <button className="ghost" onClick={() => openEdit(e)}>Editar</button>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {loading && (
-              <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
-            )}
-            {!loading && filtered.length === 0 && (
-              <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* ── Selector de tipo ── */}
+      <div className="tabs" style={{ marginBottom: 16 }}>
+        <button
+          type="button"
+          className={`tab ${personType === 'employee' ? 'active' : ''}`}
+          onClick={() => setPersonType('employee')}
+        >Empleados</button>
+        <button
+          type="button"
+          className={`tab ${personType === 'external' ? 'active' : ''}`}
+          onClick={() => setPersonType('external')}
+        >Personas externas</button>
       </div>
+
+      {/* ══════════════ EMPLEADOS ══════════════ */}
+      {personType === 'employee' && (
+        <>
+          <div className="topbar">
+            <div className="row">
+              <input placeholder="Buscar…" value={term}
+                     onChange={e => setTerm(e.target.value)}
+                     onKeyDown={e => e.key === 'Enter' && load()} />
+              <button onClick={load}>Buscar</button>
+              <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
+                <option value="ALL">Todos</option>
+                <option value="ACTIVE">Activo</option>
+                <option value="INACTIVE">Inactivo</option>
+              </select>
+              {isAdmin && <button onClick={openNew}>+ Nuevo empleado</button>}
+              {isAdmin && <button className="ghost" onClick={() => exportDb('excel')}>Exportar Excel</button>}
+              {isAdmin && <button className="ghost" onClick={() => exportDb('csv')}>Exportar CSV</button>}
+            </div>
+          </div>
+
+          {error && !form && <p className="error-text">{error}</p>}
+
+          <div className="card">
+            <table>
+              <thead>
+                <tr>
+                  <th>Cédula</th><th>Nombre</th>
+                  <th>Almuerzo</th><th>Merienda</th><th>Huellas</th><th>Estado</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map(e => (
+                  <tr key={e.id}>
+                    <td>{e.identityCard}</td>
+                    <td>{e.fullName}</td>
+                    <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
+                    <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
+                    <td>{e.fingerprintCount}/3</td>
+                    <td>
+                      <span className={`badge ${e.status === 'ACTIVE' ? 'ok' : 'off'}`}>
+                        {e.status}
+                      </span>
+                    </td>
+                    <td className="row">
+                      {isAdmin && (
+                        <button className="ghost" onClick={() => openEdit(e)}>Editar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {loading && (
+                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
+                )}
+                {!loading && filtered.length === 0 && (
+                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin empleados.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {/* ══════════════ PERSONAS EXTERNAS ══════════════ */}
+      {personType === 'external' && (
+        <>
+          <div className="topbar">
+            <div className="row">
+              <input placeholder="Buscar por nombre o cédula…" value={extTerm}
+                     onChange={e => setExtTerm(e.target.value)}
+                     onKeyDown={e => e.key === 'Enter' && loadExternals()} />
+              <button onClick={loadExternals}>Buscar</button>
+            </div>
+          </div>
+
+          {extError && !extForm && <p className="error-text">{extError}</p>}
+
+          <div className="card">
+            <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 12px' }}>
+              Personas externas (visitantes, contratistas, invitados). Se crean automáticamente al registrar un consumo externo.
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th>Cédula</th><th>Nombre</th><th>Observación</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {extItems.map(p => (
+                  <tr key={p.id}>
+                    <td>{p.identityCard}</td>
+                    <td>{p.fullName}</td>
+                    <td style={{ color: '#94a3b8' }}>{p.observation || '—'}</td>
+                    <td className="row">
+                      {isAdmin && (
+                        <button className="ghost" onClick={() => openExtEdit(p)}>Editar</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {extLoading && (
+                  <tr><td colSpan="4" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
+                )}
+                {!extLoading && extItems.length === 0 && (
+                  <tr><td colSpan="4" style={{ color: 'var(--muted)' }}>Sin personas externas registradas.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {/* ── Modal central crear/editar ── */}
       {form && (
@@ -553,6 +712,52 @@ export default function Employees() {
         </div>
       )}
 
+
+      {/* ── Modal editar persona externa ── */}
+      {extForm && (
+        <div className="modal-overlay">
+          <div className="card modal-card">
+            <div className="topbar" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Editar persona externa</h3>
+              <button type="button" className="ghost" onClick={closeExtForm}>✕</button>
+            </div>
+
+            {extSavedMsg && <p style={{ color: 'var(--ok)', marginTop: 12 }}>{extSavedMsg}</p>}
+
+            <form onSubmit={saveExt} style={{ marginTop: 12 }}>
+              <div className="field">
+                <label>Tipo de Documento</label>
+                <select value={extForm.isPassport ? 'PASSPORT' : 'CEDULA'}
+                        onChange={e => setExtForm({ ...extForm, isPassport: e.target.value === 'PASSPORT' })}>
+                  <option value="CEDULA">Cédula</option>
+                  <option value="PASSPORT">Pasaporte</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>{extForm.isPassport ? 'Pasaporte' : 'Cédula'}</label>
+                <input value={extForm.identityCard} required
+                       onChange={e => setExtForm({ ...extForm, identityCard: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Nombre completo</label>
+                <input value={extForm.fullName} required
+                       onChange={e => setExtForm({ ...extForm, fullName: e.target.value })} />
+              </div>
+              <div className="field">
+                <label>Observación (opcional)</label>
+                <textarea value={extForm.observation} rows={3}
+                          onChange={e => setExtForm({ ...extForm, observation: e.target.value })} />
+              </div>
+
+              {extError && <p className="error-text">{extError}</p>}
+              <div className="row" style={{ marginTop: 12 }}>
+                <button type="submit">Guardar cambios</button>
+                <button type="button" className="ghost" onClick={closeExtForm}>Cancelar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <ConfirmModal
         isOpen={!!confirmDialog}

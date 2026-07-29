@@ -18,7 +18,7 @@ export default function Layout() {
           </div>
         </div>
         <NavLink to="/" end>Dashboard</NavLink>
-        {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/employees">Empleados</NavLink>}
+        {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/employees">Personas</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/restaurants">Restaurantes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/users">Usuarios</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/schedules">Horarios</NavLink>}
