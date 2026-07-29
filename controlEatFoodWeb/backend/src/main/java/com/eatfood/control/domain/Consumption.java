@@ -57,9 +57,21 @@ public class Consumption {
     @Builder.Default
     private Method method = Method.FINGERPRINT;
 
+    /**
+     * Empleado que retira el plato a nombre del titular (apoderado), opcional.
+     * Excluyente con {@link #proxyExternalPerson} (CHECK chk_consumo_apoderado).
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "empleado_apoderado_id")
     private Employee proxyEmployee;
+
+    /**
+     * Persona externa registrada que retira el plato a nombre del titular,
+     * opcional. Excluyente con {@link #proxyEmployee}.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "persona_externa_apoderada_id")
+    private ExternalPerson proxyExternalPerson;
 
     @Column(name = "sin_conexion", nullable = false)
     @Builder.Default
@@ -95,5 +107,16 @@ public class Consumption {
     public String titularIdentityCard() {
         if (employee != null) return employee.getIdentityCard();
         return externalPerson != null ? externalPerson.getIdentityCard() : null;
+    }
+
+    /** Nombre de quien retira (apoderado), sea empleado o persona externa; null si retira el propio titular. */
+    public String proxyName() {
+        if (proxyEmployee != null) return proxyEmployee.getFullName();
+        return proxyExternalPerson != null ? proxyExternalPerson.getFullName() : null;
+    }
+
+    /** ¿Quien retira es una persona externa (no empleada)? */
+    public boolean proxyIsExternal() {
+        return proxyExternalPerson != null;
     }
 }

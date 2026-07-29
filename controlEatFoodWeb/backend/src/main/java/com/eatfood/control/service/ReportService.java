@@ -1,7 +1,6 @@
 package com.eatfood.control.service;
 
 import com.eatfood.control.domain.Consumption;
-import com.eatfood.control.domain.Employee;
 import com.eatfood.control.domain.EmployeeStatus;
 import com.eatfood.control.dto.ReportDtos.*;
 import com.eatfood.control.exception.BusinessException;
@@ -71,14 +70,14 @@ public class ReportService {
     }
 
     private ConsumptionRow toRow(Consumption c) {
-        Employee p = c.getProxyEmployee();
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
                 c.titularName(), c.titularIdentityCard(),
                 c.getRestaurant().getName(), c.getMealName(),
                 c.getObservation(), c.isOffline(),
                 c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),
-                p != null ? p.getFullName() : null,
+                c.proxyName(),
+                c.proxyIsExternal(),
                 c.isCancelled());
     }
 

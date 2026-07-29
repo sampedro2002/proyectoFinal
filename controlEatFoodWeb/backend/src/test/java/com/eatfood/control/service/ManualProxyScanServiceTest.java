@@ -92,6 +92,7 @@ class ManualProxyScanServiceTest {
     void manualScan_pepeRetiraDeJuanYMaria_creaUnaFilaPorTitularConObservacionAutogenerada() {
         ManualScanRequest req = new ManualScanRequest(
                 pepe.getId(),
+                null,
                 restaurant.getId(),
                 List.of(
                         new ManualScanItem(juan.getId(), List.of("BREAKFAST", "LUNCH")), // Almuerzo + Merienda
@@ -129,7 +130,7 @@ class ManualProxyScanServiceTest {
     @Test
     void manualScan_sinTitulares_retornaError() {
         ManualScanRequest req = new ManualScanRequest(
-                pepe.getId(), restaurant.getId(), List.of());
+                pepe.getId(), null, restaurant.getId(), List.of());
         ManualScanResponse res = scanService.manualScan(req);
         assertThat(res.status()).isEqualTo("ERROR");
         assertThat(res.created()).isEqualTo(0);

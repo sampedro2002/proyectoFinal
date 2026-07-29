@@ -73,4 +73,17 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             ORDER BY e.fullName
             """)
     List<Employee> searchActiveByName(@Param("name") String name);
+
+    /**
+     * Empleados ACTIVOS por nombre O cédula, para el buscador unificado de
+     * "quien retira" (se mezcla con personas externas en la UI).
+     */
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.deleted = false AND e.status = com.eatfood.control.domain.EmployeeStatus.ACTIVE
+              AND (LOWER(e.fullName) LIKE LOWER(CONCAT('%', :term, '%'))
+                   OR e.identityCard LIKE CONCAT('%', :term, '%'))
+            ORDER BY e.fullName
+            """)
+    List<Employee> searchActiveByNameOrCard(@Param("term") String term, Pageable pageable);
 }

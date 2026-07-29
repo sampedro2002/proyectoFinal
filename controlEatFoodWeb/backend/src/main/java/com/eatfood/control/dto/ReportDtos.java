@@ -17,7 +17,10 @@ public final class ReportDtos {
             String observation,
             boolean offline,
             String method,
+            // Nombre de quien retira (empleado o persona externa); proxyExternal=true
+            // cuando quien retira es una persona externa registrada.
             String proxyEmployeeName,
+            boolean proxyExternal,
             boolean cancelled) {}
 
     /** Etiqueta legible del método de registro, para UIs y reportes. */

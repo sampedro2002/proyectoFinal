@@ -774,11 +774,17 @@ public class ExportService {
     }
 
     /** Descripción del registro para los reportes: la observación del consumo
-     *  (en los manuales ya viene autogenerada como "X retira de Y"), o vacío. */
+     *  (en los manuales ya viene autogenerada como "X retira de Y"), o vacío.
+     *  Cuando quien retira es una persona externa registrada, se marca explícitamente. */
     private String buildDescription(ConsumptionRow r) {
         String obs = r.observation();
-        if (obs != null && !obs.isBlank()) return obs;
-        return "";
+        String base = (obs != null && !obs.isBlank()) ? obs : "";
+        if (r.proxyExternal() && r.proxyEmployeeName() != null) {
+            base = base.isEmpty()
+                    ? "Retira persona externa: " + r.proxyEmployeeName()
+                    : base + " (retira persona externa)";
+        }
+        return base;
     }
 
     /**

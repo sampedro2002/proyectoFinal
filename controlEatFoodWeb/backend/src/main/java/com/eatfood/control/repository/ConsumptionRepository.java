@@ -34,7 +34,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
     @Query("SELECT c FROM Consumption c WHERE c.businessDate = :businessDate AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE")
     List<Consumption> findByBusinessDateAndRestaurantId(@Param("businessDate") LocalDate businessDate, @Param("restaurantId") Long restaurantId);
 
-    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson"})
+    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson", "proxyEmployee", "proxyExternalPerson"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate = :date AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE
@@ -51,7 +51,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
      * {@code methods} (opcional) acota por metodo de registro
      * (FINGERPRINT/MANUAL/EXTERNAL); vacio o null = todos.
      */
-    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson", "proxyEmployee"})
+    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson", "proxyEmployee", "proxyExternalPerson"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to
@@ -106,6 +106,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             LEFT JOIN FETCH c.employee e
             LEFT JOIN FETCH c.externalPerson ep
             LEFT JOIN FETCH c.proxyEmployee pe
+            LEFT JOIN FETCH c.proxyExternalPerson
             WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
               AND c.businessDate = :businessDate
               AND (:search IS NULL OR

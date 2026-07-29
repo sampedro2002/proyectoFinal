@@ -6,7 +6,8 @@
 -- distinción de método de registro (consumo.metodo = FINGERPRINT/MANUAL/
 -- EXTERNAL) con el proxy de "retira por otro" (consumo.empleado_apoderado_id),
 -- y la tabla persona_externa: las personas externas (visitantes/contratistas)
--- viven SEPARADAS de empleado — sus consumos referencian persona_externa_id.
+-- viven SEPARADAS de empleado — sus consumos referencian persona_externa_id y
+-- también pueden ser quien retira (persona_externa_apoderada_id).
 -- Esta migración es la ÚNICA fuente de verdad del esquema. El instalador
 -- (RunWindowns\Inicio.ps1) solo crea la BASE de datos vacía; las tablas las
 -- crea Flyway al arrancar el backend.
@@ -170,7 +171,11 @@ CREATE TABLE IF NOT EXISTS consumo (
     -- externa (titular = persona_externa_id, nunca empleado_id).
     metodo              VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
                             CHECK (metodo IN ('FINGERPRINT','MANUAL','EXTERNAL')),
-    empleado_apoderado_id BIGINT,               -- empleado que retira (MANUAL y EXTERNAL)
+    -- Quien retira (apoderado), opcional: empleado (empleado_apoderado_id) O
+    -- persona externa registrada (persona_externa_apoderada_id). Nunca ambos
+    -- (ver CHECK chk_consumo_apoderado más abajo).
+    empleado_apoderado_id        BIGINT,
+    persona_externa_apoderada_id BIGINT,
     nombre_comida       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
     observacion         VARCHAR(500),
     uuid_cliente        VARCHAR(36) NOT NULL,
@@ -183,12 +188,15 @@ CREATE TABLE IF NOT EXISTS consumo (
     KEY idx_consumo_externo_fecha (persona_externa_id, fecha_negocio),
     KEY idx_consumo_metodo (metodo),
     KEY idx_consumo_apoderado (empleado_apoderado_id),
+    KEY idx_consumo_apoderado_externo (persona_externa_apoderada_id),
     CONSTRAINT chk_consumo_titular CHECK ((empleado_id IS NULL) <> (persona_externa_id IS NULL)),
+    CONSTRAINT chk_consumo_apoderado CHECK ((empleado_apoderado_id IS NULL) OR (persona_externa_apoderada_id IS NULL)),
     FOREIGN KEY (empleado_id) REFERENCES empleado(id),
     FOREIGN KEY (persona_externa_id) REFERENCES persona_externa(id),
     FOREIGN KEY (restaurante_id) REFERENCES restaurante(id),
     FOREIGN KEY (dispositivo_id) REFERENCES dispositivo(id),
-    FOREIGN KEY (empleado_apoderado_id) REFERENCES empleado(id) ON DELETE SET NULL
+    FOREIGN KEY (empleado_apoderado_id) REFERENCES empleado(id) ON DELETE SET NULL,
+    FOREIGN KEY (persona_externa_apoderada_id) REFERENCES persona_externa(id)
 );
 
 -- Nota: no hay índice único por (empleado, día): el tope de comidas por día

@@ -60,7 +60,10 @@ public final class ScanDtos {
             String mealName,
             String time,
             String method,
-            String proxyEmployeeName) {}
+            // Nombre de quien retira (empleado o persona externa); proxyExternal=true
+            // cuando quien retira es una persona externa registrada.
+            String proxyEmployeeName,
+            boolean proxyExternal) {}
 
     /** Respuesta del feed diario: incluye el nombre actualizado del restaurante. */
     public record TodayFeedResponse(
@@ -69,14 +72,16 @@ public final class ScanDtos {
 
     /**
      * Registro manual de consumo (sin huella) — solo ADMIN.
-     * Modelo "retira por otro": el empleado {@code proxyEmployeeId} (p. ej.
-     * Pepe) retira uno o varios titulares. Se generara una fila de
-     * {@code consumption} por cada titular x codigo de comida, con
-     * {@code method='MANUAL'}, {@code empleado_apoderado_id=Pepe} y
-     * {@code observation="Pepe retira de Juan"} autogenerada.
+     * Modelo "retira por otro": quien retira es un empleado
+     * ({@code proxyEmployeeId}) o una persona externa ya registrada
+     * ({@code proxyExternalPersonId}) — exactamente uno de los dos. Se genera
+     * una fila de {@code consumption} por cada titular x codigo de comida, con
+     * {@code method='MANUAL'}, el apoderado correspondiente y
+     * {@code observation="X retira de Y"} autogenerada.
      */
     public record ManualScanRequest(
-            @NotNull Long proxyEmployeeId,
+            Long proxyEmployeeId,
+            Long proxyExternalPersonId,
             @NotNull Long restaurantId,
             @NotNull List<ManualScanItem> titulars) {}
 
@@ -91,6 +96,16 @@ public final class ScanDtos {
             String employeeName,
             String mealName,
             Integer created) {}
+
+    /**
+     * Candidato a "quien retira" en el buscador unificado: empleado ACTIVO o
+     * persona externa registrada. {@code type}: "EMPLOYEE" | "EXTERNAL".
+     */
+    public record ProxyCandidate(
+            String type,
+            Long id,
+            String identityCard,
+            String fullName) {}
 
     /**
      * Disponibilidad de comidas de un empleado para el registro manual de HOY.
@@ -113,12 +128,18 @@ public final class ScanDtos {
             @NotBlank String mealTypeCode,
             @NotNull Long restaurantId,
             String observation,
-            // Opcional: empleado interno que retira el plato a nombre del externo.
-            // Si es null, se asume que el propio externo lo retira (comportamiento previo).
-            Long proxyEmployeeId) {}
+            // Opcional: quien retira el plato a nombre del externo. Puede ser un
+            // empleado interno (proxyEmployeeId) o una persona externa ya
+            // registrada (proxyExternalPersonId) — como mucho uno de los dos.
+            // Si ambos son null, el propio externo lo retira.
+            Long proxyEmployeeId,
+            Long proxyExternalPersonId) {}
 
     public record UpdateManualConsumptionRequest(
             Long proxyEmployeeId,
+            // Al venir no nulo, el apoderado pasa a ser esta persona externa
+            // registrada (y se limpia empleado_apoderado_id).
+            Long proxyExternalPersonId,
             Long employeeId,
             Long restaurantId,
             String mealName,
@@ -135,6 +156,9 @@ public final class ScanDtos {
             String identityCard,
             Long proxyEmployeeId,
             String proxyEmployeeName,
+            // Quien retira cuando es persona externa (excluyente con proxyEmployee*).
+            Long proxyExternalPersonId,
+            String proxyExternalPersonName,
             Long restaurantId,
             String restaurantName,
             String mealName,

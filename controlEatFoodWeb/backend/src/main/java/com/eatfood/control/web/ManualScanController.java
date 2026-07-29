@@ -37,6 +37,12 @@ public class ManualScanController {
         return scanService.registerExternal(req);
     }
 
+    @Operation(summary = "Candidatos a 'quien retira': empleados ACTIVOS y personas externas registradas (solo ADMIN/RRHH)")
+    @GetMapping("/proxy-candidates")
+    public java.util.List<ProxyCandidate> proxyCandidates(@RequestParam String term) {
+        return manualConsumptionService.proxyCandidates(term);
+    }
+
     @Operation(summary = "Comidas permitidas y aún no consumidas hoy por un empleado (solo ADMIN/RRHH)")
     @GetMapping("/availability/{employeeId}")
     public MealAvailabilityResponse availability(@PathVariable Long employeeId) {

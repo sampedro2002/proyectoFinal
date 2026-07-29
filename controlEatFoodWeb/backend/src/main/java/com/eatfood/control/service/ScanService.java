@@ -210,7 +210,8 @@ public class ScanService {
                         c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),
                         c.getMethod() != null ? c.getMethod().name() : "FINGERPRINT",
-                        c.getProxyEmployee() != null ? c.getProxyEmployee().getFullName() : null))
+                        c.proxyName(),
+                        c.proxyIsExternal()))
                 .collect(Collectors.toList());
         return new TodayFeedResponse(device.getRestaurant().getName(), entries);
     }
@@ -223,17 +224,15 @@ public class ScanService {
                 .findByBusinessDateAndRestaurantIdWithDetails(today, device.getRestaurant().getId());
 
         List<ConsumptionRow> rows = consumptions.stream()
-                .map(c -> {
-                    Employee p = c.getProxyEmployee();
-                    return new ConsumptionRow(
-                            c.getId(), c.getBusinessDate(), c.getConsumedAt(),
-                            c.titularName(), c.titularIdentityCard(),
-                            c.getRestaurant().getName(), c.getMealName(),
-                            c.getObservation(), c.isOffline(),
-                            c.getMethod() != null ? c.getMethod().name() : Method.FINGERPRINT.name(),
-                            p != null ? p.getFullName() : null,
-                            c.isCancelled());
-                })
+                .map(c -> new ConsumptionRow(
+                        c.getId(), c.getBusinessDate(), c.getConsumedAt(),
+                        c.titularName(), c.titularIdentityCard(),
+                        c.getRestaurant().getName(), c.getMealName(),
+                        c.getObservation(), c.isOffline(),
+                        c.getMethod() != null ? c.getMethod().name() : Method.FINGERPRINT.name(),
+                        c.proxyName(),
+                        c.proxyIsExternal(),
+                        c.isCancelled()))
                 .toList();
 
         long almuerzos = consumptions.stream().filter(c -> "Almuerzo".equals(c.getMealName())).count();
@@ -261,19 +260,20 @@ public class ScanService {
     /**
      * Registro manual de tipo "retira por otro" (solo ADMIN).
      *
-     * El empleado {@code proxyEmployeeId} (Pepe) retira comidas a nombre de
-     * una lista de titulares (Juan, Luis, Maria...). Para cada titular se crea
-     * una fila de {@code consumption} por cada codigo de comida pedido, con
-     * {@code method='MANUAL'}, {@code empleado_apoderado_id=Pepe} y
-     * {@code observacion="Pepe retira de Juan"} autogenerada (el admin no
-     * necesita capturarla en la UI). No se valida horario (es un override
-     * administrativo), pero sí el permiso del titular por comida y el duplicado
-     * del día: no se registra un plato no permitido ni uno ya consumido hoy.
+     * Quien retira es un empleado ({@code proxyEmployeeId}) o una persona externa
+     * ya registrada ({@code proxyExternalPersonId}) — exactamente uno de los dos —
+     * y lo hace a nombre de una lista de titulares empleados (Juan, Luis, Maria...).
+     * Para cada titular se crea una fila de {@code consumption} por cada codigo de
+     * comida pedido, con {@code method='MANUAL'}, el apoderado correspondiente y
+     * {@code observacion="X retira de Y"} autogenerada (el admin no necesita
+     * capturarla en la UI). No se valida horario (es un override administrativo),
+     * pero sí el permiso del titular por comida y el duplicado del día: no se
+     * registra un plato no permitido ni uno ya consumido hoy.
      */
     @Transactional
     public ManualScanResponse manualScan(ManualScanRequest req) {
-        log.info("[MANUAL] Retira-por-otro: proxyEmployeeId={}, restaurantId={}, titulares={}",
-                req.proxyEmployeeId(), req.restaurantId(),
+        log.info("[MANUAL] Retira-por-otro: proxyEmployeeId={}, proxyExternalPersonId={}, restaurantId={}, titulares={}",
+                req.proxyEmployeeId(), req.proxyExternalPersonId(), req.restaurantId(),
                 req.titulars() != null ? req.titulars().size() : 0);
 
         if (req.titulars() == null || req.titulars().isEmpty()) {
@@ -281,27 +281,46 @@ public class ScanService {
                     "Debe indicar al menos un titular", null, null, 0);
         }
 
-        Employee proxy = employeeRepository.findById(req.proxyEmployeeId())
-                .orElse(null);
-        if (proxy == null || proxy.isDeleted()) {
-            return new ManualScanResponse("NOT_FOUND",
-                    "Empleado que retira no encontrado", null, null, 0);
-        }
-        if (proxy.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+        // Quien retira: empleado interno ACTIVO o persona externa registrada.
+        // Exactamente uno de los dos (el CHECK de la BD también lo garantiza).
+        boolean hasEmpProxy = req.proxyEmployeeId() != null;
+        boolean hasExtProxy = req.proxyExternalPersonId() != null;
+        if (hasEmpProxy == hasExtProxy) {
             return new ManualScanResponse("ERROR",
-                    "El empleado que retira está inactivo y no puede realizar registros manuales.", proxy.getFullName(), null, 0);
+                    "Debe indicar quién retira: un empleado o una persona externa registrada (solo uno).",
+                    null, null, 0);
         }
+
+        Employee proxy = null;
+        ExternalPerson proxyExt = null;
+        if (hasEmpProxy) {
+            proxy = employeeRepository.findById(req.proxyEmployeeId()).orElse(null);
+            if (proxy == null || proxy.isDeleted()) {
+                return new ManualScanResponse("NOT_FOUND",
+                        "Empleado que retira no encontrado", null, null, 0);
+            }
+            if (proxy.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
+                return new ManualScanResponse("ERROR",
+                        "El empleado que retira está inactivo y no puede realizar registros manuales.", proxy.getFullName(), null, 0);
+            }
+        } else {
+            proxyExt = externalPersonRepository.findById(req.proxyExternalPersonId()).orElse(null);
+            if (proxyExt == null) {
+                return new ManualScanResponse("NOT_FOUND",
+                        "La persona externa que retira no está registrada.", null, null, 0);
+            }
+        }
+        final String proxyName = proxy != null ? proxy.getFullName() : proxyExt.getFullName();
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId())
                 .orElse(null);
         if (restaurant == null) {
             return new ManualScanResponse("ERROR", "Restaurant no encontrado",
-                    proxy.getFullName(), null, 0);
+                    proxyName, null, 0);
         }
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         OffsetDateTime now = OffsetDateTime.now(BUSINESS_ZONE);
-        String proxyName = proxy.getFullName();
 
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
         if (sch == null || !sch.isActive() || !sch.contains(now.toLocalTime())) {
@@ -315,15 +334,20 @@ public class ScanService {
         // devolverlos en el mensaje y que la UI explique qué no se creó y por qué.
         List<String> skipped = new ArrayList<>();
 
-        // El proxy no puede ser titular de sí mismo
-        boolean proxyIsAlsoTitular = req.titulars().stream()
-                .anyMatch(item -> req.proxyEmployeeId().equals(item.employeeId()));
-        if (proxyIsAlsoTitular) {
-            return new ManualScanResponse("ERROR",
-                    "El empleado que retira no puede ser al mismo tiempo titular de sí mismo.",
-                    proxyName, null, 0);
-        }
+        final Employee proxyEmp = proxy;
+        final ExternalPerson proxyExternal = proxyExt;
 
+        // El proxy empleado no puede ser titular de sí mismo (el proxy externo se
+        // valida por cédula dentro del bucle, al conocer al titular)
+        if (proxyEmp != null) {
+            boolean proxyIsAlsoTitular = req.titulars().stream()
+                    .anyMatch(item -> proxyEmp.getId().equals(item.employeeId()));
+            if (proxyIsAlsoTitular) {
+                return new ManualScanResponse("ERROR",
+                        "El empleado que retira no puede ser al mismo tiempo titular de sí mismo.",
+                        proxyName, null, 0);
+            }
+        }
         for (ManualScanItem item : req.titulars()) {
             // Lock pesimista igual que el escaneo por huella: serializa registros
             // concurrentes del mismo empleado (manual + kiosco a la vez) para que el
@@ -336,6 +360,11 @@ public class ScanService {
             }
             if (titular.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
                 skipped.add(titular.getFullName() + ": Empleado inactivo");
+                continue;
+            }
+            // Quien retira (persona externa) no puede ser la misma persona que el titular
+            if (proxyExternal != null && proxyExternal.getIdentityCard().equals(titular.getIdentityCard())) {
+                skipped.add(titular.getFullName() + ": quien retira no puede ser el mismo titular");
                 continue;
             }
             if (item.mealTypeCodes() == null || item.mealTypeCodes().isEmpty()) {
@@ -364,7 +393,8 @@ public class ScanService {
                 Consumption consumption = Consumption.builder()
                         .employee(titular)
                         .restaurant(restaurant)
-                        .proxyEmployee(proxy)
+                        .proxyEmployee(proxyEmp)
+                        .proxyExternalPerson(proxyExternal)
                         .consumedAt(now)
                         .businessDate(businessDate)
                         .observation(observation)
@@ -486,11 +516,17 @@ public class ScanService {
                     person.getId(), person.getIdentityCard(), person.getFullName());
         }
 
-        // Empleado que retira el plato a nombre del externo (opcional). Igual que en el
-        // registro "retira por otro" (MANUAL), debe ser un empleado interno ACTIVE y no
-        // puede ser la misma persona que el titular (se compara por cédula: empleado y
-        // persona externa son tablas distintas y sus ids no son comparables).
+        // Quien retira el plato a nombre del externo (opcional): empleado interno
+        // ACTIVE o persona externa ya registrada — como mucho uno de los dos. No
+        // puede ser la misma persona que el titular (se compara por cédula:
+        // empleado y persona externa son tablas distintas y sus ids no son comparables).
+        if (req.proxyEmployeeId() != null && req.proxyExternalPersonId() != null) {
+            return new ManualScanResponse("ERROR",
+                    "Solo puede indicar una persona que retira (empleado o externa, no ambas).",
+                    req.fullName(), null, 0);
+        }
         Employee proxy = null;
+        ExternalPerson proxyExt = null;
         if (req.proxyEmployeeId() != null) {
             proxy = employeeRepository.findById(req.proxyEmployeeId()).orElse(null);
             if (proxy == null || proxy.isDeleted()) {
@@ -508,6 +544,20 @@ public class ScanService {
                         req.fullName(), null, 0);
             }
         }
+        if (req.proxyExternalPersonId() != null) {
+            proxyExt = externalPersonRepository.findById(req.proxyExternalPersonId()).orElse(null);
+            if (proxyExt == null) {
+                return new ManualScanResponse("NOT_FOUND",
+                        "La persona externa que retira no está registrada.", req.fullName(), null, 0);
+            }
+            if (proxyExt.getIdentityCard().equals(identityCard)) {
+                return new ManualScanResponse("ERROR",
+                        "La persona externa que retira no puede ser la misma que el titular.",
+                        req.fullName(), null, 0);
+            }
+        }
+        String proxyName = proxy != null ? proxy.getFullName()
+                : (proxyExt != null ? proxyExt.getFullName() : null);
 
         LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         String mealName = mealNameForCode(req.mealTypeCode());
@@ -524,8 +574,8 @@ public class ScanService {
 
         String userObservation = blankToNull(req.observation());
         String observation;
-        if (proxy != null) {
-            observation = proxy.getFullName() + " retira de " + person.getFullName();
+        if (proxyName != null) {
+            observation = proxyName + " retira de " + person.getFullName();
             if (userObservation != null) observation += " — " + userObservation;
         } else {
             observation = userObservation;
@@ -535,6 +585,7 @@ public class ScanService {
                 .externalPerson(person)
                 .restaurant(restaurant)
                 .proxyEmployee(proxy)
+                .proxyExternalPerson(proxyExt)
                 .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
                 .businessDate(businessDate)
                 .observation(observation)
@@ -547,10 +598,9 @@ public class ScanService {
         consumptionRepository.save(consumption);
 
         log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}', comida='{}', proxy='{}'",
-                person.getFullName(), restaurant.getName(), mealName,
-                proxy != null ? proxy.getFullName() : null);
-        String message = proxy != null
-                ? "REGISTRO EXITOSO (retirado por " + proxy.getFullName() + ")"
+                person.getFullName(), restaurant.getName(), mealName, proxyName);
+        String message = proxyName != null
+                ? "REGISTRO EXITOSO (retirado por " + proxyName + ")"
                 : "REGISTRO EXITOSO";
         return new ManualScanResponse("SUCCESS", message,
                 person.getFullName(), mealName, 1);

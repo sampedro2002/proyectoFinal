@@ -71,7 +71,7 @@ class ExternalScanServiceTest {
     private ExternalScanRequest externalReq(String card, String name, String mealCode) {
         // isPassport=true: omite la validación de cédula ecuatoriana y permite
         // documentos de prueba arbitrarios.
-        return new ExternalScanRequest(card, true, name, mealCode, restaurant.getId(), null, null);
+        return new ExternalScanRequest(card, true, name, mealCode, restaurant.getId(), null, null, null);
     }
 
     @Test
@@ -140,5 +140,103 @@ class ExternalScanServiceTest {
         List<Employee> pendientes = employeeRepository.findActiveNotConsumed(EmployeeStatus.ACTIVE, hoy);
 
         assertThat(pendientes).extracting(Employee::getId).contains(empleado.getId());
+    }
+
+    // ── Persona externa como APODERADA (quien retira) ────────────────────────
+
+    private ExternalPerson registrarExterna(String card, String name) {
+        return externalPersonRepository.save(ExternalPerson.builder()
+                .identityCard(card).fullName(name).build());
+    }
+
+    @Test
+    void registerExternal_retiradoPorOtraPersonaExterna_registraConApoderadaExterna() {
+        ExternalPerson ana = registrarExterna("EXT-100", "Ana Externa");
+
+        ManualScanResponse res = scanService.registerExternal(new ExternalScanRequest(
+                "EXT-101", true, "Bruno Externo", "BREAKFAST", restaurant.getId(),
+                null, null, ana.getId()));
+
+        assertThat(res.status()).isEqualTo("SUCCESS");
+        Consumption c = consumptionRepository.findAll().get(0);
+        assertThat(c.getProxyExternalPerson()).isNotNull();
+        assertThat(c.getProxyExternalPerson().getId()).isEqualTo(ana.getId());
+        assertThat(c.getProxyEmployee()).isNull();
+        assertThat(c.getObservation()).isEqualTo("Ana Externa retira de Bruno Externo");
+        assertThat(c.proxyName()).isEqualTo("Ana Externa");
+        assertThat(c.proxyIsExternal()).isTrue();
+    }
+
+    @Test
+    void registerExternal_apoderadaExternaNoRegistrada_rechaza() {
+        ManualScanResponse res = scanService.registerExternal(new ExternalScanRequest(
+                "EXT-102", true, "Bruno Externo", "BREAKFAST", restaurant.getId(),
+                null, null, 999999L));
+
+        assertThat(res.status()).isEqualTo("NOT_FOUND");
+        assertThat(consumptionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void registerExternal_apoderadaExternaIgualAlTitular_rechaza() {
+        ExternalPerson ana = registrarExterna("EXT-103", "Ana Externa");
+
+        ManualScanResponse res = scanService.registerExternal(new ExternalScanRequest(
+                "EXT-103", true, "Ana Externa", "BREAKFAST", restaurant.getId(),
+                null, null, ana.getId()));
+
+        assertThat(res.status()).isEqualTo("ERROR");
+        assertThat(consumptionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void manualScan_personaExternaRetiraPorEmpleados_creaFilasConApoderadaExterna() {
+        ExternalPerson ana = registrarExterna("EXT-104", "Ana Externa");
+
+        ManualScanRequest req = new ManualScanRequest(
+                null, ana.getId(), restaurant.getId(),
+                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+
+        ManualScanResponse res = scanService.manualScan(req);
+
+        assertThat(res.status()).isEqualTo("SUCCESS");
+        assertThat(res.created()).isEqualTo(1);
+        Consumption c = consumptionRepository.findAll().get(0);
+        assertThat(c.getMethod()).isEqualTo(Method.MANUAL);
+        assertThat(c.getEmployee().getId()).isEqualTo(empleado.getId());
+        assertThat(c.getProxyExternalPerson().getId()).isEqualTo(ana.getId());
+        assertThat(c.getProxyEmployee()).isNull();
+        assertThat(c.getObservation()).isEqualTo("Ana Externa retira de " + empleado.getFullName());
+    }
+
+    @Test
+    void manualScan_personaExternaNoPuedeRetirarDeSiMisma() {
+        // Misma cédula en empleado y persona externa (caso borde: externa registrada
+        // antes de ser contratada). Se detecta por cédula y se omite al titular.
+        ExternalPerson misma = registrarExterna(empleado.getIdentityCard(), empleado.getFullName());
+
+        ManualScanRequest req = new ManualScanRequest(
+                null, misma.getId(), restaurant.getId(),
+                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+
+        ManualScanResponse res = scanService.manualScan(req);
+
+        assertThat(res.status()).isEqualTo("ERROR");
+        assertThat(res.created()).isEqualTo(0);
+        assertThat(consumptionRepository.findAll()).isEmpty();
+    }
+
+    @Test
+    void manualScan_conAmbosApoderados_rechaza() {
+        ExternalPerson ana = registrarExterna("EXT-105", "Ana Externa");
+
+        ManualScanRequest req = new ManualScanRequest(
+                empleado.getId(), ana.getId(), restaurant.getId(),
+                List.of(new ManualScanItem(empleado.getId(), List.of("BREAKFAST"))));
+
+        ManualScanResponse res = scanService.manualScan(req);
+
+        assertThat(res.status()).isEqualTo("ERROR");
+        assertThat(consumptionRepository.findAll()).isEmpty();
     }
 }

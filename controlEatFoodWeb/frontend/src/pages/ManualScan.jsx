@@ -139,6 +139,10 @@ export default function ManualScan() {
   const [extCard, setExtCard] = useState('');
   const [extName, setExtName] = useState('');
   const [isPassport, setIsPassport] = useState(false);
+  const [extFound, setExtFound] = useState(false);           // ¿cédula ya registrada?
+  const [extFoundSource, setExtFoundSource] = useState('');   // 'EMPLOYEE' | 'EXTERNAL'
+  const [extLookupLoading, setExtLookupLoading] = useState(false);
+  const extLookupSeq = useRef(0);
   const [extProxyEnabled, setExtProxyEnabled] = useState(false);
   const [extProxyTerm, setExtProxyTerm] = useState('');
   const [extProxySuggestions, setExtProxySuggestions] = useState([]);
@@ -232,6 +236,39 @@ export default function ManualScan() {
     setResult(null); setError('');
   }
 
+  // ── Lookup de cédula en tiempo real (persona externa) ──
+  useEffect(() => {
+    if (mode !== 'external') return;
+    const card = extCard.trim();
+    if (card.length < 5) {
+      setExtFound(false); setExtFoundSource(''); setExtLookupLoading(false);
+      return;
+    }
+    setExtLookupLoading(true);
+    const seq = ++extLookupSeq.current;
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/external-persons/lookup', { params: { identityCard: card } });
+        if (seq !== extLookupSeq.current) return;
+        if (data.found) {
+          setExtFound(true);
+          setExtFoundSource(data.source);
+          setExtName(data.fullName);
+        } else {
+          setExtFound(false);
+          setExtFoundSource('');
+        }
+      } catch {
+        if (seq === extLookupSeq.current) {
+          setExtFound(false); setExtFoundSource('');
+        }
+      } finally {
+        if (seq === extLookupSeq.current) setExtLookupLoading(false);
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [extCard, mode]);
+
 
 
   function selectProxy(emp) {
@@ -313,6 +350,7 @@ export default function ManualScan() {
     setProxy(null); setProxyTerm(''); setProxySuggestions([]);
     setTitulars([]); setTitularTerm(''); setTitularSuggestions([]);
     setExtCard(''); setExtName(''); setIsPassport(false);
+    setExtFound(false); setExtFoundSource(''); setExtLookupLoading(false);
     setSelectedMealCodes([]); setObservation('');
     setExtProxyEnabled(false); setExtProxy(null); setExtProxyTerm(''); setExtProxySuggestions([]);
   }
@@ -559,19 +597,29 @@ export default function ManualScan() {
                 <label>{isPassport ? 'Pasaporte' : 'Cédula'}</label>
                 <input
                   value={extCard}
-                  onChange={(e) => { setExtCard(e.target.value); setResult(null); }}
+                  onChange={(e) => { setExtCard(e.target.value); setResult(null); setExtFound(false); setExtFoundSource(''); setExtName(''); }}
                   placeholder={`Ingrese ${isPassport ? 'el pasaporte' : 'la cédula'} de la persona externa`}
                   required
                 />
+                {extLookupLoading && (
+                  <p style={{ color: 'var(--muted)', fontSize: 13, margin: '4px 0 0' }}>Verificando…</p>
+                )}
               </div>
               <div className="field">
                 <label>Nombre completo</label>
                 <input
                   value={extName}
-                  onChange={(e) => { setExtName(e.target.value); setResult(null); }}
+                  onChange={(e) => { if (!extFound) { setExtName(e.target.value); setResult(null); } }}
                   placeholder="Nombre de la persona externa"
                   required
+                  readOnly={extFound}
+                  style={extFound ? { opacity: 0.7, cursor: 'not-allowed' } : {}}
                 />
+                {extFound && (
+                  <p style={{ color: 'var(--ok, #16a34a)', fontSize: 13, margin: '4px 0 0' }}>
+                    ✓ Persona ya registrada{extFoundSource === 'EMPLOYEE' ? ' (empleado)' : ' (persona externa)'}. Nombre autocompletado.
+                  </p>
+                )}
               </div>
               <div className="field">
                 <label>Tipo de comida</label>
@@ -685,6 +733,7 @@ export default function ManualScan() {
                 setProxyTerm(''); setProxy(null); setProxySuggestions([]);
                 setTitulars([]); setTitularTerm(''); setTitularSuggestions([]);
                 setExtCard(''); setExtName(''); setObservation(''); setIsPassport(false);
+                setExtFound(false); setExtFoundSource(''); setExtLookupLoading(false);
                 setSelectedMealCodes([]); setResult(null); setError('');
                 setExtProxyEnabled(false); setExtProxy(null); setExtProxyTerm(''); setExtProxySuggestions([]);
               }}

@@ -6,6 +6,7 @@ import com.eatfood.control.exception.BusinessException;
 import com.eatfood.control.exception.NotFoundException;
 import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
+import com.eatfood.control.repository.ExternalPersonRepository;
 import com.eatfood.control.repository.RestaurantRepository;
 import com.eatfood.control.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
@@ -27,9 +28,31 @@ public class ManualConsumptionService {
 
     private final ConsumptionRepository consumptionRepository;
     private final EmployeeRepository employeeRepository;
+    private final ExternalPersonRepository externalPersonRepository;
     private final RestaurantRepository restaurantRepository;
     private final ScheduleRepository scheduleRepository;
     private final AuditService auditService;
+
+    /**
+     * Buscador unificado de "quien retira": empleados ACTIVOS y personas externas
+     * registradas, mezclados (las UIs los distinguen con un badge "Externo").
+     * Devuelve hasta 8 de cada grupo.
+     */
+    @Transactional(readOnly = true)
+    public List<ProxyCandidate> proxyCandidates(String term) {
+        String t = term != null ? term.trim() : "";
+        if (t.length() < 2) return List.of();
+        var page = org.springframework.data.domain.PageRequest.of(0, 8);
+        List<ProxyCandidate> employees = employeeRepository.searchActiveByNameOrCard(t, page).stream()
+                .map(e -> new ProxyCandidate("EMPLOYEE", e.getId(), e.getIdentityCard(), e.getFullName()))
+                .toList();
+        List<ProxyCandidate> externals = externalPersonRepository.search(t, page).stream()
+                .map(p -> new ProxyCandidate("EXTERNAL", p.getId(), p.getIdentityCard(), p.getFullName()))
+                .toList();
+        List<ProxyCandidate> all = new java.util.ArrayList<>(employees);
+        all.addAll(externals);
+        return all;
+    }
 
     @Transactional(readOnly = true)
     public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, Pageable pageable) {
@@ -72,13 +95,22 @@ public class ManualConsumptionService {
                     "El titular de un consumo externo no se puede cambiar.");
         }
 
-        // Validar que el apoderado no sea el mismo que el titular (solo aplica
-        // cuando el titular es empleado: compara ids de la misma tabla).
+        // Validar que el apoderado no sea el mismo que el titular. Entre empleados se
+        // compara por id; cuando entra en juego una persona externa, por cédula.
         Long titularEmployeeId = req.employeeId() != null ? req.employeeId()
                 : (c.getEmployee() != null ? c.getEmployee().getId() : null);
         if (req.proxyEmployeeId() != null && req.proxyEmployeeId().equals(titularEmployeeId)) {
             throw new BusinessException("SAME_PERSON",
                     "El empleado que retira no puede ser el mismo que el titular.");
+        }
+        if (req.proxyExternalPersonId() != null) {
+            ExternalPerson candidate = externalPersonRepository.findById(req.proxyExternalPersonId())
+                    .orElseThrow(() -> new NotFoundException(
+                            "Persona externa no encontrada: " + req.proxyExternalPersonId()));
+            if (candidate.getIdentityCard().equals(c.titularIdentityCard())) {
+                throw new BusinessException("SAME_PERSON",
+                        "La persona externa que retira no puede ser la misma que el titular.");
+            }
         }
 
         String before = snapshot(c);
@@ -95,7 +127,21 @@ public class ManualConsumptionService {
             if (proxy.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
                 throw new BusinessException("INACTIVE_EMPLOYEE", "El empleado apoderado seleccionado está inactivo.");
             }
+            // Quien retira (empleado) no puede ser la misma persona que un titular externo
+            if (c.getEmployee() == null && proxy.getIdentityCard().equals(c.titularIdentityCard())) {
+                throw new BusinessException("SAME_PERSON",
+                        "El empleado que retira no puede ser la misma persona que el titular.");
+            }
             c.setProxyEmployee(proxy);
+            c.setProxyExternalPerson(null);
+        }
+
+        if (req.proxyExternalPersonId() != null) {
+            ExternalPerson proxyExt = externalPersonRepository.findById(req.proxyExternalPersonId())
+                    .orElseThrow(() -> new NotFoundException(
+                            "Persona externa no encontrada: " + req.proxyExternalPersonId()));
+            c.setProxyExternalPerson(proxyExt);
+            c.setProxyEmployee(null);
         }
 
         boolean titularChanged = req.employeeId() != null && c.getEmployee() != null
@@ -122,7 +168,7 @@ public class ManualConsumptionService {
             }
 
             c.setEmployee(newTitular);
-            String proxyName = c.getProxyEmployee() != null ? c.getProxyEmployee().getFullName() : "Admin";
+            String proxyName = c.proxyName() != null ? c.proxyName() : "Admin";
             c.setObservation(proxyName + " retira de " + newTitular.getFullName());
         }
 
@@ -190,6 +236,7 @@ public class ManualConsumptionService {
         Employee e = c.getEmployee();
         ExternalPerson x = c.getExternalPerson();
         Employee p = c.getProxyEmployee();
+        ExternalPerson px = c.getProxyExternalPerson();
         return new ConsumptionDetailResponse(
                 c.getId(),
                 e != null ? e.getId() : null,
@@ -197,6 +244,8 @@ public class ManualConsumptionService {
                 c.titularName(), c.titularIdentityCard(),
                 p != null ? p.getId() : null,
                 p != null ? p.getFullName() : null,
+                px != null ? px.getId() : null,
+                px != null ? px.getFullName() : null,
                 c.getRestaurant().getId(), c.getRestaurant().getName(),
                 c.getMealName(), c.getObservation(),
                 c.getMethod().name(), c.isOffline(), c.isCancelled(),
@@ -209,8 +258,10 @@ public class ManualConsumptionService {
         String titular = c.getEmployee() != null
                 ? "emp:" + c.getEmployee().getId()
                 : "ext:" + (c.getExternalPerson() != null ? c.getExternalPerson().getId() : "?");
+        String proxy = c.getProxyEmployee() != null
+                ? "emp:" + c.getProxyEmployee().getId()
+                : (c.getProxyExternalPerson() != null ? "ext:" + c.getProxyExternalPerson().getId() : null);
         return String.format("titular=%s|proxy=%s|rest=%s|comida=%s|cancel=%s",
-                titular, c.getProxyEmployee() != null ? c.getProxyEmployee().getId() : null,
-                c.getRestaurant().getId(), c.getMealName(), c.isCancelled());
+                titular, proxy, c.getRestaurant().getId(), c.getMealName(), c.isCancelled());
     }
 }
