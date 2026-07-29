@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
+import { isValidCedulaEC } from '../utils/cedula.js';
 
 /**
  * Registro manual de consumo.
@@ -121,7 +122,6 @@ function EmployeePicker({ label, term, setTerm, suggestions, show, setShow, onPi
 }
 
 export default function ManualScan() {
-  const { hasRole } = useAuth();
   const [mode, setMode] = useState('proxy'); // 'proxy' | 'external'
 
   // --- sugerencias reutilizables (autosuggest de empleados) ---
