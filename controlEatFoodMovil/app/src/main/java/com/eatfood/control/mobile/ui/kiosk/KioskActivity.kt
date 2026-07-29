@@ -692,7 +692,11 @@ private fun TodayFeedPanel(
     modifier: Modifier = Modifier
 ) {
     var feedMethod by remember { mutableStateOf("ALL") } // ALL, MANUAL, FINGERPRINT
-    val filteredFeed = if (feedMethod == "ALL") feed else feed.filter { it.method == feedMethod }
+    // EXTERNAL cuenta como "manual" (registro sin huella) para el filtro MANUAL, aunque
+    // conserva su propio color de fila para distinguirlo visualmente (ver ManualAmber/ExternalOrange).
+    val filteredFeed = feed.filter {
+        feedMethod == "ALL" || it.method == feedMethod || (feedMethod == "MANUAL" && it.method == "EXTERNAL")
+    }
 
     // Se ven 10 registros y el resto se recorre con scroll dentro de la tabla, sin que la
     // tabla se coma toda la pantalla en teléfonos de pantalla corta.
@@ -792,10 +796,18 @@ private fun TodayFeedPanel(
                     } else {
                         LazyColumn(Modifier.heightIn(max = listMaxHeight)) {
                             itemsIndexed(filteredFeed) { index, e ->
+                                // Mismo esquema de color que en la web: ámbar para MANUAL,
+                                // naranja para EXTERNAL, sin tinte para FINGERPRINT.
+                                val rowTint = when (e.method) {
+                                    "MANUAL" -> ManualAmber.copy(alpha = 0.10f)
+                                    "EXTERNAL" -> ExternalOrange.copy(alpha = 0.10f)
+                                    else -> Color.Transparent
+                                }
                                 Row(
                                     // Alto fijo por fila: es lo que hace que entren exactamente
                                     // FEED_VISIBLE_ROWS registros antes de tener que bajar.
-                                    Modifier.fillMaxWidth().height(FEED_ROW_HEIGHT).padding(horizontal = 12.dp),
+                                    Modifier.fillMaxWidth().height(FEED_ROW_HEIGHT).background(rowTint)
+                                        .padding(horizontal = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text("${filteredFeed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)

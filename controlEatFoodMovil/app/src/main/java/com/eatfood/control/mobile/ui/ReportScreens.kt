@@ -127,7 +127,8 @@ fun ReportsScreen() {
                             r.cancelled -> "Cancelado"
                             r.offline -> "offline"
                             else -> ""
-                        }
+                        },
+                        containerColor = methodRowColor(r.method)
                     )
                 }
             }
@@ -139,6 +140,14 @@ private fun methodLabel(method: String?): String = when (method) {
     "MANUAL"   -> "Manual"
     "EXTERNAL" -> "Externo"
     else       -> "Huella"
+}
+
+/** Mismo esquema de color que la web (Reports.jsx): ámbar para Manual, naranja para Externo. */
+@Composable
+private fun methodRowColor(method: String?): androidx.compose.ui.graphics.Color = when (method) {
+    "MANUAL"   -> com.eatfood.control.mobile.ui.theme.ManualAmber.copy(alpha = 0.10f)
+    "EXTERNAL" -> com.eatfood.control.mobile.ui.theme.ExternalOrange.copy(alpha = 0.10f)
+    else       -> MaterialTheme.colorScheme.surface
 }
 
 private fun buildDescription(r: ConsumptionRow): String {

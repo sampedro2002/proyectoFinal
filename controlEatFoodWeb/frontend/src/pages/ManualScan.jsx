@@ -138,6 +138,11 @@ export default function ManualScan() {
   const [extCard, setExtCard] = useState('');
   const [extName, setExtName] = useState('');
   const [isPassport, setIsPassport] = useState(false);
+  const [extProxyEnabled, setExtProxyEnabled] = useState(false);
+  const [extProxyTerm, setExtProxyTerm] = useState('');
+  const [extProxySuggestions, setExtProxySuggestions] = useState([]);
+  const [showExtProxySuggest, setShowExtProxySuggest] = useState(false);
+  const [extProxy, setExtProxy] = useState(null);
 
   // --- comunes ---
   const [restaurants, setRestaurants] = useState([]);
@@ -197,6 +202,34 @@ export default function ManualScan() {
     }, 300);
     return () => clearTimeout(t);
   }, [titularTerm, mode]);
+
+  // Buscador de empleado que retira en modo "external" (checkbox "Retira otra persona").
+  const extProxySeqRef = useRef(0);
+  useEffect(() => {
+    if (mode !== 'external' || !extProxyEnabled || !extProxyTerm || extProxyTerm.trim().length < 2) {
+      setExtProxySuggestions([]); return;
+    }
+    const t = setTimeout(() => {
+      const seq = ++extProxySeqRef.current;
+      api.get('/employees', { params: { term: extProxyTerm.trim(), size: 8 } })
+        .then((r) => {
+          if (seq !== extProxySeqRef.current) return;
+          const data = r.data.content || r.data || [];
+          setExtProxySuggestions(data.filter(e => e.status === 'ACTIVE'));
+          setShowExtProxySuggest(true);
+        })
+        .catch(() => { if (seq === extProxySeqRef.current) setExtProxySuggestions([]); });
+    }, 300);
+    return () => clearTimeout(t);
+  }, [extProxyTerm, extProxyEnabled, mode]);
+
+  function selectExtProxy(emp) {
+    if (!emp) { setExtProxy(null); setResult(null); setError(''); return; }
+    setExtProxy(emp);
+    setExtProxyTerm(`${emp.fullName} · ${emp.identityCard}`);
+    setShowExtProxySuggest(false);
+    setResult(null); setError('');
+  }
 
   function selectProxy(emp) {
     // El onChange del buscador llama onPick(null) para deseleccionar mientras se
@@ -278,6 +311,7 @@ export default function ManualScan() {
     setTitulars([]); setTitularTerm(''); setTitularSuggestions([]);
     setExtCard(''); setExtName(''); setIsPassport(false);
     setSelectedMealCodes([]); setObservation('');
+    setExtProxyEnabled(false); setExtProxy(null); setExtProxyTerm(''); setExtProxySuggestions([]);
   }
 
   async function submit(e) {
@@ -323,6 +357,7 @@ export default function ManualScan() {
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (selectedMealCodes.length === 0) { setError('Seleccione al menos un tipo de comida.'); return; }
+      if (extProxyEnabled && !extProxy) { setError('Seleccione el empleado que retira.'); return; }
 
       setLoading(true);
       const successResults = [];
@@ -336,6 +371,7 @@ export default function ManualScan() {
             mealTypeCode: code,
             restaurantId: Number(restaurantId),
             observation: observation.trim() || null,
+            proxyEmployeeId: extProxyEnabled && extProxy ? extProxy.id : null,
           });
           // El endpoint responde 200 también cuando NO registró (OUT_OF_SCHEDULE,
           // DUPLICATE…), así que el éxito se decide por data.status, no por el HTTP.
@@ -369,7 +405,8 @@ export default function ManualScan() {
   const canSubmit =
     mode === 'proxy'
       ? proxy && restaurantId && titulars.some((t) => t.mealCodes.length > 0)
-      : extCard.trim() && extName.trim() && restaurantId && selectedMealCodes.length > 0;
+      : extCard.trim() && extName.trim() && restaurantId && selectedMealCodes.length > 0
+        && (!extProxyEnabled || !!extProxy);
 
   return (
     <div>
@@ -555,6 +592,37 @@ export default function ManualScan() {
                 </div>
               </div>
               <div className="field">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 'normal', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={extProxyEnabled}
+                    onChange={(e) => {
+                      setExtProxyEnabled(e.target.checked);
+                      if (!e.target.checked) {
+                        setExtProxy(null); setExtProxyTerm(''); setExtProxySuggestions([]);
+                      }
+                      setResult(null);
+                    }}
+                  />
+                  Retira otra persona (empleado)
+                </label>
+              </div>
+              {extProxyEnabled && (
+                <EmployeePicker
+                  label="Empleado que retira"
+                  term={extProxyTerm}
+                  setTerm={setExtProxyTerm}
+                  suggestions={extProxySuggestions}
+                  show={showExtProxySuggest}
+                  setShow={setShowExtProxySuggest}
+                  onPick={selectExtProxy}
+                  onClear={() => setResult(null)}
+                  selected={extProxy}
+                  selectedLabel={extProxy ? `Seleccionado: ${extProxy.fullName} · ${extProxy.identityCard}` : null}
+                  placeholder="Busque por nombre o cédula a quien retira…"
+                />
+              )}
+              <div className="field">
                 <label>Observación (opcional)</label>
                 <textarea
                   value={observation}
@@ -614,6 +682,7 @@ export default function ManualScan() {
                 setTitulars([]); setTitularTerm(''); setTitularSuggestions([]);
                 setExtCard(''); setExtName(''); setObservation(''); setIsPassport(false);
                 setSelectedMealCodes([]); setResult(null); setError('');
+                setExtProxyEnabled(false); setExtProxy(null); setExtProxyTerm(''); setExtProxySuggestions([]);
               }}
             >
               Limpiar

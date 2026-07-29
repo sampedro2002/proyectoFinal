@@ -18,6 +18,9 @@ val Success = Color(0xFF16A34A)
 val ErrorRed = Color(0xFFDC2626)
 val Warning = Color(0xFFF59E0B)
 val Sim = Color(0xFF8B5CF6)
+// Colores por método de registro (coinciden con la web): Manual=Warning (ámbar), Externo=naranja.
+val ManualAmber = Warning
+val ExternalOrange = Color(0xFFFB923C)
 
 private val DarkColors = darkColorScheme(
     primary = Primary,

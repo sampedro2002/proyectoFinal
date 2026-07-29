@@ -520,7 +520,12 @@ export default function Kiosk() {
         </div>
         
         {showTable && (() => {
-          const filteredFeed = feedMethod === 'ALL' ? feed : feed.filter(e => e.method === feedMethod);
+          // EXTERNAL cuenta como "manual" (registro sin huella) para el filtro MANUAL,
+          // aunque conserva su propio color de fila para distinguirlo visualmente.
+          const filteredFeed = feed.filter(e =>
+            feedMethod === 'ALL' ||
+            e.method === feedMethod ||
+            (feedMethod === 'MANUAL' && e.method === 'EXTERNAL'));
           const totalAlmuerzos = filteredFeed.filter(e => e.mealName?.toLowerCase().includes('almuerzo')).length;
           const totalMeriendas = filteredFeed.filter(e => e.mealName?.toLowerCase().includes('merienda')).length;
 
@@ -543,7 +548,7 @@ export default function Kiosk() {
                     </tr>
                   ) : (
                     filteredFeed.map((e, i) => (
-                      <tr key={i}>
+                      <tr key={i} className={e.method === 'MANUAL' ? 'row-manual' : e.method === 'EXTERNAL' ? 'row-external' : ''}>
                         <td>{filteredFeed.length - i}</td>
                         <td>{e.employeeName}</td>
                         <td>{e.time}</td>

@@ -265,7 +265,9 @@ data class ExternalScanRequest(
     val mealTypeCode: String,
     val restaurantId: Long,
     val observation: String? = null,
-    val isPassport: Boolean? = null
+    val isPassport: Boolean? = null,
+    // Opcional: empleado interno que retira el plato a nombre del externo.
+    val proxyEmployeeId: Long? = null
 )
 
 data class ManualScanResponse(

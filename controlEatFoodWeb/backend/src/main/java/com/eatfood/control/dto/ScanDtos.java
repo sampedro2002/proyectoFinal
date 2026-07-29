@@ -112,7 +112,10 @@ public final class ScanDtos {
             @NotBlank String fullName,
             @NotBlank String mealTypeCode,
             @NotNull Long restaurantId,
-            String observation) {}
+            String observation,
+            // Opcional: empleado interno que retira el plato a nombre del externo.
+            // Si es null, se asume que el propio externo lo retira (comportamiento previo).
+            Long proxyEmployeeId) {}
 
     public record UpdateManualConsumptionRequest(
             Long proxyEmployeeId,

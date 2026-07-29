@@ -38,10 +38,11 @@ fun RowItem(
     title: String,
     subtitle: String,
     trailing: String = "",
-    onClick: (() -> Unit)? = null
+    onClick: (() -> Unit)? = null,
+    containerColor: Color = MaterialTheme.colorScheme.surface
 ) {
     Surface(
-        color = MaterialTheme.colorScheme.surface,
+        color = containerColor,
         modifier = Modifier.fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
     ) {

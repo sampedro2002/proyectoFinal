@@ -957,6 +957,8 @@ fun ExtraMealsScreen() {
     var extAlmuerzo by remember { mutableStateOf(false) }
     var extMerienda by remember { mutableStateOf(false) }
     var observation by remember { mutableStateOf("") }
+    var extProxyEnabled by remember { mutableStateOf(false) }
+    var extProxy by remember { mutableStateOf<EmployeeResponse?>(null) }
 
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -1192,6 +1194,34 @@ fun ExtraMealsScreen() {
                     Text("Merienda", Modifier.clickable { extMerienda = !extMerienda })
                 }
                 Spacer(Modifier.height(12.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(extProxyEnabled, {
+                        extProxyEnabled = it
+                        if (!it) extProxy = null
+                    })
+                    Text("Retira otra persona (empleado)", Modifier.clickable {
+                        extProxyEnabled = !extProxyEnabled
+                        if (!extProxyEnabled) extProxy = null
+                    })
+                }
+                if (extProxyEnabled) {
+                    Spacer(Modifier.height(4.dp))
+                    if (extProxy == null) {
+                        EmployeeSearchField("Busque por nombre o cédula a quien retira…", api) { extProxy = it }
+                    } else {
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(extProxy!!.fullName, fontWeight = FontWeight.Bold)
+                                    Text("CI ${extProxy!!.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                TextButton(onClick = { extProxy = null }) { Text("Cambiar") }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = observation, onValueChange = { observation = it },
                     label = { Text("Observación (opcional)") },
@@ -1199,7 +1229,8 @@ fun ExtraMealsScreen() {
                 )
                 Spacer(Modifier.height(20.dp))
                 val canSubmit = !busy && (extAlmuerzo || extMerienda) &&
-                    extName.isNotBlank() && extCard.isNotBlank() && selectedRestaurantId != null
+                    extName.isNotBlank() && extCard.isNotBlank() && selectedRestaurantId != null &&
+                    (!extProxyEnabled || extProxy != null)
                 Button(
                     enabled = canSubmit,
                     onClick = {
@@ -1221,7 +1252,15 @@ fun ExtraMealsScreen() {
                             for (code in codes) {
                                 runCatching {
                                     api.manualScanExternal(
-                                        ExternalScanRequest(card, extName.trim(), code, selectedRestaurantId!!, obs, isPassport)
+                                        ExternalScanRequest(
+                                            identityCard = card,
+                                            fullName = extName.trim(),
+                                            mealTypeCode = code,
+                                            restaurantId = selectedRestaurantId!!,
+                                            observation = obs,
+                                            isPassport = isPassport,
+                                            proxyEmployeeId = if (extProxyEnabled) extProxy?.id else null
+                                        )
                                     )
                                 }.onSuccess { r ->
                                     res.add("${r.mealName ?: code}: ${r.message ?: r.status}")
@@ -1233,6 +1272,7 @@ fun ExtraMealsScreen() {
                                 snackbar.showSnackbar("Registros guardados con éxito")
                                 extName = ""; extCard = ""; observation = ""
                                 extAlmuerzo = false; extMerienda = false; isPassport = false
+                                extProxyEnabled = false; extProxy = null
                             } else if (anyCreated) {
                                 snackbar.showSnackbar("Registrado parcialmente. Revise el detalle abajo.")
                             } else {
