@@ -174,7 +174,9 @@ CREATE TABLE IF NOT EXISTS consumo (
                             CHECK (metodo IN ('FINGERPRINT','MANUAL','EXTERNAL')),
     -- Quien retira (apoderado), opcional: empleado (empleado_apoderado_id) O
     -- persona externa registrada (persona_externa_apoderada_id). Nunca ambos
-    -- (ver CHECK chk_consumo_apoderado más abajo).
+    -- (lo valida ScanService/ManualConsumptionService, no hay CHECK en BD:
+    -- MySQL prohíbe un CHECK sobre una columna con ON DELETE SET NULL —
+    -- error 3823 — así que la exclusión es 100% responsabilidad del código).
     empleado_apoderado_id        BIGINT,
     persona_externa_apoderada_id BIGINT,
     nombre_comida       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
@@ -191,7 +193,6 @@ CREATE TABLE IF NOT EXISTS consumo (
     KEY idx_consumo_apoderado (empleado_apoderado_id),
     KEY idx_consumo_apoderado_externo (persona_externa_apoderada_id),
     CONSTRAINT chk_consumo_titular CHECK ((empleado_id IS NULL) <> (persona_externa_id IS NULL)),
-    CONSTRAINT chk_consumo_apoderado CHECK ((empleado_apoderado_id IS NULL) OR (persona_externa_apoderada_id IS NULL)),
     FOREIGN KEY (empleado_id) REFERENCES empleado(id),
     FOREIGN KEY (persona_externa_id) REFERENCES persona_externa(id),
     FOREIGN KEY (restaurante_id) REFERENCES restaurante(id),
