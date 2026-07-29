@@ -243,19 +243,25 @@ data class ApiError(
 
 /**
  * Registro manual "retira por otro" (solo ADMIN). Debe coincidir EXACTAMENTE con el
- * DTO del backend (ScanDtos.ManualScanRequest): proxyEmployeeId + restaurantId + titulars,
- * todos @NotNull. En el móvil no hay selector de "quién retira", así que el empleado
- * seleccionado es a la vez el proxy y el único titular.
+ * DTO del backend (ScanDtos.ManualScanRequest): quien retira es un empleado
+ * (proxyEmployeeId) O una persona externa ya registrada (proxyExternalPersonId) —
+ * exactamente uno de los dos.
  */
 data class ManualScanRequest(
-    val proxyEmployeeId: Long,
+    val proxyEmployeeId: Long? = null,
+    val proxyExternalPersonId: Long? = null,
     val restaurantId: Long,
     val titulars: List<ManualScanItem>
 )
 
-/** Un titular y los códigos de comida que se le registran (BREAKFAST=Almuerzo, LUNCH=Merienda). */
+/**
+ * Un titular y los códigos de comida que se le registran (BREAKFAST=Almuerzo,
+ * LUNCH=Merienda). El titular es un empleado (employeeId) O una persona externa
+ * ya registrada (externalPersonId) — exactamente uno de los dos.
+ */
 data class ManualScanItem(
-    val employeeId: Long,
+    val employeeId: Long? = null,
+    val externalPersonId: Long? = null,
     val mealTypeCodes: List<String>
 )
 
@@ -266,8 +272,43 @@ data class ExternalScanRequest(
     val restaurantId: Long,
     val observation: String? = null,
     val isPassport: Boolean? = null,
-    // Opcional: empleado interno que retira el plato a nombre del externo.
-    val proxyEmployeeId: Long? = null
+    // Opcional: quien retira el plato a nombre del externo. Puede ser un empleado
+    // interno (proxyEmployeeId) o una persona externa ya registrada
+    // (proxyExternalPersonId) — como mucho uno de los dos.
+    val proxyEmployeeId: Long? = null,
+    val proxyExternalPersonId: Long? = null
+)
+
+/**
+ * Candidato a "quien retira" (o titular en modo "retira por otro") en el buscador
+ * unificado: empleado ACTIVO o persona externa registrada. type: "EMPLOYEE" | "EXTERNAL".
+ */
+data class ProxyCandidate(
+    val type: String,
+    val id: Long,
+    val identityCard: String?,
+    val fullName: String?
+)
+
+/** Resultado de buscar si una cédula ya está registrada (empleado o persona externa). */
+data class ExternalPersonLookup(
+    val found: Boolean = false,
+    val fullName: String? = null,
+    val source: String? = null
+)
+
+data class ExternalPersonRequest(
+    val identityCard: String,
+    val fullName: String,
+    val observation: String? = null,
+    val isPassport: Boolean? = null
+)
+
+data class ExternalPersonResponse(
+    val id: Long,
+    val identityCard: String,
+    val fullName: String,
+    val observation: String?
 )
 
 data class ManualScanResponse(
@@ -302,6 +343,9 @@ data class ConsumptionDetailResponse(
     val identityCard: String?,
     val proxyEmployeeId: Long?,
     val proxyEmployeeName: String?,
+    // Quien retira cuando es persona externa (excluyente con proxyEmployee*).
+    val proxyExternalPersonId: Long? = null,
+    val proxyExternalPersonName: String? = null,
     val restaurantId: Long,
     val restaurantName: String?,
     val mealName: String?,
@@ -316,6 +360,9 @@ data class ConsumptionDetailResponse(
 
 data class UpdateManualConsumptionRequest(
     val proxyEmployeeId: Long? = null,
+    // Al venir no nulo, el apoderado pasa a ser esta persona externa registrada
+    // (y se limpia empleado_apoderado_id).
+    val proxyExternalPersonId: Long? = null,
     val employeeId: Long? = null,
     val restaurantId: Long? = null,
     val mealName: String? = null,

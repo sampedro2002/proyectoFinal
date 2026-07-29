@@ -28,7 +28,7 @@ public final class ReportDtos {
         if (method == null) return "Huella";
         return switch (method) {
             case "MANUAL"  -> "Manual";
-            case "EXTERNAL" -> "Externo";
+            case "EXTERNAL" -> "MANUAL - E";
             default        -> "Huella";
         };
     }

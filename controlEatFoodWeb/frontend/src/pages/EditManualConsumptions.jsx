@@ -69,7 +69,10 @@ function EmployeePicker({ label, term, setTerm, suggestions, show, setShow, onPi
               onMouseEnter={() => setHighlight(idx)}
             >
               <div>{emp.fullName}</div>
-              <div style={{ fontSize: 12, color: '#64748b' }}>{emp.identityCard}</div>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                {emp.identityCard}
+                {emp.type === 'EXTERNAL' && ' · Persona externa'}
+              </div>
             </li>
           ))}
         </ul>
@@ -136,18 +139,19 @@ export default function EditManualConsumptions() {
     return () => clearTimeout(t);
   }, [titularTerm, editTarget]);
 
-  /* ───── autocomplete proxy ───── */
+  /* ───── autocomplete proxy: candidatos unificados (empleado ACTIVO o persona
+     externa ya registrada) — igual que ManualScan.jsx. Solo se puede "retirar
+     por" alguien que ya está registrado en el sistema. ───── */
   useEffect(() => {
     if (!editTarget || !proxyTerm || proxyTerm.trim().length < 2) {
       setProxySugg([]); return;
     }
     const t = setTimeout(() => {
       const seq = ++proxySeqRef.current;
-      api.get('/employees', { params: { term: proxyTerm.trim(), size: 8 } })
+      api.get('/manual-consumptions/proxy-candidates', { params: { term: proxyTerm.trim() } })
         .then(r => {
           if (seq !== proxySeqRef.current) return;
-          const data = r.data.content || r.data || [];
-          setProxySugg(data.filter(e => e.status === 'ACTIVE'));
+          setProxySugg(r.data || []);
           setShowProxy(true);
         })
         .catch(() => { if (seq === proxySeqRef.current) setProxySugg([]); });
@@ -204,15 +208,16 @@ export default function EditManualConsumptions() {
         } catch (e) {}
       }
 
+      const proxyName = d.proxyEmployeeName || d.proxyExternalPersonName || '';
       setEditTarget({
         ...d,
         _originalMealName: d.mealName,
         _titularLabel: d.employeeName ? `${d.employeeName} · ${d.identityCard || ''}` : '',
-        _proxyLabel:   d.proxyEmployeeName ? `${d.proxyEmployeeName}` : '',
+        _proxyLabel:   proxyName,
         _avail: avail,
       });
       setTitularTerm(d.employeeName ? `${d.employeeName}${d.identityCard ? ' · ' + d.identityCard : ''}` : '');
-      setProxyTerm(d.proxyEmployeeName || '');
+      setProxyTerm(proxyName);
       setTitularSugg([]); setProxySugg([]);
       // Detectar dato incorrecto existente (titular = apoderado)
       if (d.employeeId && d.proxyEmployeeId && d.employeeId === d.proxyEmployeeId) {
@@ -260,10 +265,11 @@ export default function EditManualConsumptions() {
     try {
       const body = {
         // El titular de un consumo externo es fijo: no se envía employeeId.
-        employeeId:      isExternal ? null : editTarget.employeeId,
-        restaurantId:    editTarget.restaurantId,
-        mealName:        editTarget.mealName,
-        proxyEmployeeId: editTarget.proxyEmployeeId || null,
+        employeeId:            isExternal ? null : editTarget.employeeId,
+        restaurantId:          editTarget.restaurantId,
+        mealName:              editTarget.mealName,
+        proxyEmployeeId:       editTarget.proxyEmployeeId || null,
+        proxyExternalPersonId: editTarget.proxyExternalPersonId || null,
       };
       await api.put(`/manual-consumptions/${editTarget.id}`, body);
       showToast('Consumo actualizado', 'ok');
@@ -304,10 +310,19 @@ export default function EditManualConsumptions() {
     setShowTitular(false);
   };
 
-  const pickProxy = (emp) => {
-    if (!emp) { setEditTarget(t => t ? { ...t, proxyEmployeeId: null } : t); return; }
-    // Bloquear si es el mismo que el titular
-    if (editTarget?.employeeId && editTarget.employeeId === emp.id) {
+  const pickProxy = (candidate) => {
+    if (!candidate) {
+      setEditTarget(t => t ? { ...t, proxyEmployeeId: null, proxyExternalPersonId: null } : t);
+      return;
+    }
+    // Bloquear si la persona elegida es la misma que el titular (por id+tipo si el
+    // titular es empleado, o por cédula si el titular es una persona externa —
+    // igual que valida el backend en ManualConsumptionService.update).
+    const sameAsEmployeeTitular = editTarget?.employeeId != null
+      && candidate.type === 'EMPLOYEE' && candidate.id === editTarget.employeeId;
+    const sameByIdentityCard = candidate.identityCard && editTarget?.identityCard
+      && candidate.identityCard === editTarget.identityCard;
+    if (sameAsEmployeeTitular || sameByIdentityCard) {
       setFormError('La persona que retira no puede ser la misma que la titular.');
       setProxyTerm('');
       setProxySugg([]);
@@ -315,15 +330,20 @@ export default function EditManualConsumptions() {
       return;
     }
     setFormError('');
-    setProxyTerm(`${emp.fullName} · ${emp.identityCard}`);
-    setEditTarget(t => ({ ...t, proxyEmployeeId: emp.id, _proxyLabel: emp.fullName }));
+    setProxyTerm(`${candidate.fullName} · ${candidate.identityCard}`);
+    setEditTarget(t => ({
+      ...t,
+      proxyEmployeeId: candidate.type === 'EMPLOYEE' ? candidate.id : null,
+      proxyExternalPersonId: candidate.type === 'EXTERNAL' ? candidate.id : null,
+      _proxyLabel: candidate.fullName,
+    }));
     setShowProxy(false);
   };
 
   const clearProxy = () => {
     setProxyTerm('');
     setProxySugg([]);
-    setEditTarget(t => t ? { ...t, proxyEmployeeId: null } : t);
+    setEditTarget(t => t ? { ...t, proxyEmployeeId: null, proxyExternalPersonId: null } : t);
   };
 
   const todayStr = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -394,11 +414,11 @@ export default function EditManualConsumptions() {
                 <td>
                   {r.employeeName}
                   {r.method === 'EXTERNAL' && (
-                    <span className="badge external" style={{ marginLeft: 6 }}>MANUAL - EXTERNO</span>
+                    <span className="badge external" style={{ marginLeft: 6 }}>MANUAL - E</span>
                   )}
                 </td>
                 <td>{r.identityCard || '—'}</td>
-                <td>{r.proxyEmployeeName || '—'}</td>
+                <td>{r.proxyEmployeeName || r.proxyExternalPersonName || '—'}</td>
                 <td>{r.restaurantName}</td>
                 <td>{r.mealName}</td>
                 <td>{r.consumedAt ? new Date(r.consumedAt).toLocaleTimeString('en-US') : '—'}</td>
@@ -498,10 +518,10 @@ export default function EditManualConsumptions() {
                 show={showProxySuggest}
                 setShow={setShowProxy}
                 onPick={pickProxy}
-                hint={editTarget.proxyEmployeeId ? `✓ Seleccionado: ${editTarget._proxyLabel || ''}` : null}
+                hint={(editTarget.proxyEmployeeId || editTarget.proxyExternalPersonId) ? `✓ Seleccionado: ${editTarget._proxyLabel || ''}` : null}
                 placeholder="Buscar por nombre o cédula… (dejar vacío = ninguno)"
               />
-              {editTarget.proxyEmployeeId && (
+              {(editTarget.proxyEmployeeId || editTarget.proxyExternalPersonId) && (
                 <button
                   type="button"
                   className="ghost"

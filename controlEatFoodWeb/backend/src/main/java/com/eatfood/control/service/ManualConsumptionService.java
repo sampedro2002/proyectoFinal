@@ -35,7 +35,7 @@ public class ManualConsumptionService {
 
     /**
      * Buscador unificado de "quien retira": empleados ACTIVOS y personas externas
-     * registradas, mezclados (las UIs los distinguen con un badge "Externo").
+     * registradas, mezclados (las UIs los distinguen con un badge "MANUAL - E").
      * Devuelve hasta 8 de cada grupo.
      */
     @Transactional(readOnly = true)

@@ -38,6 +38,20 @@ interface ApiService {
     @PUT("employees/{id}")
     suspend fun updateEmployee(@Path("id") id: Long, @Body body: EmployeeRequest): EmployeeResponse
 
+    // ── Personas externas ────────────────────────────────────────────────────────
+    @GET("external-persons")
+    suspend fun externalPersons(
+        @Query("term") term: String? = null,
+        @Query("page") page: Int = 0,
+        @Query("size") size: Int = 200
+    ): Page<ExternalPersonResponse>
+
+    @PUT("external-persons/{id}")
+    suspend fun updateExternalPerson(@Path("id") id: Long, @Body body: ExternalPersonRequest): ExternalPersonResponse
+
+    @GET("external-persons/lookup")
+    suspend fun externalPersonLookup(@Query("identityCard") identityCard: String): ExternalPersonLookup
+
     // ── Huellas ───────────────────────────────────────────────────────────────
     @GET("fingerprints/employee/{employeeId}")
     suspend fun fingerprints(@Path("employeeId") employeeId: Long): List<FingerprintResponse>
@@ -127,6 +141,10 @@ interface ApiService {
     /** Comidas permitidas y aún no consumidas hoy por el empleado (para pre-seleccionar en el registro manual). */
     @GET("manual-consumptions/availability/{employeeId}")
     suspend fun mealAvailability(@Path("employeeId") employeeId: Long): MealAvailabilityResponse
+
+    /** Candidatos a "quien retira": empleados ACTIVOS y personas externas registradas. */
+    @GET("manual-consumptions/proxy-candidates")
+    suspend fun proxyCandidates(@Query("term") term: String): List<ProxyCandidate>
 
     // ── Edición de consumos manuales ───────────────────────────────────────
     @GET("manual-consumptions")

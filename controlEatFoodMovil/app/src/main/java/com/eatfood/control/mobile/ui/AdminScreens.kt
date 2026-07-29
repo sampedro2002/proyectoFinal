@@ -881,9 +881,15 @@ fun SchedulesScreen() {
 // dos modos —"Retira por otro" (un empleado retira comidas a nombre de uno o varios
 // titulares) y "Persona externa"— con selección de comidas permitidas/no consumidas.
 
-/** Un titular del modo "retira por otro": empleado + disponibilidad de hoy + comidas elegidas. */
+/**
+ * Un titular del modo "retira por otro": empleado O persona externa registrada
+ * (type: "EMPLOYEE" | "EXTERNAL") + disponibilidad de hoy + comidas elegidas.
+ */
 private data class TitularUi(
-    val employee: EmployeeResponse,
+    val id: Long,
+    val type: String,
+    val fullName: String,
+    val identityCard: String,
     val allowsLunch: Boolean,
     val allowsSnack: Boolean,
     val hadAlmuerzo: Boolean,
@@ -892,22 +898,25 @@ private data class TitularUi(
 )
 
 /**
- * Campo de búsqueda de empleados con autosugerencias (debounce 300 ms, mínimo 2
- * caracteres), espejo del buscador de la web. Al elegir uno invoca onPick y se limpia.
+ * Campo de búsqueda unificado de "quien retira"/titular con autosugerencias (debounce
+ * 300 ms, mínimo 2 caracteres): candidatos empleado ACTIVO o persona externa ya
+ * registrada (ProxyCandidate.type = "EMPLOYEE" | "EXTERNAL"), espejo del buscador de
+ * la web (endpoint /manual-consumptions/proxy-candidates). Al elegir uno invoca onPick
+ * y se limpia.
  */
 @Composable
-private fun EmployeeSearchField(
+private fun ProxyCandidateSearchField(
     label: String,
     api: com.eatfood.control.mobile.data.remote.ApiService,
-    onPick: (EmployeeResponse) -> Unit
+    onPick: (ProxyCandidate) -> Unit
 ) {
     var term by remember { mutableStateOf("") }
-    var suggestions by remember { mutableStateOf<List<EmployeeResponse>>(emptyList()) }
+    var suggestions by remember { mutableStateOf<List<ProxyCandidate>>(emptyList()) }
     LaunchedEffect(term) {
         val q = term.trim()
         if (q.length < 2) { suggestions = emptyList(); return@LaunchedEffect }
         delay(300)
-        suggestions = runCatching { api.employees(q, 0, 8).content ?: emptyList() }.getOrDefault(emptyList())
+        suggestions = runCatching { api.proxyCandidates(q) }.getOrDefault(emptyList())
     }
     Column(Modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -919,11 +928,11 @@ private fun EmployeeSearchField(
         if (suggestions.isNotEmpty()) {
             Card(Modifier.fillMaxWidth().padding(top = 4.dp)) {
                 Column {
-                    suggestions.forEach { e ->
+                    suggestions.forEach { c ->
                         RowItem(
-                            title = e.fullName,
-                            subtitle = "CI ${e.identityCard}" + if (e.status != "ACTIVE") " · ${e.status}" else "",
-                            onClick = { onPick(e); term = ""; suggestions = emptyList() }
+                            title = c.fullName ?: "",
+                            subtitle = "CI ${c.identityCard ?: "—"}" + if (c.type == "EXTERNAL") " · Persona externa" else "",
+                            onClick = { onPick(c); term = ""; suggestions = emptyList() }
                         )
                     }
                 }
@@ -946,19 +955,23 @@ fun ExtraMealsScreen() {
     // "proxy" = retira por otro; "external" = persona externa (mismas dos pestañas de la web).
     var mode by remember { mutableStateOf("proxy") }
 
-    // Retira por otro
-    var proxy by remember { mutableStateOf<EmployeeResponse?>(null) }
+    // Retira por otro: quien retira y cada titular pueden ser un empleado ACTIVO o
+    // una persona externa ya registrada (mismo buscador unificado que la web).
+    var proxy by remember { mutableStateOf<ProxyCandidate?>(null) }
     var titulars by remember { mutableStateOf<List<TitularUi>>(emptyList()) }
 
     // Persona externa
     var extName by remember { mutableStateOf("") }
     var extCard by remember { mutableStateOf("") }
     var isPassport by remember { mutableStateOf(false) }
+    var extFound by remember { mutableStateOf(false) }         // ¿cédula ya registrada?
+    var extFoundSource by remember { mutableStateOf("") }       // "EMPLOYEE" | "EXTERNAL"
+    var extLookupLoading by remember { mutableStateOf(false) }
     var extAlmuerzo by remember { mutableStateOf(false) }
     var extMerienda by remember { mutableStateOf(false) }
     var observation by remember { mutableStateOf("") }
     var extProxyEnabled by remember { mutableStateOf(false) }
-    var extProxy by remember { mutableStateOf<EmployeeResponse?>(null) }
+    var extProxy by remember { mutableStateOf<ProxyCandidate?>(null) }
 
     var busy by remember { mutableStateOf(false) }
     var results by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -970,26 +983,61 @@ fun ExtraMealsScreen() {
         }
     }
 
+    // Lookup de cédula en tiempo real (modo persona externa): detecta si ya está
+    // registrada como empleado o como persona externa, y autocompleta el nombre.
+    LaunchedEffect(extCard, mode) {
+        if (mode != "external") return@LaunchedEffect
+        val card = extCard.trim()
+        if (card.length < 5) {
+            extFound = false; extFoundSource = ""; extLookupLoading = false
+            return@LaunchedEffect
+        }
+        extLookupLoading = true
+        delay(400)
+        runCatching { api.externalPersonLookup(card) }
+            .onSuccess { r ->
+                if (r.found) {
+                    extFound = true; extFoundSource = r.source ?: ""; extName = r.fullName ?: ""
+                } else {
+                    extFound = false; extFoundSource = ""
+                }
+            }
+            .onFailure { extFound = false; extFoundSource = "" }
+        extLookupLoading = false
+    }
+
     // Agrega un titular consultando su disponibilidad y pre-seleccionando lo registrable
-    // (permitido y no consumido hoy). Si el endpoint no existe aún, cae a sus flags.
-    suspend fun addTitular(e: EmployeeResponse) {
-        if (titulars.any { it.employee.id == e.id }) return
-        val av = runCatching { api.mealAvailability(e.id) }.getOrNull()
-        val allowsLunch = av?.allowsLunch ?: e.allowsLunch
-        val allowsSnack = av?.allowsSnack ?: e.effectiveSnack
-        val hadAlmuerzo = av?.hadAlmuerzo ?: false
-        val hadMerienda = av?.hadMerienda ?: false
-        val codes = av?.availableCodes ?: buildList {
+    // (permitido y no consumido hoy). Solo aplica a empleados: una persona externa no
+    // tiene restricción de comidas (igual que al registrarla directamente).
+    suspend fun addTitular(c: ProxyCandidate) {
+        if (titulars.any { it.id == c.id && it.type == c.type }) return
+        var allowsLunch = true
+        var allowsSnack = true
+        var hadAlmuerzo = false
+        var hadMerienda = false
+        var codes: List<String>? = null
+        if (c.type == "EMPLOYEE") {
+            val av = runCatching { api.mealAvailability(c.id) }.getOrNull()
+            allowsLunch = av?.allowsLunch ?: false
+            allowsSnack = av?.allowsSnack ?: false
+            hadAlmuerzo = av?.hadAlmuerzo ?: false
+            hadMerienda = av?.hadMerienda ?: false
+            codes = av?.availableCodes
+        }
+        val availableCodes = codes ?: buildList {
             if (allowsLunch) add("BREAKFAST")
             if (allowsSnack) add("LUNCH")
         }
-        titulars = titulars + TitularUi(e, allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, codes)
+        titulars = titulars + TitularUi(
+            c.id, c.type, c.fullName ?: "", c.identityCard ?: "",
+            allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, availableCodes
+        )
         results = emptyList()
     }
 
-    fun toggleTitularMeal(id: Long, code: String, checked: Boolean) {
+    fun toggleTitularMeal(id: Long, type: String, code: String, checked: Boolean) {
         titulars = titulars.map { t ->
-            if (t.employee.id != id) t
+            if (t.id != id || t.type != type) t
             else t.copy(mealCodes = if (checked) t.mealCodes + code else t.mealCodes - code)
         }
     }
@@ -1056,17 +1104,24 @@ fun ExtraMealsScreen() {
             Spacer(Modifier.height(16.dp))
 
             if (mode == "proxy") {
-                // ── Empleado que retira ────────────────────────────────────────────
+                // ── Persona que retira (empleado o persona externa) ─────────────────
                 Text("Persona que retira", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
                 if (proxy == null) {
-                    EmployeeSearchField("Busque por nombre o cédula a quien retira…", api) { proxy = it }
+                    ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { c ->
+                        if (titulars.any { it.id == c.id && it.type == c.type }) {
+                            scope.launch { snackbar.showSnackbar("La persona que retira no puede ser al mismo tiempo titular. Quítala de la lista de titulares primero.") }
+                        } else {
+                            proxy = c
+                        }
+                    }
                 } else {
                     Card(Modifier.fillMaxWidth()) {
                         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text(proxy!!.fullName, fontWeight = FontWeight.Bold)
-                                Text("CI ${proxy!!.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                Text(proxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
+                                Text("CI ${proxy!!.identityCard ?: "—"}" + if (proxy!!.type == "EXTERNAL") " · Persona externa" else "",
+                                    style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                             TextButton(onClick = { proxy = null }) { Text("Cambiar") }
@@ -1078,8 +1133,12 @@ fun ExtraMealsScreen() {
                 // ── Titulares ──────────────────────────────────────────────────────
                 Text("Agregar titular", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
-                EmployeeSearchField("Busque y seleccione titulares para agregar…", api) { e ->
-                    scope.launch { addTitular(e) }
+                ProxyCandidateSearchField("Busque y seleccione titulares para agregar…", api) { c ->
+                    if (proxy != null && proxy!!.id == c.id && proxy!!.type == c.type) {
+                        scope.launch { snackbar.showSnackbar("El titular no puede ser el mismo que la persona que retira.") }
+                    } else {
+                        scope.launch { addTitular(c) }
+                    }
                 }
 
                 if (titulars.isNotEmpty()) {
@@ -1091,12 +1150,13 @@ fun ExtraMealsScreen() {
                             Column(Modifier.padding(12.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(t.employee.fullName, fontWeight = FontWeight.Bold)
-                                        Text("CI ${t.employee.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                        Text(t.fullName, fontWeight = FontWeight.Bold)
+                                        Text("CI ${t.identityCard}" + if (t.type == "EXTERNAL") " · Persona externa" else "",
+                                            style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     TextButton(onClick = {
-                                        titulars = titulars.filterNot { it.employee.id == t.employee.id }
+                                        titulars = titulars.filterNot { it.id == t.id && it.type == t.type }
                                     }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
                                 }
                                 if (!t.allowsLunch && !t.allowsSnack) {
@@ -1108,7 +1168,7 @@ fun ExtraMealsScreen() {
                                         if (t.allowsLunch) {
                                             Checkbox(
                                                 checked = t.mealCodes.contains("BREAKFAST"),
-                                                onCheckedChange = { toggleTitularMeal(t.employee.id, "BREAKFAST", it) },
+                                                onCheckedChange = { toggleTitularMeal(t.id, t.type, "BREAKFAST", it) },
                                                 enabled = !t.hadAlmuerzo
                                             )
                                             Text("Almuerzo" + if (t.hadAlmuerzo) " (ya registrado)" else "")
@@ -1117,7 +1177,7 @@ fun ExtraMealsScreen() {
                                         if (t.allowsSnack) {
                                             Checkbox(
                                                 checked = t.mealCodes.contains("LUNCH"),
-                                                onCheckedChange = { toggleTitularMeal(t.employee.id, "LUNCH", it) },
+                                                onCheckedChange = { toggleTitularMeal(t.id, t.type, "LUNCH", it) },
                                                 enabled = !t.hadMerienda
                                             )
                                             Text("Merienda" + if (t.hadMerienda) " (ya registrada)" else "")
@@ -1138,13 +1198,20 @@ fun ExtraMealsScreen() {
                         busy = true
                         scope.launch {
                             val items = titulars.filter { it.mealCodes.isNotEmpty() }
-                                .map { ManualScanItem(it.employee.id, it.mealCodes) }
+                                .map {
+                                    ManualScanItem(
+                                        employeeId = if (it.type == "EMPLOYEE") it.id else null,
+                                        externalPersonId = if (it.type == "EXTERNAL") it.id else null,
+                                        mealTypeCodes = it.mealCodes
+                                    )
+                                }
                             val res = mutableListOf<String>()
                             var ok = false
                             runCatching {
                                 api.manualScan(
                                     ManualScanRequest(
-                                        proxyEmployeeId = proxy!!.id,
+                                        proxyEmployeeId = if (proxy!!.type == "EMPLOYEE") proxy!!.id else null,
+                                        proxyExternalPersonId = if (proxy!!.type == "EXTERNAL") proxy!!.id else null,
                                         restaurantId = selectedRestaurantId!!,
                                         titulars = items
                                     )
@@ -1174,16 +1241,30 @@ fun ExtraMealsScreen() {
                     Text("Es Pasaporte")
                 }
                 OutlinedTextField(
-                    value = extCard, onValueChange = { extCard = it },
+                    value = extCard,
+                    onValueChange = { extCard = it; extFound = false; extFoundSource = ""; extName = "" },
                     label = { Text(if (isPassport) "Pasaporte" else "Cédula") },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
+                if (extLookupLoading) {
+                    Text("Verificando…", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = extName, onValueChange = { extName = it },
+                    value = extName,
+                    onValueChange = { if (!extFound) extName = it },
                     label = { Text("Nombre completo") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                    singleLine = true, readOnly = extFound,
+                    modifier = Modifier.fillMaxWidth()
                 )
+                if (extFound) {
+                    Text(
+                        "✓ Persona ya registrada" + (if (extFoundSource == "EMPLOYEE") " (empleado)" else " (persona externa)") + ". Nombre autocompletado.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = com.eatfood.control.mobile.ui.theme.Success
+                    )
+                }
                 Spacer(Modifier.height(12.dp))
                 Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1207,13 +1288,14 @@ fun ExtraMealsScreen() {
                 if (extProxyEnabled) {
                     Spacer(Modifier.height(4.dp))
                     if (extProxy == null) {
-                        EmployeeSearchField("Busque por nombre o cédula a quien retira…", api) { extProxy = it }
+                        ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { extProxy = it }
                     } else {
                         Card(Modifier.fillMaxWidth()) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(extProxy!!.fullName, fontWeight = FontWeight.Bold)
-                                    Text("CI ${extProxy!!.identityCard}", style = MaterialTheme.typography.bodySmall,
+                                    Text(extProxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
+                                    Text("CI ${extProxy!!.identityCard ?: "—"}" + if (extProxy!!.type == "EXTERNAL") " · Persona externa" else "",
+                                        style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 TextButton(onClick = { extProxy = null }) { Text("Cambiar") }
@@ -1259,7 +1341,8 @@ fun ExtraMealsScreen() {
                                             restaurantId = selectedRestaurantId!!,
                                             observation = obs,
                                             isPassport = isPassport,
-                                            proxyEmployeeId = if (extProxyEnabled) extProxy?.id else null
+                                            proxyEmployeeId = if (extProxyEnabled && extProxy?.type == "EMPLOYEE") extProxy?.id else null,
+                                            proxyExternalPersonId = if (extProxyEnabled && extProxy?.type == "EXTERNAL") extProxy?.id else null
                                         )
                                     )
                                 }.onSuccess { r ->
@@ -1393,7 +1476,7 @@ fun EditConsumptionsScreen() {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    "${c.employeeName ?: "—"} · ${c.mealName ?: ""}",
+                                    "${c.employeeName ?: "—"}" + (if (c.method == "EXTERNAL") " · MANUAL - E" else "") + " · ${c.mealName ?: ""}",
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -1401,9 +1484,10 @@ fun EditConsumptionsScreen() {
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                                if (c.proxyEmployeeName != null) {
+                                val proxyName = c.proxyEmployeeName ?: c.proxyExternalPersonName
+                                if (proxyName != null) {
                                     Text(
-                                        "Retira: ${c.proxyEmployeeName}",
+                                        "Retira: $proxyName",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -1433,10 +1517,22 @@ fun EditConsumptionsScreen() {
 
     // Modal de edición
     editing?.let { c ->
-        var selEmployeeId by remember { mutableStateOf(c.employeeId) }
         var selRestaurantId by remember { mutableStateOf(c.restaurantId) }
         var selMeal by remember { mutableStateOf(c.mealName ?: "Almuerzo") }
+        // Quien retira actual (empleado o persona externa ya registrada), reconstruido
+        // como ProxyCandidate para reusar el mismo buscador unificado que el registro
+        // manual. Solo se puede "retirar por" alguien ya registrado en el sistema.
+        var selProxy by remember {
+            mutableStateOf(
+                when {
+                    c.proxyEmployeeId != null -> ProxyCandidate("EMPLOYEE", c.proxyEmployeeId, null, c.proxyEmployeeName)
+                    c.proxyExternalPersonId != null -> ProxyCandidate("EXTERNAL", c.proxyExternalPersonId, null, c.proxyExternalPersonName)
+                    else -> null
+                }
+            )
+        }
         var saving by remember { mutableStateOf(false) }
+        var dialogError by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { editing = null },
@@ -1447,9 +1543,16 @@ fun EditConsumptionsScreen() {
                         value = c.employeeName ?: "",
                         onValueChange = {},
                         readOnly = true,
-                        label = { Text("Persona actual") },
+                        label = { Text(if (c.method == "EXTERNAL") "Titular (persona externa)" else "Persona actual") },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    if (c.method == "EXTERNAL") {
+                        Text(
+                            "El titular de un consumo externo no se puede cambiar.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     Spacer(Modifier.height(8.dp))
                     Box {
                         var restMenu by remember { mutableStateOf(false) }
@@ -1474,6 +1577,43 @@ fun EditConsumptionsScreen() {
                         Spacer(Modifier.width(8.dp))
                         FilterChip(selected = selMeal == "Merienda", onClick = { selMeal = "Merienda" }, label = { Text("Merienda") })
                     }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Retira por (opcional)", style = MaterialTheme.typography.labelLarge)
+                    Spacer(Modifier.height(4.dp))
+                    if (selProxy == null) {
+                        ProxyCandidateSearchField("Buscar por nombre o cédula…", api) { candidate ->
+                            // Bloquear si la persona elegida es la misma que el titular:
+                            // por id+tipo si el titular es empleado, o por cédula si es
+                            // una persona externa (o si coincide con la del propio candidato).
+                            val sameAsEmployeeTitular = c.employeeId != null &&
+                                candidate.type == "EMPLOYEE" && candidate.id == c.employeeId
+                            val sameByIdentityCard = candidate.identityCard != null && c.identityCard != null &&
+                                candidate.identityCard == c.identityCard
+                            if (sameAsEmployeeTitular || sameByIdentityCard) {
+                                dialogError = "La persona que retira no puede ser la misma que la titular."
+                            } else {
+                                dialogError = ""
+                                selProxy = candidate
+                            }
+                        }
+                    } else {
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(selProxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
+                                    if (selProxy!!.type == "EXTERNAL") {
+                                        Text("Persona externa", style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                                TextButton(onClick = { selProxy = null; dialogError = "" }) { Text("Quitar") }
+                            }
+                        }
+                    }
+                    if (dialogError.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(dialogError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             },
             confirmButton = {
@@ -1483,7 +1623,9 @@ fun EditConsumptionsScreen() {
                         runCatching {
                             api.updateManualConsumption(c.id, UpdateManualConsumptionRequest(
                                 restaurantId = selRestaurantId,
-                                mealName = selMeal
+                                mealName = selMeal,
+                                proxyEmployeeId = if (selProxy?.type == "EMPLOYEE") selProxy?.id else null,
+                                proxyExternalPersonId = if (selProxy?.type == "EXTERNAL") selProxy?.id else null
                             ))
                         }.onSuccess { editing = null; reload(); snackbar.showSnackbar("Actualizado") }
                          .onFailure { snackbar.showSnackbar(it.apiMessage("Error al actualizar")) }

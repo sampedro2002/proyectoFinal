@@ -138,7 +138,7 @@ fun ReportsScreen() {
 
 private fun methodLabel(method: String?): String = when (method) {
     "MANUAL"   -> "Manual"
-    "EXTERNAL" -> "Externo"
+    "EXTERNAL" -> "MANUAL - E"
     else       -> "Huella"
 }
 
