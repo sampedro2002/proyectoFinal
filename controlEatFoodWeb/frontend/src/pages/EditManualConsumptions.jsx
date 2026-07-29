@@ -248,7 +248,8 @@ export default function EditManualConsumptions() {
 
   const handleEdit = async (e) => {
     e.preventDefault();
-    if (!editTarget.employeeId) { setFormError('Seleccione un empleado titular.'); return; }
+    const isExternal = editTarget.method === 'EXTERNAL';
+    if (!isExternal && !editTarget.employeeId) { setFormError('Seleccione un empleado titular.'); return; }
     if (!editTarget.mealName)   { setFormError('Seleccione el tipo de comida.'); return; }
     if (editTarget.proxyEmployeeId && editTarget.proxyEmployeeId === editTarget.employeeId) {
       setFormError('El empleado que retira no puede ser el mismo que el titular.');
@@ -258,7 +259,8 @@ export default function EditManualConsumptions() {
     setFormError('');
     try {
       const body = {
-        employeeId:      editTarget.employeeId,
+        // El titular de un consumo externo es fijo: no se envía employeeId.
+        employeeId:      isExternal ? null : editTarget.employeeId,
         restaurantId:    editTarget.restaurantId,
         mealName:        editTarget.mealName,
         proxyEmployeeId: editTarget.proxyEmployeeId || null,
@@ -389,7 +391,12 @@ export default function EditManualConsumptions() {
             {rows.map(r => (
               <tr key={r.id}>
                 <td>{r.id}</td>
-                <td>{r.employeeName}</td>
+                <td>
+                  {r.employeeName}
+                  {r.method === 'EXTERNAL' && (
+                    <span className="badge external" style={{ marginLeft: 6 }}>Externo</span>
+                  )}
+                </td>
                 <td>{r.identityCard || '—'}</td>
                 <td>{r.proxyEmployeeName || '—'}</td>
                 <td>{r.restaurantName}</td>
@@ -455,17 +462,31 @@ export default function EditManualConsumptions() {
             </div>
 
             {/* ── Titular ── */}
-            <EmployeePicker
-              label="Empleado titular"
-              term={titularTerm}
-              setTerm={setTitularTerm}
-              suggestions={titularSuggestions}
-              show={showTitularSuggest}
-              setShow={setShowTitular}
-              onPick={pickTitular}
-              hint={editTarget.employeeId ? `✓ Seleccionado: ${editTarget._titularLabel || ''}` : null}
-              placeholder="Buscar por nombre o cédula…"
-            />
+            {editTarget.method === 'EXTERNAL' ? (
+              <div className="field">
+                <label>Titular (persona externa)</label>
+                <input
+                  value={`${editTarget.employeeName || ''}${editTarget.identityCard ? ' · ' + editTarget.identityCard : ''}`}
+                  disabled
+                  readOnly
+                />
+                <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>
+                  El titular de un consumo externo no se puede cambiar.
+                </div>
+              </div>
+            ) : (
+              <EmployeePicker
+                label="Empleado titular"
+                term={titularTerm}
+                setTerm={setTitularTerm}
+                suggestions={titularSuggestions}
+                show={showTitularSuggest}
+                setShow={setShowTitular}
+                onPick={pickTitular}
+                hint={editTarget.employeeId ? `✓ Seleccionado: ${editTarget._titularLabel || ''}` : null}
+                placeholder="Buscar por nombre o cédula…"
+              />
+            )}
 
             {/* ── Retira por ── */}
             <div style={{ position: 'relative' }}>
@@ -509,6 +530,30 @@ export default function EditManualConsumptions() {
               <label>Tipo de comida</label>
               <div className="row" style={{ gap: 16 }}>
                 {(() => {
+                  // Consumo EXTERNO: la persona externa tiene ambos platos
+                  // permitidos y no hay disponibilidad que consultar (el backend
+                  // sigue validando el duplicado del día).
+                  if (editTarget.method === 'EXTERNAL') {
+                    return (
+                      <div className="row" style={{ gap: 16 }}>
+                        {MEALS.map(m => (
+                          <label
+                            key={m.value}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 'normal', cursor: 'pointer', margin: 0 }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editTarget.mealName === m.value}
+                              onChange={(e) => {
+                                if (e.target.checked) setEditTarget({ ...editTarget, mealName: m.value });
+                              }}
+                            />
+                            {m.label}
+                          </label>
+                        ))}
+                      </div>
+                    );
+                  }
                   if (!editTarget.employeeId) {
                     return <span style={{ fontSize: 12, color: '#94a3b8' }}>Seleccione un titular primero.</span>;
                   }

@@ -17,7 +17,10 @@ import { isValidCedulaEC } from '../utils/cedula.js';
  *                  registrados hoy se omiten y se informan en el mensaje.
  *   - 'external' : persona externa (visitante / contratista) con cédula o
  *                  pasaporte, sin retira-por. method='EXTERNAL'. También exige
- *                  estar dentro del horario configurado.
+ *                  estar dentro del horario configurado. Las personas externas
+ *                  viven en su propia tabla (nunca en empleados) y se gestionan
+ *                  desde esta misma vista (lista de "Personas externas
+ *                  registradas" debajo del formulario).
  */
 /**
  * Buscador de empleados con autosugerencias. DEBE estar a nivel de módulo (no dentro
@@ -144,6 +147,14 @@ export default function ManualScan() {
   const [showExtProxySuggest, setShowExtProxySuggest] = useState(false);
   const [extProxy, setExtProxy] = useState(null);
 
+  // --- personas externas registradas (gestión dentro de esta misma vista) ---
+  const [extList, setExtList] = useState([]);
+  const [extListTerm, setExtListTerm] = useState('');
+  const [extListLoading, setExtListLoading] = useState(false);
+  const [extEdit, setExtEdit] = useState(null); // persona externa en edición (modal)
+  const [extEditError, setExtEditError] = useState('');
+  const extListSeqRef = useRef(0);
+
   // --- comunes ---
   const [restaurants, setRestaurants] = useState([]);
   const [meals, setMeals] = useState([]);
@@ -229,6 +240,79 @@ export default function ManualScan() {
     setExtProxyTerm(`${emp.fullName} · ${emp.identityCard}`);
     setShowExtProxySuggest(false);
     setResult(null); setError('');
+  }
+
+  // ---- Personas externas registradas (lista + edición) ----
+  async function loadExternals(term) {
+    // Descarta respuestas obsoletas si el usuario siguió escribiendo (debounce).
+    const seq = ++extListSeqRef.current;
+    setExtListLoading(true);
+    try {
+      const { data } = await api.get('/external-persons', {
+        params: { term: term || null, size: 50 },
+      });
+      if (seq !== extListSeqRef.current) return;
+      setExtList(data.content || data);
+    } catch {
+      if (seq === extListSeqRef.current) setExtList([]);
+    } finally {
+      if (seq === extListSeqRef.current) setExtListLoading(false);
+    }
+  }
+
+  // Carga con debounce al entrar al modo external y al escribir en el buscador.
+  useEffect(() => {
+    if (mode !== 'external') return;
+    const t = setTimeout(() => { loadExternals(extListTerm.trim()); }, 350);
+    return () => clearTimeout(t);
+  }, [extListTerm, mode]);
+
+  // Cerrar el modal de edición de externo con Escape.
+  useEffect(() => {
+    if (!extEdit) return;
+    const handler = (e) => { if (e.key === 'Escape') setExtEdit(null); };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [extEdit]);
+
+  // Prefill del formulario de registro con una persona externa ya conocida.
+  function useExternal(p) {
+    setExtCard(p.identityCard);
+    setExtName(p.fullName);
+    setIsPassport(!isValidCedulaEC(p.identityCard));
+    setResult(null); setError('');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function openExtEdit(p) {
+    setExtEditError('');
+    setExtEdit({
+      ...p,
+      isPassport: !isValidCedulaEC(p.identityCard),
+      observation: p.observation ?? '',
+    });
+  }
+
+  async function saveExtEdit(e) {
+    e.preventDefault();
+    setExtEditError('');
+    const card = (extEdit.identityCard || '').trim();
+    if (!extEdit.isPassport && !isValidCedulaEC(card)) {
+      setExtEditError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
+      return;
+    }
+    try {
+      await api.put(`/external-persons/${extEdit.id}`, {
+        identityCard: card,
+        isPassport: extEdit.isPassport,
+        fullName: extEdit.fullName,
+        observation: extEdit.observation || null,
+      });
+      setExtEdit(null);
+      loadExternals(extListTerm.trim());
+    } catch (err) {
+      setExtEditError(err.response?.data?.message || 'Error al guardar');
+    }
   }
 
   function selectProxy(emp) {
@@ -386,6 +470,9 @@ export default function ManualScan() {
         }
       }
       setLoading(false);
+      // Si se registró al menos un consumo, la persona externa ya existe en su
+      // tabla: refrescar la lista de "Personas externas registradas".
+      if (successResults.length > 0) loadExternals(extListTerm.trim());
       if (lastError) {
         setError(successResults.length > 0
           ? `Registrado parcialmente. Error: ${lastError}` : lastError);
@@ -690,6 +777,99 @@ export default function ManualScan() {
           </div>
         </form>
       </div>
+
+      {/* ── Personas externas registradas (solo en modo external) ── */}
+      {mode === 'external' && (
+        <div className="card" style={{ maxWidth: 640, marginTop: 16 }}>
+          <h3 style={{ marginTop: 0 }}>Personas externas registradas</h3>
+          <p style={{ color: '#94a3b8', fontSize: 13, marginTop: -6 }}>
+            Se guardan aparte de los empleados. Use "Usar" para reutilizar sus datos en un nuevo registro, o "Editar" para corregirlos.
+          </p>
+          <input
+            placeholder="Buscar por nombre o cédula…"
+            value={extListTerm}
+            onChange={(e) => setExtListTerm(e.target.value)}
+            style={{ marginBottom: 10 }}
+          />
+          <table>
+            <thead>
+              <tr><th>Cédula</th><th>Nombre</th><th>Observación</th><th></th></tr>
+            </thead>
+            <tbody>
+              {extList.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.identityCard}</td>
+                  <td>{p.fullName}</td>
+                  <td style={{ color: '#94a3b8' }}>{p.observation || '—'}</td>
+                  <td className="row" style={{ gap: 4 }}>
+                    <button type="button" className="ghost" onClick={() => useExternal(p)}>Usar</button>
+                    <button type="button" className="ghost" onClick={() => openExtEdit(p)}>Editar</button>
+                  </td>
+                </tr>
+              ))}
+              {extListLoading && (
+                <tr><td colSpan="4" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
+              )}
+              {!extListLoading && extList.length === 0 && (
+                <tr><td colSpan="4" style={{ color: 'var(--muted)' }}>Sin personas externas registradas.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Modal edición de persona externa ── */}
+      {extEdit && (
+        <div className="modal-overlay">
+          <div className="card modal-card">
+            <div className="topbar" style={{ marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Editar persona externa</h3>
+              <button type="button" className="ghost" onClick={() => setExtEdit(null)}>✕</button>
+            </div>
+            <form onSubmit={saveExtEdit}>
+              <div className="field">
+                <label>Tipo de Documento</label>
+                <select
+                  value={extEdit.isPassport ? 'PASSPORT' : 'CEDULA'}
+                  onChange={(e) => setExtEdit({ ...extEdit, isPassport: e.target.value === 'PASSPORT' })}
+                >
+                  <option value="CEDULA">Cédula</option>
+                  <option value="PASSPORT">Pasaporte</option>
+                </select>
+              </div>
+              <div className="field">
+                <label>{extEdit.isPassport ? 'Pasaporte' : 'Cédula'}</label>
+                <input
+                  value={extEdit.identityCard}
+                  required
+                  onChange={(e) => setExtEdit({ ...extEdit, identityCard: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Nombre completo</label>
+                <input
+                  value={extEdit.fullName}
+                  required
+                  onChange={(e) => setExtEdit({ ...extEdit, fullName: e.target.value })}
+                />
+              </div>
+              <div className="field">
+                <label>Observación (opcional)</label>
+                <textarea
+                  value={extEdit.observation}
+                  rows={3}
+                  onChange={(e) => setExtEdit({ ...extEdit, observation: e.target.value })}
+                />
+              </div>
+              {extEditError && <p className="error-text">{extEditError}</p>}
+              <div className="row" style={{ marginTop: 12 }}>
+                <button type="submit">Guardar cambios</button>
+                <button type="button" className="ghost" onClick={() => setExtEdit(null)}>Cancelar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

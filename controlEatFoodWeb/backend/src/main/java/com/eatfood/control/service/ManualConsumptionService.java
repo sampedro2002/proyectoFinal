@@ -64,9 +64,19 @@ public class ManualConsumptionService {
             throw new BusinessException("NOT_MANUAL", "Solo se pueden editar consumos manuales o externos.");
         }
 
-        // Validar que el apoderado no sea el mismo que el titular
-        if (req.proxyEmployeeId() != null && req.proxyEmployeeId().equals(
-                req.employeeId() != null ? req.employeeId() : c.getEmployee().getId())) {
+        // El titular de un consumo EXTERNO es una persona externa y es FIJO: no se
+        // puede reasignar a un empleado (son mundos separados). Solo se editan
+        // comida, restaurante, apoderado y observación.
+        if (req.employeeId() != null && c.getEmployee() == null) {
+            throw new BusinessException("EXTERNAL_TITULAR",
+                    "El titular de un consumo externo no se puede cambiar.");
+        }
+
+        // Validar que el apoderado no sea el mismo que el titular (solo aplica
+        // cuando el titular es empleado: compara ids de la misma tabla).
+        Long titularEmployeeId = req.employeeId() != null ? req.employeeId()
+                : (c.getEmployee() != null ? c.getEmployee().getId() : null);
+        if (req.proxyEmployeeId() != null && req.proxyEmployeeId().equals(titularEmployeeId)) {
             throw new BusinessException("SAME_PERSON",
                     "El empleado que retira no puede ser el mismo que el titular.");
         }
@@ -88,7 +98,8 @@ public class ManualConsumptionService {
             c.setProxyEmployee(proxy);
         }
 
-        boolean titularChanged = req.employeeId() != null && !req.employeeId().equals(c.getEmployee().getId());
+        boolean titularChanged = req.employeeId() != null && c.getEmployee() != null
+                && !req.employeeId().equals(c.getEmployee().getId());
         if (titularChanged) {
             Employee newTitular = employeeRepository.findById(req.employeeId())
                     .orElseThrow(() -> new NotFoundException("Empleado no encontrado: " + req.employeeId()));
@@ -120,17 +131,26 @@ public class ManualConsumptionService {
             // la comida nueva. Si solo cambia la comida (mismo titular), hay que validar
             // aquí para no crear un plato no permitido ni un duplicado del día.
             if (!titularChanged) {
-                Employee titular = c.getEmployee();
-                boolean allowed = "Merienda".equals(req.mealName()) ? titular.effectiveSnack() : titular.isAllowsLunch();
-                if (!allowed) {
-                    throw new BusinessException("NOT_ALLOWED",
-                            titular.getFullName() + " no tiene permitido " + req.mealName());
+                List<String> consumedToday;
+                if (c.getEmployee() != null) {
+                    Employee titular = c.getEmployee();
+                    boolean allowed = "Merienda".equals(req.mealName()) ? titular.effectiveSnack() : titular.isAllowsLunch();
+                    if (!allowed) {
+                        throw new BusinessException("NOT_ALLOWED",
+                                titular.getFullName() + " no tiene permitido " + req.mealName());
+                    }
+                    consumedToday = consumptionRepository
+                            .findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), c.getBusinessDate());
+                } else {
+                    // Persona externa: ambos platos están permitidos; solo se valida
+                    // que no repita el mismo plato en el día.
+                    consumedToday = consumptionRepository
+                            .findMealNamesByExternalPersonIdAndBusinessDate(
+                                    c.getExternalPerson().getId(), c.getBusinessDate());
                 }
-                List<String> consumedToday = consumptionRepository
-                        .findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), c.getBusinessDate());
                 if (consumedToday.contains(req.mealName())) {
                     throw new BusinessException("DUPLICATE",
-                            titular.getFullName() + " ya tiene " + req.mealName() + " registrado hoy");
+                            c.titularName() + " ya tiene " + req.mealName() + " registrado hoy");
                 }
             }
             c.setMealName(req.mealName());
@@ -168,10 +188,13 @@ public class ManualConsumptionService {
 
     private ConsumptionDetailResponse toDetail(Consumption c) {
         Employee e = c.getEmployee();
+        ExternalPerson x = c.getExternalPerson();
         Employee p = c.getProxyEmployee();
         return new ConsumptionDetailResponse(
                 c.getId(),
-                e.getId(), e.getFullName(), e.getIdentityCard(),
+                e != null ? e.getId() : null,
+                x != null ? x.getId() : null,
+                c.titularName(), c.titularIdentityCard(),
                 p != null ? p.getId() : null,
                 p != null ? p.getFullName() : null,
                 c.getRestaurant().getId(), c.getRestaurant().getName(),
@@ -183,8 +206,11 @@ public class ManualConsumptionService {
     }
 
     private String snapshot(Consumption c) {
-        return String.format("emp=%s|proxy=%s|rest=%s|comida=%s|cancel=%s",
-                c.getEmployee().getId(), c.getProxyEmployee() != null ? c.getProxyEmployee().getId() : null,
+        String titular = c.getEmployee() != null
+                ? "emp:" + c.getEmployee().getId()
+                : "ext:" + (c.getExternalPerson() != null ? c.getExternalPerson().getId() : "?");
+        return String.format("titular=%s|proxy=%s|rest=%s|comida=%s|cancel=%s",
+                titular, c.getProxyEmployee() != null ? c.getProxyEmployee().getId() : null,
                 c.getRestaurant().getId(), c.getMealName(), c.isCancelled());
     }
 }

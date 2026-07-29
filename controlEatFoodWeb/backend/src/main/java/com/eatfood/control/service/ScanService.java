@@ -31,6 +31,7 @@ public class ScanService {
     private final BiometricMatcher matcher;
     private final DeviceService deviceService;
     private final EmployeeRepository employeeRepository;
+    private final ExternalPersonRepository externalPersonRepository;
     private final ConsumptionRepository consumptionRepository;
     private final ScheduleRepository scheduleRepository;
     private final FailedScanRepository failedScanRepository;
@@ -205,7 +206,7 @@ public class ScanService {
                 .stream()
                 .sorted(Comparator.comparing(Consumption::getConsumedAt).reversed())
                 .map(c -> new TodayEntry(
-                        c.getEmployee().getFullName(),
+                        c.titularName(),
                         c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),
                         c.getMethod() != null ? c.getMethod().name() : "FINGERPRINT",
@@ -223,11 +224,10 @@ public class ScanService {
 
         List<ConsumptionRow> rows = consumptions.stream()
                 .map(c -> {
-                    Employee e = c.getEmployee();
                     Employee p = c.getProxyEmployee();
                     return new ConsumptionRow(
                             c.getId(), c.getBusinessDate(), c.getConsumedAt(),
-                            e.getFullName(), e.getIdentityCard(),
+                            c.titularName(), c.titularIdentityCard(),
                             c.getRestaurant().getName(), c.getMealName(),
                             c.getObservation(), c.isOffline(),
                             c.getMethod() != null ? c.getMethod().name() : Method.FINGERPRINT.name(),
@@ -431,9 +431,11 @@ public class ScanService {
 
     /**
      * Registra un consumo para una persona externa (no empleada). Crea (o reutiliza)
-     * un empleado con status=INACTIVE para que el consumo quede referenciado y
-     * aparezca en el feed del kiosk y en reportes, pero no aparezca en la gestión
-     * de empleados activos ni en "pendientes del día".
+     * una fila de {@code persona_externa} — tabla SEPARADA de empleado — para que el
+     * consumo quede referenciado y aparezca en el feed del kiosk y en reportes, sin
+     * que la persona externa aparezca jamás en la gestión/exportación de empleados.
+     * Si la cédula pertenece a un empleado, se rechaza: ese consumo debe registrarse
+     * por huella o por "retira por otro".
      */
     @Transactional
     public ManualScanResponse registerExternal(ExternalScanRequest req) {
@@ -455,8 +457,8 @@ public class ScanService {
             return new ManualScanResponse("ERROR", "Restaurant no encontrado", req.fullName(), null, 0);
         }
 
-        // El horario se valida ANTES de crear el empleado externo: si se validara
-        // después, un intento fuera de horario dejaría un empleado INACTIVE huérfano
+        // El horario se valida ANTES de crear la persona externa: si se validara
+        // después, un intento fuera de horario dejaría una persona externa huérfana
         // (sin consumo asociado) en la base.
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
         if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE))) {
@@ -464,25 +466,30 @@ public class ScanService {
                     "Fuera del horario permitido para registros externos", req.fullName(), null, 0);
         }
 
-        Employee employee = employeeRepository.findByIdentityCardAndDeletedFalse(identityCard)
-                .orElseGet(() -> {
-                    Employee e = new Employee();
-                    e.setIdentityCard(identityCard);
-                    e.setFullName(req.fullName());
-                    e.setStatus(EmployeeStatus.INACTIVE);
-                    e.setAllowsLunch(true);
-                    e.setAllowsSnack(true);
-                    return e;
-                });
-        if (employee.getId() == null) {
-            employee = employeeRepository.save(employee);
-            log.info("[EXTERNAL] Empleado externo creado: id={}, cedula='{}', nombre='{}'",
-                    employee.getId(), employee.getIdentityCard(), employee.getFullName());
+        // Un empleado NO se registra como externo: empleados y personas externas
+        // son mundos separados (el consumo del empleado cuenta para su control
+        // diario, el del externo no).
+        if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
+            log.info("[EXTERNAL] rechazado: cedula='{}' pertenece a un empleado", identityCard);
+            return new ManualScanResponse("IS_EMPLOYEE",
+                    "La cédula ingresada pertenece a un empleado. Registre su consumo por huella o con 'Retira por otro'.",
+                    req.fullName(), null, 0);
+        }
+
+        ExternalPerson person = externalPersonRepository.findByIdentityCard(identityCard).orElse(null);
+        if (person == null) {
+            person = externalPersonRepository.save(ExternalPerson.builder()
+                    .identityCard(identityCard)
+                    .fullName(req.fullName())
+                    .build());
+            log.info("[EXTERNAL] Persona externa creada: id={}, cedula='{}', nombre='{}'",
+                    person.getId(), person.getIdentityCard(), person.getFullName());
         }
 
         // Empleado que retira el plato a nombre del externo (opcional). Igual que en el
         // registro "retira por otro" (MANUAL), debe ser un empleado interno ACTIVE y no
-        // puede ser la misma persona que el titular.
+        // puede ser la misma persona que el titular (se compara por cédula: empleado y
+        // persona externa son tablas distintas y sus ids no son comparables).
         Employee proxy = null;
         if (req.proxyEmployeeId() != null) {
             proxy = employeeRepository.findById(req.proxyEmployeeId()).orElse(null);
@@ -495,7 +502,7 @@ public class ScanService {
                         "El empleado que retira está inactivo y no puede realizar registros manuales.",
                         req.fullName(), null, 0);
             }
-            if (proxy.getId().equals(employee.getId())) {
+            if (proxy.getIdentityCard().equals(identityCard)) {
                 return new ManualScanResponse("ERROR",
                         "El empleado que retira no puede ser la misma persona externa.",
                         req.fullName(), null, 0);
@@ -507,25 +514,25 @@ public class ScanService {
         // No permitir registrar dos veces el mismo plato el mismo día para esta persona
         // externa (misma cédula/pasaporte). En un externo recién creado la lista está vacía.
         List<String> consumedToday = consumptionRepository
-                .findMealNamesByEmployeeIdAndBusinessDate(employee.getId(), businessDate);
+                .findMealNamesByExternalPersonIdAndBusinessDate(person.getId(), businessDate);
         if (consumedToday.contains(mealName)) {
-            log.info("[EXTERNAL] omitido (duplicado): '{}' comida='{}'", employee.getFullName(), mealName);
+            log.info("[EXTERNAL] omitido (duplicado): '{}' comida='{}'", person.getFullName(), mealName);
             return new ManualScanResponse("DUPLICATE",
-                    mealName + " ya fue registrado hoy para " + employee.getFullName(),
-                    employee.getFullName(), mealName, 0);
+                    mealName + " ya fue registrado hoy para " + person.getFullName(),
+                    person.getFullName(), mealName, 0);
         }
 
         String userObservation = blankToNull(req.observation());
         String observation;
         if (proxy != null) {
-            observation = proxy.getFullName() + " retira de " + employee.getFullName();
+            observation = proxy.getFullName() + " retira de " + person.getFullName();
             if (userObservation != null) observation += " — " + userObservation;
         } else {
             observation = userObservation;
         }
 
         Consumption consumption = Consumption.builder()
-                .employee(employee)
+                .externalPerson(person)
                 .restaurant(restaurant)
                 .proxyEmployee(proxy)
                 .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
@@ -540,13 +547,13 @@ public class ScanService {
         consumptionRepository.save(consumption);
 
         log.info("[EXTERNAL] ✓ SUCCESS → nombre='{}', restaurant='{}', comida='{}', proxy='{}'",
-                employee.getFullName(), restaurant.getName(), mealName,
+                person.getFullName(), restaurant.getName(), mealName,
                 proxy != null ? proxy.getFullName() : null);
         String message = proxy != null
                 ? "REGISTRO EXITOSO (retirado por " + proxy.getFullName() + ")"
                 : "REGISTRO EXITOSO";
         return new ManualScanResponse("SUCCESS", message,
-                employee.getFullName(), mealName, 1);
+                person.getFullName(), mealName, 1);
     }
 
     private static String blankToNull(String v) {

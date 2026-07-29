@@ -16,9 +16,22 @@ public class Consumption {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    /**
+     * Titular empleado interno. NULL cuando el titular es una persona externa
+     * ({@link #externalPerson}): exactamente uno de los dos está presente
+     * (CHECK chk_consumo_titular en la BD).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "empleado_id")
     private Employee employee;
+
+    /**
+     * Titular persona externa (solo consumos con {@code method=EXTERNAL}).
+     * NULL cuando el titular es un empleado interno.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "persona_externa_id")
+    private ExternalPerson externalPerson;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "restaurante_id")
@@ -71,4 +84,16 @@ public class Consumption {
     @Column(name = "creado_en", nullable = false)
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
+
+    /** Nombre del titular del consumo, sea empleado interno o persona externa. */
+    public String titularName() {
+        if (employee != null) return employee.getFullName();
+        return externalPerson != null ? externalPerson.getFullName() : null;
+    }
+
+    /** Cédula/pasaporte del titular del consumo, sea empleado o persona externa. */
+    public String titularIdentityCard() {
+        if (employee != null) return employee.getIdentityCard();
+        return externalPerson != null ? externalPerson.getIdentityCard() : null;
+    }
 }

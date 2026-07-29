@@ -62,7 +62,7 @@ End point para "retira por otro" y persona externa. No usan JWT del dispositivo
 | Método | Ruta | Descripción |
 |-------|------|-------------|
 | POST | `/api/manual-consumptions` | Registra "retira por otro". Un empleado (retirador) retira comidas a nombre de uno o varios titulares; se crea una fila `consumo` por cada (titular × tipo de comida) con `method='MANUAL'`, `empleado_apoderado_id=<retirador>` y `observacion="<Retirador> retira de <Titular>"` autogenerada. Solo dentro del horario configurado (si no, responde `status='OUT_OF_SCHEDULE'`); omite los platos no permitidos o ya registrados hoy y los informa en `message`. |
-| POST | `/api/manual-consumptions/external` | Persona externa (visitante/contratista). Crea/reutiliza `Employee` con `status='INACTIVE'`; registra un consumo con `method='EXTERNAL'`. Solo dentro del horario configurado (si no, responde `status='OUT_OF_SCHEDULE'` sin crear nada). |
+| POST | `/api/manual-consumptions/external` | Persona externa (visitante/contratista). Crea/reutiliza una fila de `persona_externa` (tabla separada de `empleado`); registra un consumo con `method='EXTERNAL'` y `persona_externa_id` como titular. Si la cédula pertenece a un empleado, responde `status='IS_EMPLOYEE'` sin crear nada. Solo dentro del horario configurado (si no, responde `status='OUT_OF_SCHEDULE'` sin crear nada). |
 
 `ManualScanRequest`:
 ```json

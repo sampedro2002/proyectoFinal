@@ -25,12 +25,16 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
     @Query("SELECT c.mealName FROM Consumption c WHERE c.employee.id = :employeeId AND c.businessDate = :date AND c.cancelled = FALSE")
     List<String> findMealNamesByEmployeeIdAndBusinessDate(@Param("employeeId") Long employeeId, @Param("date") LocalDate date);
 
+    /** Nombres de las comidas ya registradas hoy para una persona externa. */
+    @Query("SELECT c.mealName FROM Consumption c WHERE c.externalPerson.id = :externalPersonId AND c.businessDate = :date AND c.cancelled = FALSE")
+    List<String> findMealNamesByExternalPersonIdAndBusinessDate(@Param("externalPersonId") Long externalPersonId, @Param("date") LocalDate date);
+
     Optional<Consumption> findByClientUuid(UUID clientUuid);
 
     @Query("SELECT c FROM Consumption c WHERE c.businessDate = :businessDate AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE")
     List<Consumption> findByBusinessDateAndRestaurantId(@Param("businessDate") LocalDate businessDate, @Param("restaurantId") Long restaurantId);
 
-    @EntityGraph(attributePaths = {"restaurant", "employee"})
+    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate = :date AND c.restaurant.id = :restaurantId AND c.cancelled = FALSE
@@ -41,13 +45,13 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
     /**
      * Reporte de consumos. Usa {@link EntityGraph} para resolver en una sola consulta
-     * las relaciones LAZY ({@code restaurant}, {@code employee} y
-     * {@code proxyEmployee}) que {@link com.eatfood.control.service.ReportService#toRow}
+     * las relaciones LAZY ({@code restaurant}, {@code employee}, {@code externalPerson}
+     * y {@code proxyEmployee}) que {@link com.eatfood.control.service.ReportService#toRow}
      * accede después, evitando un problema de N+1 SELECT. El filtro
      * {@code methods} (opcional) acota por metodo de registro
      * (FINGERPRINT/MANUAL/EXTERNAL); vacio o null = todos.
      */
-    @EntityGraph(attributePaths = {"restaurant", "employee", "proxyEmployee"})
+    @EntityGraph(attributePaths = {"restaurant", "employee", "externalPerson", "proxyEmployee"})
     @Query("""
             SELECT c FROM Consumption c
             WHERE c.businessDate BETWEEN :from AND :to
@@ -73,7 +77,8 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
 
 
 
-    @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date AND c.cancelled = FALSE")
+    /** Solo consumos de empleados: los externos (employee NULL) se excluyen explícitamente. */
+    @Query("SELECT c.employee.id FROM Consumption c WHERE c.businessDate = :date AND c.cancelled = FALSE AND c.employee IS NOT NULL")
     List<Long> findConsumedEmployeeIds(@Param("date") LocalDate date);
 
     /**
@@ -88,16 +93,26 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             """)
     List<Object[]> countGroupedByBusinessDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
+    /**
+     * Consumos MANUAL y EXTERNAL del día, con buscador por titular (empleado o
+     * persona externa) o por quien retira. Todos los joins al titular son LEFT:
+     * un consumo tiene empleado XOR persona externa (nunca ambos), y filtrar por
+     * {@code c.employee.fullName} con join implícito (inner) excluiría los
+     * consumos externos, cuyo empleado es NULL.
+     */
     @Query(value = """
             SELECT DISTINCT c FROM Consumption c
-            JOIN FETCH c.employee
             JOIN FETCH c.restaurant
+            LEFT JOIN FETCH c.employee e
+            LEFT JOIN FETCH c.externalPerson ep
             LEFT JOIN FETCH c.proxyEmployee pe
             WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
               AND c.businessDate = :businessDate
               AND (:search IS NULL OR
-                   LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
-                   LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(e.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(e.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(ep.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(ep.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(pe.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:cancelled IS NULL OR c.cancelled = :cancelled)
@@ -105,12 +120,16 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             """,
             countQuery = """
             SELECT COUNT(DISTINCT c) FROM Consumption c
+            LEFT JOIN c.employee e
+            LEFT JOIN c.externalPerson ep
             LEFT JOIN c.proxyEmployee pe
             WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
               AND c.businessDate = :businessDate
               AND (:search IS NULL OR
-                   LOWER(c.employee.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
-                   LOWER(c.employee.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(e.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(e.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(ep.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
+                   LOWER(ep.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(pe.fullName) LIKE LOWER(CONCAT('%', :search, '%')))
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:cancelled IS NULL OR c.cancelled = :cancelled)

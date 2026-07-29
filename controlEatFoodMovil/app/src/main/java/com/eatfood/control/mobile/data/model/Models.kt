@@ -293,7 +293,11 @@ data class MealAvailabilityResponse(
 
 data class ConsumptionDetailResponse(
     val id: Long,
-    val employeeId: Long,
+    // Titular: employeeId (empleado interno) XOR externalPersonId (persona
+    // externa). Exactamente uno viene no nulo; employeeName/identityCard ya
+    // vienen resueltos del titular correspondiente.
+    val employeeId: Long? = null,
+    val externalPersonId: Long? = null,
     val employeeName: String?,
     val identityCard: String?,
     val proxyEmployeeId: Long?,

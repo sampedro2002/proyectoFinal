@@ -126,7 +126,11 @@ public final class ScanDtos {
 
     public record ConsumptionDetailResponse(
             Long id,
+            // Titular: employeeId (empleado interno) XOR externalPersonId (persona
+            // externa). Exactamente uno es no nulo; employeeName/identityCard ya
+            // vienen resueltos del titular correspondiente.
             Long employeeId,
+            Long externalPersonId,
             String employeeName,
             String identityCard,
             Long proxyEmployeeId,

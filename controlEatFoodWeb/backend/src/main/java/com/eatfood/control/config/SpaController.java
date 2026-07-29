@@ -30,6 +30,7 @@ public class SpaController {
             "/reports", "/reports/**",
             "/audit", "/audit/**",
             "/manual-scan", "/manual-scan/**",
+            "/edit-consumptions", "/edit-consumptions/**",
             "/conexion", "/conexion/**"
     })
     public String forward() {

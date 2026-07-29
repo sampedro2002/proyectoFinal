@@ -71,11 +71,10 @@ public class ReportService {
     }
 
     private ConsumptionRow toRow(Consumption c) {
-        Employee e = c.getEmployee();
         Employee p = c.getProxyEmployee();
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
-                e.getFullName(), e.getIdentityCard(),
+                c.titularName(), c.titularIdentityCard(),
                 c.getRestaurant().getName(), c.getMealName(),
                 c.getObservation(), c.isOffline(),
                 c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),

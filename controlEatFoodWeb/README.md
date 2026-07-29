@@ -87,7 +87,7 @@ Para iniciar con una base de datos limpia:
 
 Las migraciones incrementales históricas se **consolidaron en dos archivos**, así que una base nueva se crea de una sola pasada:
 
-- `V1__schema.sql`: **esquema completo**. Incluye ya todo lo que antes eran migraciones separadas: renombre de platos (Almuerzo/Merienda), eliminación del código público de empleado, ajustes de vistas y zona horaria, `consumption.meal_name`, y la distinción de método de registro (`consumption.method` = `FINGERPRINT`/`MANUAL`/`EXTERNAL`) con el proxy de "retira por otro" (`consumption.proxy_employee_id`). El límite de 3 huellas activas por empleado lo impone `FingerprintService.MAX_FINGERPRINTS` (no la BD).
+- `V1__schema.sql`: **esquema completo**. Incluye ya todo lo que antes eran migraciones separadas: renombre de platos (Almuerzo/Merienda), eliminación del código público de empleado, ajustes de vistas y zona horaria, `consumption.meal_name`, la distinción de método de registro (`consumption.method` = `FINGERPRINT`/`MANUAL`/`EXTERNAL`) con el proxy de "retira por otro" (`consumption.proxy_employee_id`), y la tabla `persona_externa` (personas externas separadas de `empleado`; el titular de un consumo es `empleado_id` XOR `persona_externa_id`, garantizado por el CHECK `chk_consumo_titular`). El límite de 3 huellas activas por empleado lo impone `FingerprintService.MAX_FINGERPRINTS` (no la BD).
 - `V2__seed.sql`: **datos iniciales** (roles, usuario `admin`, restaurantes y horario). Idempotente (`INSERT IGNORE` / `WHERE NOT EXISTS`).
 
 **Flyway es el único dueño del esquema.** El instalador (`RunWindowns\Inicio.ps1`) solo se asegura de que la *base* exista; las tablas y el seed los crea Flyway al arrancar el backend. Antes el instalador traía una copia manual de estas migraciones en `RunWindowns\db\*.sql`, que se desincronizó y dejaba la base poblada sin `flyway_schema_history`, impidiendo el arranque; esos scripts se eliminaron.
@@ -247,7 +247,7 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  
  - **Gestión de Fallos**: El sistema registra y audita los escaneos fallidos (`FailedScan`) para analizar problemas de lectura o intentos no autorizados.
  - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. No se validan horario, permiso ni duplicados: pensado para correcciones.
- - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema crea un empleado temporal `INACTIVE` reutilizable por cédula, de modo que el consumo aparece en el feed del kiosk y en reportes, pero no contamina la gestión de empleados activos.
+ - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema las guarda en la tabla **`persona_externa`**, totalmente separada de `empleado` (el consumo referencia `consumo.persona_externa_id`): aparecen en el feed del kiosk y en reportes, pero jamás en la gestión ni en la exportación de empleados. Si la cédula ya pertenece a un empleado, el registro externo se rechaza. La lista y edición de personas externas se hace desde la misma vista "Añadir persona externa".
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
  - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos.
  - **Configuración por Código QR**: El panel web (vía el ServerInfoController) provee un código QR interactivo con la IP de la red local o la `PUBLIC_URL` del servidor para auto-configurar rápidamente la URL base en la app móvil.
@@ -307,5 +307,7 @@ Ver su README en [`../controlEatFoodMovil/README.md`](../controlEatFoodMovil/REA
 | Cancelar consumo manual | DELETE | `/api/manual-consumptions/{id}` | | `ADMIN, RRHH` |
 | Reactivar consumo manual | POST | `/api/manual-consumptions/{id}/reactivate` | | `ADMIN, RRHH` |
 | Comidas permitidas | GET | `/api/manual-consumptions/allowed-meals` | | `ADMIN, RRHH` |
+| Listar personas externas | GET | `/api/external-persons?term=` | | `ADMIN, RRHH` |
+| Editar persona externa | PUT | `/api/external-persons/{id}` | `{ identityCard, fullName, observation, isPassport }` | `ADMIN, RRHH` |
 
 El sistema permite la administración completa del ciclo de vida de los consumos manuales. Los consumos creados manualmente registran con `businessDate = hoy (America/Guayaquil)`, `offline=false`, `syncStatus=SYNCED`, y un `clientUuid` aleatorio. El consumo aparece en el feed del kiosk y reportes. Además de registrar, se puede listar con paginación, modificar su contenido, o cancelarlo (excluyéndolo de reportes) y reactivarlo.

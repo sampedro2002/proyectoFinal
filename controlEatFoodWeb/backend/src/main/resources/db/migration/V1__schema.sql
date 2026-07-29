@@ -2,10 +2,11 @@
 -- Control de Alimentos Club Castillo Amaguaña — Huella Digital (ZK9500)
 -- Esquema relacional MySQL — estado final consolidado. Es el esquema COMPLETO
 -- y único: incluye el renombre de platos Almuerzo/Merienda, la eliminación del
--- código público de empleado (el identificador es su id autoincremental) y la
+-- código público de empleado (el identificador es su id autoincremental), la
 -- distinción de método de registro (consumo.metodo = FINGERPRINT/MANUAL/
 -- EXTERNAL) con el proxy de "retira por otro" (consumo.empleado_apoderado_id),
--- que antes vivían en una migración V3 aparte, ahora fusionada aquí.
+-- y la tabla persona_externa: las personas externas (visitantes/contratistas)
+-- viven SEPARADAS de empleado — sus consumos referencian persona_externa_id.
 -- Esta migración es la ÚNICA fuente de verdad del esquema. El instalador
 -- (RunWindowns\Inicio.ps1) solo crea la BASE de datos vacía; las tablas las
 -- crea Flyway al arrancar el backend.
@@ -86,6 +87,20 @@ CREATE TABLE IF NOT EXISTS empleado (
 );
 
 -- ----------------------------------------------------------------------------
+-- PERSONAS EXTERNAS (visitantes, contratistas, invitados). Tabla SEPARADA de
+-- empleado: nunca aparecen en la gestión/exportación de empleados. Sus consumos
+-- (metodo='EXTERNAL') referencian consumo.persona_externa_id.
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS persona_externa (
+    id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+    cedula            VARCHAR(20) NOT NULL UNIQUE,
+    nombre_completo   VARCHAR(160) NOT NULL,
+    observacion       VARCHAR(500),
+    creado_en         DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actualizado_en    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- ----------------------------------------------------------------------------
 -- HUELLAS
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS huella_digital (
@@ -139,7 +154,11 @@ CREATE TABLE IF NOT EXISTS horario (
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS consumo (
     id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
-    empleado_id         BIGINT NOT NULL,
+    -- Titular del consumo: empleado interno (empleado_id) O persona externa
+    -- (persona_externa_id). Exactamente uno de los dos debe estar presente
+    -- (ver CHECK chk_consumo_titular más abajo).
+    empleado_id         BIGINT,
+    persona_externa_id  BIGINT,
     restaurante_id      BIGINT NOT NULL,
     dispositivo_id      BIGINT,
     consumido_en        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -147,11 +166,11 @@ CREATE TABLE IF NOT EXISTS consumo (
     sin_conexion        BOOLEAN NOT NULL DEFAULT FALSE,
     estado_sincronizacion VARCHAR(12) NOT NULL DEFAULT 'SYNCED' CHECK (estado_sincronizacion IN ('SYNCED','PENDING','CONFLICT')),
     -- method: origen del registro. FINGERPRINT = escaneo de huella del propio
-    -- empleado; MANUAL = registro manual "retira por otro" (empleado_apoderado_id
-    -- indica quién retira); EXTERNAL = persona externa creada al vuelo.
+    -- empleado; MANUAL = registro manual "retira por otro"; EXTERNAL = persona
+    -- externa (titular = persona_externa_id, nunca empleado_id).
     metodo              VARCHAR(12) NOT NULL DEFAULT 'FINGERPRINT'
                             CHECK (metodo IN ('FINGERPRINT','MANUAL','EXTERNAL')),
-    empleado_apoderado_id BIGINT,               -- empleado que retira (solo method='MANUAL')
+    empleado_apoderado_id BIGINT,               -- empleado que retira (MANUAL y EXTERNAL)
     nombre_comida       VARCHAR(30),          -- 'Almuerzo' (1er plato) o 'Merienda' (2º plato)
     observacion         VARCHAR(500),
     uuid_cliente        VARCHAR(36) NOT NULL,
@@ -161,9 +180,12 @@ CREATE TABLE IF NOT EXISTS consumo (
     KEY idx_consumo_fecha (fecha_negocio),
     KEY idx_consumo_restaurante_fecha (restaurante_id, fecha_negocio),
     KEY idx_consumo_empleado_fecha (empleado_id, fecha_negocio),
+    KEY idx_consumo_externo_fecha (persona_externa_id, fecha_negocio),
     KEY idx_consumo_metodo (metodo),
     KEY idx_consumo_apoderado (empleado_apoderado_id),
+    CONSTRAINT chk_consumo_titular CHECK ((empleado_id IS NULL) <> (persona_externa_id IS NULL)),
     FOREIGN KEY (empleado_id) REFERENCES empleado(id),
+    FOREIGN KEY (persona_externa_id) REFERENCES persona_externa(id),
     FOREIGN KEY (restaurante_id) REFERENCES restaurante(id),
     FOREIGN KEY (dispositivo_id) REFERENCES dispositivo(id),
     FOREIGN KEY (empleado_apoderado_id) REFERENCES empleado(id) ON DELETE SET NULL
