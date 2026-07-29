@@ -101,7 +101,7 @@ public class ExportService {
         sb.append(String.join(";", HEADERS)).append("\n");
         int n = 1;
         for (ConsumptionRow r : rows) {
-            sb.append(n++).append(';')
+            sb.append(r.id()).append(';')
               .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
@@ -232,7 +232,7 @@ public class ExportService {
             externalStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(n++);
+                row.createCell(0).setCellValue(r.id());
                 row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
                 row.createCell(2).setCellValue(safe(r.identityCard()));
                 row.createCell(3).setCellValue(safe(r.employeeName()));
@@ -301,7 +301,7 @@ public class ExportService {
             int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
-                addBodyCell(table, String.valueOf(n++), cf, bg);
+                addBodyCell(table, String.valueOf(r.id()), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);
@@ -511,7 +511,7 @@ public class ExportService {
         sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
         int n = 1;
         for (ConsumptionRow r : rows) {
-            sb.append(n++).append(';')
+            sb.append(r.id()).append(';')
               .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
               .append(csv(r.identityCard())).append(';')
               .append(csv(r.employeeName())).append(';')
@@ -557,7 +557,7 @@ public class ExportService {
             kExternalStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
             for (ConsumptionRow r : rows) {
                 Row row = sheet.createRow(rn++);
-                row.createCell(0).setCellValue(n++);
+                row.createCell(0).setCellValue(r.id());
                 row.createCell(1).setCellValue(r.consumedAt() != null ? r.consumedAt().format(DT) : "");
                 row.createCell(2).setCellValue(safe(r.identityCard()));
                 row.createCell(3).setCellValue(safe(r.employeeName()));
@@ -627,7 +627,7 @@ public class ExportService {
             int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
-                addBodyCell(table, String.valueOf(n++), cf, bg);
+                addBodyCell(table, String.valueOf(r.id()), cf, bg);
                 addBodyCell(table, r.consumedAt() != null ? r.consumedAt().format(DT) : "", cf, bg);
                 addBodyCell(table, safe(r.identityCard()), cf, bg);
                 addBodyCell(table, safe(r.employeeName()), cf, bg);

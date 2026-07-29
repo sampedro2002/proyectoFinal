@@ -547,9 +547,9 @@ export default function Kiosk() {
                       <td colSpan="5" className="kiosk-feed-empty">Sin registros aún</td>
                     </tr>
                   ) : (
-                    filteredFeed.map((e, i) => (
-                      <tr key={i} className={e.method === 'MANUAL' ? 'row-manual' : e.method === 'EXTERNAL' ? 'row-external' : ''}>
-                        <td>{filteredFeed.length - i}</td>
+                    filteredFeed.map((e) => (
+                      <tr key={e.id} className={e.method === 'MANUAL' ? 'row-manual' : e.method === 'EXTERNAL' ? 'row-external' : ''}>
+                        <td>{e.id}</td>
                         <td>{e.employeeName}</td>
                         <td>{e.time}</td>
                         <td>{e.mealName}</td>

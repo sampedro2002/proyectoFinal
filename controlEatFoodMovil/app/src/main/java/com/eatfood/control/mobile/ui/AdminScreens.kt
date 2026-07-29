@@ -1476,7 +1476,7 @@ fun EditConsumptionsScreen() {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    "${c.employeeName ?: "—"}" + (if (c.method == "EXTERNAL") " · MANUAL - E" else "") + " · ${c.mealName ?: ""}",
+                                    "${c.employeeName ?: "—"}" + (when (c.method) { "EXTERNAL" -> " · MANUAL - E"; "MANUAL" -> " · MANUAL"; else -> "" }) + " · ${c.mealName ?: ""}",
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(

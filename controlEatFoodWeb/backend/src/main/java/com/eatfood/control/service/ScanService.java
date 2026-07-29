@@ -206,6 +206,7 @@ public class ScanService {
                 .stream()
                 .sorted(Comparator.comparing(Consumption::getConsumedAt).reversed())
                 .map(c -> new TodayEntry(
+                        c.getId(),
                         c.titularName(),
                         c.getMealName(),
                         c.getConsumedAt().toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),

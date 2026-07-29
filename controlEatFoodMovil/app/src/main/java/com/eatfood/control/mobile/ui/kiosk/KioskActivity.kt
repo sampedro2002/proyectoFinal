@@ -49,6 +49,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.eatfood.control.mobile.biometric.BiometricReader
@@ -778,13 +779,19 @@ private fun TodayFeedPanel(
                 border = androidx.compose.foundation.BorderStroke(1.dp, SurfaceVariant)
             ) {
                 Column(Modifier.padding(8.dp)) {
-                    // Header de Tabla
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                        Text("#", Modifier.width(30.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("NOMBRE", Modifier.weight(1f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        Text("HORA", Modifier.width(60.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
-                        Text("TIPO", Modifier.width(80.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
-                        Text("RETIRA", Modifier.width(80.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
+                    // Header de Tabla. NOMBRE y RETIRA usan weight() (no un ancho fijo en dp)
+                    // para repartirse el espacio disponible en proporción al ancho real de la
+                    // pantalla: así se adaptan solas al girar a vertical, en vez de quedar
+                    // apretadas por columnas pensadas para el ancho de un landscape.
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("#", Modifier.width(24.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("NOMBRE", Modifier.weight(1.4f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text("HORA", Modifier.width(52.dp), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.Center)
+                        Text("TIPO", Modifier.weight(0.9f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
+                        Text("RETIRA", Modifier.weight(1.1f), color = Primary, fontWeight = FontWeight.Bold, fontSize = 12.sp, textAlign = TextAlign.End)
                     }
 
                     HorizontalDivider(color = SurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
@@ -804,20 +811,30 @@ private fun TodayFeedPanel(
                                     else -> Color.Transparent
                                 }
                                 Row(
-                                    // Alto fijo por fila: es lo que hace que entren exactamente
-                                    // FEED_VISIBLE_ROWS registros antes de tener que bajar.
-                                    Modifier.fillMaxWidth().height(FEED_ROW_HEIGHT).background(rowTint)
-                                        .padding(horizontal = 12.dp),
+                                    // Alto MÍNIMO (no fijo): en la mayoría de filas es de una sola
+                                    // línea y ocupa FEED_ROW_HEIGHT (por eso entran ~FEED_VISIBLE_ROWS
+                                    // registros antes de bajar con scroll), pero si NOMBRE o RETIRA
+                                    // necesitan una segunda línea (nombre y apellido completos) la
+                                    // fila crece en vez de recortar el texto.
+                                    Modifier.fillMaxWidth().heightIn(min = FEED_ROW_HEIGHT).background(rowTint)
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("${filteredFeed.size - index}", Modifier.width(30.dp), color = OnSurface, fontSize = 13.sp)
-                                    Text(e.employeeName ?: "—", Modifier.weight(1f), color = OnSurface, fontSize = 13.sp, maxLines = 1)
+                                    Text("${filteredFeed.size - index}", Modifier.width(24.dp), color = OnSurface, fontSize = 13.sp)
+                                    Text(
+                                        e.employeeName ?: "—", Modifier.weight(1.4f), color = OnSurface, fontSize = 13.sp,
+                                        maxLines = 2, overflow = TextOverflow.Ellipsis
+                                    )
                                     Text(
                                         e.time?.substringAfter('T')?.take(5) ?: "--:--",
-                                        Modifier.width(60.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.Center
+                                        Modifier.width(52.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.Center
                                     )
-                                    Text(e.mealName ?: "Comida", Modifier.width(80.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End)
-                                    Text(e.proxyEmployeeName ?: "—", Modifier.width(80.dp), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1)
+                                    Text(e.mealName ?: "Comida", Modifier.weight(0.9f), color = OnSurface, fontSize = 13.sp, textAlign = TextAlign.End)
+                                    Text(
+                                        e.proxyEmployeeName ?: "—", Modifier.weight(1.1f), color = OnSurface, fontSize = 13.sp,
+                                        textAlign = TextAlign.End, maxLines = 2, overflow = TextOverflow.Ellipsis
+                                    )
                                 }
                             }
                         }

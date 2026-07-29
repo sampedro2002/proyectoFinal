@@ -124,7 +124,7 @@ export default function Reports() {
           <tbody>
             {rows.map((r, i) => (
               <tr key={r.id} className={rowClass(r.method)}>
-                <td>{i + 1}</td>
+                <td>{r.id}</td>
                 <td>{r.businessDate}</td>
                 <td>{new Date(r.consumedAt).toLocaleTimeString('en-US')}</td>
                 <td>{r.identityCard}</td>

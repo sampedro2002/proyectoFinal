@@ -56,6 +56,7 @@ public final class ScanDtos {
 
     /** Entrada del feed de consumos del día para el Kiosk. */
     public record TodayEntry(
+            Long id,
             String employeeName,
             String mealName,
             String time,

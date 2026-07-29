@@ -412,10 +412,15 @@ export default function EditManualConsumptions() {
               <tr key={r.id}>
                 <td>{r.id}</td>
                 <td>
-                  {r.employeeName}
-                  {r.method === 'EXTERNAL' && (
-                    <span className="badge external" style={{ marginLeft: 6 }}>MANUAL - E</span>
-                  )}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
+                    <span>{r.employeeName}</span>
+                    {r.method === 'EXTERNAL' && (
+                      <span className="badge external">MANUAL - E</span>
+                    )}
+                    {r.method === 'MANUAL' && (
+                      <span className="badge manual">MANUAL</span>
+                    )}
+                  </div>
                 </td>
                 <td>{r.identityCard || '—'}</td>
                 <td>{r.proxyEmployeeName || r.proxyExternalPersonName || '—'}</td>

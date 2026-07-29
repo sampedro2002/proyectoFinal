@@ -76,7 +76,7 @@ export default function Employees() {
     const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      const { data } = await api.get('/employees', { params: { term, size: 200 } });
+      const { data } = await api.get('/employees', { params: { term, size: 200, sort: 'fullName,asc' } });
       if (seq !== loadSeq.current) return;
       setItems(data.content || data);
       setError('');
@@ -110,7 +110,7 @@ export default function Employees() {
     const seq = ++extLoadSeq.current;
     setExtLoading(true);
     try {
-      const { data } = await api.get('/external-persons', { params: { term: extTerm || null, size: 200 } });
+      const { data } = await api.get('/external-persons', { params: { term: extTerm || null, size: 200, sort: 'fullName,asc' } });
       if (seq !== extLoadSeq.current) return;
       setExtItems(data.content || data);
       setExtError('');
