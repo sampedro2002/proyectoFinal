@@ -441,7 +441,7 @@ export default function Employees() {
   return (
     <div>
       <div className="topbar">
-        <h2 style={{ margin: 0 }}>Empleados</h2>
+        <h2 style={{ margin: 0 }}>Personas</h2>
       </div>
 
       {/* ── Selector de tipo ── */}
