@@ -415,10 +415,10 @@ export default function EditManualConsumptions() {
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
                     <span>{r.employeeName}</span>
                     {r.method === 'EXTERNAL' && (
-                      <span className="badge external">MANUAL - E</span>
+                      <span className="badge external">Manual-E</span>
                     )}
                     {r.method === 'MANUAL' && (
-                      <span className="badge manual">MANUAL</span>
+                      <span className="badge manual">Manual</span>
                     )}
                   </div>
                 </td>

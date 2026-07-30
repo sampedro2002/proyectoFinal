@@ -762,7 +762,7 @@ public class ExportService {
         if (method == null) return "Huella";
         return switch (method) {
             case "MANUAL"   -> "Manual";
-            case "EXTERNAL" -> "MANUAL - E";
+            case "EXTERNAL" -> "Manual-E";
             default         -> "Huella";
         };
     }

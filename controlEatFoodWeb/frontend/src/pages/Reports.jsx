@@ -4,11 +4,11 @@ import EmployeeSelect from '../components/EmployeeSelect.jsx';
 
 function today() { return new Date().toISOString().slice(0, 10); }
 
-const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'MANUAL - E' };
+const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'Manual-E' };
 const METHOD_OPTIONS = [
   { value: 'FINGERPRINT', label: 'Huella' },
   { value: 'MANUAL', label: 'Manual' },
-  { value: 'EXTERNAL', label: 'MANUAL - E' },
+  { value: 'EXTERNAL', label: 'Manual-E' }
 ];
 
 export default function Reports() {
