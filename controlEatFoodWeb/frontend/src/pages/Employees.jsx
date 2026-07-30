@@ -150,14 +150,23 @@ export default function Employees() {
     setExtError('');
     setExtSavedMsg('');
     const identityCard = extForm.identityCard.trim();
+    const fullName = extForm.fullName.trim();
+    if (!fullName) {
+      setExtError('Ingrese el nombre.');
+      return;
+    }
     if (!extForm.isPassport && !isValidCedulaEC(identityCard)) {
       setExtError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
+      return;
+    }
+    if (extForm.isPassport && isValidCedulaEC(identityCard)) {
+      setExtError('Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.');
       return;
     }
     const payload = {
       identityCard,
       isPassport: extForm.isPassport,
-      fullName: extForm.fullName,
+      fullName,
       observation: extForm.observation || null,
     };
     try {
@@ -276,14 +285,23 @@ export default function Employees() {
     setError('');
     setSavedMsg('');
     const identityCard = form.identityCard.trim();
+    const fullName = form.fullName.trim();
+    if (!fullName) {
+      setError('Ingrese el nombre.');
+      return;
+    }
     if (!form.isPassport && !isValidCedulaEC(identityCard)) {
       setError('La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador).');
+      return;
+    }
+    if (form.isPassport && isValidCedulaEC(identityCard)) {
+      setError('Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.');
       return;
     }
     const payload = {
       identityCard,
       isPassport: form.isPassport,
-      fullName: form.fullName,
+      fullName,
       observation: form.observation || null,
       status: form.status,
       allowsLunch: form.allowsLunch,

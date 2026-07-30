@@ -57,6 +57,12 @@ public class ExternalPersonService {
             throw new BusinessException("INVALID_CARD",
                     "La cédula ingresada no es una cédula ecuatoriana válida (verifique los 10 dígitos).");
         }
+        // Un pasaporte no puede coincidir con el formato de una cédula ecuatoriana válida:
+        // evita que alguien marque "Pasaporte" para saltarse la validación de cédula.
+        if (isPassport && com.eatfood.control.util.CedulaValidator.isValid(card)) {
+            throw new BusinessException("PASSPORT_LOOKS_LIKE_CEDULA",
+                    "Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.");
+        }
         return card;
     }
 

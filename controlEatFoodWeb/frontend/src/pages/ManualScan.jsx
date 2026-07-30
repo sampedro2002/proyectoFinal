@@ -401,6 +401,10 @@ export default function ManualScan() {
         setError('La cédula ingresada no es una cédula ecuatoriana válida (10 dígitos con verificador).');
         return;
       }
+      if (isPassport && isValidCedulaEC(card)) {
+        setError('Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.');
+        return;
+      }
       if (!extName.trim()) { setError('Ingrese el nombre.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (selectedMealCodes.length === 0) { setError('Seleccione al menos un tipo de comida.'); return; }

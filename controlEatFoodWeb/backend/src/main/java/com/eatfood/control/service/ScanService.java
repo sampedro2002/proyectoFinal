@@ -523,6 +523,12 @@ public class ScanService {
             throw new BusinessException("INVALID_CARD",
                     "La cédula ingresada no es una cédula ecuatoriana válida.");
         }
+        // Un pasaporte no puede coincidir con el formato de una cédula ecuatoriana válida:
+        // evita que alguien marque "Pasaporte" para saltarse la validación de cédula.
+        if (isPassport && com.eatfood.control.util.CedulaValidator.isValid(identityCard)) {
+            throw new BusinessException("PASSPORT_LOOKS_LIKE_CEDULA",
+                    "Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.");
+        }
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId()).orElse(null);
         if (restaurant == null) {

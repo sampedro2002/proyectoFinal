@@ -289,6 +289,10 @@ private fun EmployeeDialog(
                     scope.launch { snackbar.showSnackbar("La cédula no es una cédula ecuatoriana válida (10 dígitos con verificador)") }
                     return@TextButton
                 }
+                if (isPassport && com.eatfood.control.mobile.util.CedulaValidator.isValid(identity.trim())) {
+                    scope.launch { snackbar.showSnackbar("Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.") }
+                    return@TextButton
+                }
                 val req = EmployeeRequest(
                     identityCard = identity.trim(), fullName = fullName.trim(),
                     observation = observation.trim().ifBlank { null },
@@ -1319,6 +1323,10 @@ fun ExtraMealsScreen() {
                         val card = extCard.trim()
                         if (!isPassport && !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
                             scope.launch { snackbar.showSnackbar("La cédula no es válida (10 dígitos con verificador).") }
+                            return@Button
+                        }
+                        if (isPassport && com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
+                            scope.launch { snackbar.showSnackbar("Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.") }
                             return@Button
                         }
                         busy = true
