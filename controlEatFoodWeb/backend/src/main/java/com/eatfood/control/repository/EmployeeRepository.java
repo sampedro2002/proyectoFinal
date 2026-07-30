@@ -41,6 +41,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             WHERE e.deleted = false
               AND (:term IS NULL OR LOWER(e.fullName) LIKE LOWER(CONCAT('%', :term, '%'))
                    OR e.identityCard LIKE CONCAT('%', :term, '%'))
+            ORDER BY e.fullName ASC
             """)
     Page<Employee> search(@Param("term") String term, Pageable pageable);
 
