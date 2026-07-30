@@ -83,7 +83,7 @@ export default function Employees() {
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setItems([]);
-      setError(err.response?.data?.message || 'No se pudieron cargar las personas');
+      setError(err.response?.data?.message || 'No se pudieron cargar los empleados');
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
@@ -129,7 +129,12 @@ export default function Employees() {
     return () => clearTimeout(t);
   }, [extTerm, personType]);
 
-  // ── Funciones para editar persona externa ──
+  // ── Funciones para editar/crear persona externa ──
+  function openExtNew() {
+    setExtError(''); setExtSavedMsg('');
+    setExtForm({ ...emptyExt });
+  }
+
   function openExtEdit(p) {
     setExtError(''); setExtSavedMsg('');
     setExtForm({
@@ -170,8 +175,13 @@ export default function Employees() {
       observation: extForm.observation || null,
     };
     try {
-      await api.put(`/external-persons/${extForm.id}`, payload);
-      setExtSavedMsg('Cambios guardados.');
+      if (extForm.id) {
+        await api.put(`/external-persons/${extForm.id}`, payload);
+        setExtSavedMsg('Cambios guardados.');
+      } else {
+        await api.post('/external-persons', payload);
+        setExtSavedMsg('Persona externa creada.');
+      }
       closeExtForm();
     } catch (err) {
       setExtError(err.response?.data?.message || 'Error al guardar');
@@ -314,7 +324,7 @@ export default function Employees() {
         load();
       } else {
         const { data } = await api.post('/employees', payload);
-        setSavedMsg('Persona creada correctamente. Ahora puede registrar hasta 3 huellas.');
+        setSavedMsg('Empleado creado correctamente. Ahora puede registrar hasta 3 huellas.');
         setForm({
           ...data,
           observation:   data.observation ?? '',
@@ -431,7 +441,7 @@ export default function Employees() {
   return (
     <div>
       <div className="topbar">
-        <h2 style={{ margin: 0 }}>Personas</h2>
+        <h2 style={{ margin: 0 }}>Empleados</h2>
       </div>
 
       {/* ── Selector de tipo ── */}
@@ -440,7 +450,7 @@ export default function Employees() {
           type="button"
           className={`tab ${personType === 'employee' ? 'active' : ''}`}
           onClick={() => setPersonType('employee')}
-        >Personas</button>
+        >Empleados</button>
         <button
           type="button"
           className={`tab ${personType === 'external' ? 'active' : ''}`}
@@ -462,7 +472,7 @@ export default function Employees() {
                 <option value="ACTIVE">Activo</option>
                 <option value="INACTIVE">Inactivo</option>
               </select>
-              {isAdmin && <button onClick={openNew}>+ Nueva persona</button>}
+              {isAdmin && <button onClick={openNew}>+ Nuevo empleado</button>}
               {isAdmin && <button className="ghost" onClick={() => exportDb('excel')}>Exportar Excel</button>}
               {isAdmin && <button className="ghost" onClick={() => exportDb('csv')}>Exportar CSV</button>}
             </div>
@@ -502,7 +512,7 @@ export default function Employees() {
                   <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Cargando…</td></tr>
                 )}
                 {!loading && filtered.length === 0 && (
-                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin personas registradas.</td></tr>
+                  <tr><td colSpan="8" style={{ color: 'var(--muted)' }}>Sin empleados registrados.</td></tr>
                 )}
               </tbody>
             </table>
@@ -519,6 +529,7 @@ export default function Employees() {
                      onChange={e => setExtTerm(e.target.value)}
                      onKeyDown={e => e.key === 'Enter' && loadExternals()} />
               <button onClick={loadExternals}>Buscar</button>
+              {isAdmin && <button onClick={openExtNew}>+ Nueva persona externa</button>}
             </div>
           </div>
 
@@ -564,7 +575,7 @@ export default function Employees() {
         <div className="modal-overlay">
           <div className="card modal-card">
             <div className="topbar" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>{form.id ? 'Editar persona' : 'Nueva persona'}</h3>
+              <h3 style={{ margin: 0 }}>{form.id ? 'Editar empleado' : 'Nuevo empleado'}</h3>
               <button type="button" className="ghost" onClick={closeForm}>✕</button>
             </div>
 
@@ -579,7 +590,7 @@ export default function Employees() {
                 className={`tab ${tab === 'fingerprints' ? 'active' : ''}`}
                 onClick={() => form.id && setTab('fingerprints')}
                 disabled={!form.id}
-                title={!form.id ? 'Guarde la persona para registrar huellas' : ''}
+                title={!form.id ? 'Guarde el empleado para registrar huellas' : ''}
               >Huellas</button>
             </div>
 
@@ -635,7 +646,7 @@ export default function Employees() {
 
                 {error && <p className="error-text">{error}</p>}
                 <div className="row" style={{ marginTop: 12 }}>
-                  <button type="submit">{form.id ? 'Guardar cambios' : 'Crear persona'}</button>
+                  <button type="submit">{form.id ? 'Guardar cambios' : 'Crear empleado'}</button>
                   <button type="button" className="ghost" onClick={closeForm}>
                     {form.id ? 'Cerrar' : 'Cancelar'}
                   </button>
@@ -647,7 +658,7 @@ export default function Employees() {
               <div style={{ marginTop: 12 }}>
                 {!form.id ? (
                   <p style={{ color: 'var(--muted)' }}>
-                    Guarde la persona para poder registrar huellas.
+                    Guarde el empleado para poder registrar huellas.
                   </p>
                 ) : (
                   <>
@@ -736,7 +747,7 @@ export default function Employees() {
         <div className="modal-overlay">
           <div className="card modal-card">
             <div className="topbar" style={{ marginBottom: 12 }}>
-              <h3 style={{ margin: 0 }}>Editar persona externa</h3>
+              <h3 style={{ margin: 0 }}>{extForm.id ? 'Editar persona externa' : 'Nueva persona externa'}</h3>
               <button type="button" className="ghost" onClick={closeExtForm}>✕</button>
             </div>
 
@@ -769,7 +780,7 @@ export default function Employees() {
 
               {extError && <p className="error-text">{extError}</p>}
               <div className="row" style={{ marginTop: 12 }}>
-                <button type="submit">Guardar cambios</button>
+                <button type="submit">{extForm.id ? 'Guardar cambios' : 'Crear persona'}</button>
                 <button type="button" className="ghost" onClick={closeExtForm}>Cancelar</button>
               </div>
             </form>

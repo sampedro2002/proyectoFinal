@@ -36,6 +36,12 @@ public class ExternalPersonController {
         return externalPersonService.search(term, pageable);
     }
 
+    @Operation(summary = "Crea una nueva persona externa manualmente (solo ADMIN/RRHH)")
+    @PostMapping
+    public ExternalPersonResponse create(@Valid @RequestBody ExternalPersonRequest req) {
+        return externalPersonService.create(req);
+    }
+
     @Operation(summary = "Actualiza nombre, cédula u observación de una persona externa (solo ADMIN/RRHH)")
     @PutMapping("/{id}")
     public ExternalPersonResponse update(@PathVariable Long id, @Valid @RequestBody ExternalPersonRequest req) {

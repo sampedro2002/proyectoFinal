@@ -26,6 +26,25 @@ public class ExternalPersonService {
     }
 
     @Transactional
+    public ExternalPersonResponse create(ExternalPersonRequest req) {
+        String identityCard = normalizedCard(req.identityCard(), Boolean.TRUE.equals(req.isPassport()));
+        if (externalPersonRepository.existsByIdentityCard(identityCard)) {
+            throw new BusinessException("DUPLICATE_CARD", "Ya existe otra persona externa con esa cédula.");
+        }
+        if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
+            throw new BusinessException("IS_EMPLOYEE", "La cédula pertenece a un empleado registrado.");
+        }
+
+        ExternalPerson p = new ExternalPerson();
+        p.setIdentityCard(identityCard);
+        p.setFullName(req.fullName());
+        p.setObservation(blankToNull(req.observation()));
+        p = externalPersonRepository.save(p);
+        auditService.record("ExternalPerson", String.valueOf(p.getId()), "CREATE", null, snapshot(p));
+        return toResponse(p);
+    }
+
+    @Transactional
     public ExternalPersonResponse update(Long id, ExternalPersonRequest req) {
         ExternalPerson p = externalPersonRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Persona externa no encontrada: " + id));
