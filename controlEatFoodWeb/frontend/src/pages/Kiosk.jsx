@@ -482,7 +482,18 @@ export default function Kiosk() {
           overflow: 'hidden', height: '36px'
         }}>
           <button
-            onClick={() => setFeedMethod(feedMethod === 'MANUAL' ? 'ALL' : 'MANUAL')}
+            onClick={() => setFeedMethod('ALL')}
+            style={{
+              background: feedMethod === 'ALL' ? 'var(--text)' : 'transparent',
+              color: feedMethod === 'ALL' ? 'var(--bg)' : 'var(--text)',
+              border: 'none', padding: '0 16px', cursor: 'pointer',
+              fontSize: 13, fontWeight: 'bold', transition: 'all 0.2s'
+            }}
+          >
+            TODOS
+          </button>
+          <button
+            onClick={() => setFeedMethod('MANUAL')}
             style={{
               background: feedMethod === 'MANUAL' ? 'var(--text)' : 'transparent',
               color: feedMethod === 'MANUAL' ? 'var(--bg)' : 'var(--text)',
@@ -493,7 +504,7 @@ export default function Kiosk() {
             MANUAL
           </button>
           <button
-            onClick={() => setFeedMethod(feedMethod === 'FINGERPRINT' ? 'ALL' : 'FINGERPRINT')}
+            onClick={() => setFeedMethod('FINGERPRINT')}
             style={{
               background: feedMethod === 'FINGERPRINT' ? 'var(--text)' : 'transparent',
               color: feedMethod === 'FINGERPRINT' ? 'var(--bg)' : 'var(--text)',
