@@ -68,8 +68,9 @@ graph LR
 
 ### Supervisor
 - **HU-08** Como supervisor quiero ver el dashboard del día (consumos, platos, pendientes, %) para monitorear la operación.
-- **HU-09** Como supervisor quiero exportar reportes a PDF/Excel/CSV para análisis externo.
+- **HU-09** Como supervisor quiero exportar reportes a PDF/Excel/CSV para análisis externo, utilizando filtros por fecha y empleado.
 - **HU-10** Como supervisor quiero ver tendencias de consumo para anticipar la demanda.
+- **HU-14** Como usuario (admin/supervisor) quiero visualizar las listas de datos y reportes ordenados alfabéticamente para búsquedas eficientes.
 
 ### Catering
 - **HU-11** Como operador de catering quiero que el empleado solo ponga el dedo para registrar su consumo rápidamente.

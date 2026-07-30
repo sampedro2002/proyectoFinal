@@ -128,4 +128,4 @@ End point para "retira por otro" y persona externa. No usan JWT del dispositivo
 | 409 | `DEVICE_LIMIT` | Límite de dispositivos del restaurante |
 | 409 | `MAX_FINGERPRINTS` | Más de 3 huellas |
 | 404 | `NOT_FOUND` | Recurso inexistente |
-| 400 | `VALIDATION` | Error de validación de campos |
+| 400 | `VALIDATION` | Error de validación de campos, devuelve la lista de reglas violadas |

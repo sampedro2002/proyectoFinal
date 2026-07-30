@@ -1,6 +1,12 @@
-# Sistema de Control de Consumo de Alimentos por Huella Digital
+# 🍽️ Sistema de Control de Consumo de Alimentos por Huella Digital
 
-Bienvenido al repositorio principal del proyecto **Control Eat Food**, un sistema integral diseñado para registrar, administrar y monitorear el consumo de alimentos del personal mediante identificación biométrica por huella digital (lector ZKTeco ZK9500). 
+[![Java 21](https://img.shields.io/badge/Java-21-blue.svg)](https://www.oracle.com/java/)
+[![Spring Boot 3](https://img.shields.io/badge/Spring_Boot-3-green.svg)](https://spring.io/projects/spring-boot)
+[![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/)
+[![Kotlin](https://img.shields.io/badge/Kotlin-Android-purple.svg)](https://kotlinlang.org/)
+[![MySQL 8](https://img.shields.io/badge/MySQL-8-orange.svg)](https://www.mysql.com/)
+
+Bienvenido al repositorio principal del proyecto **Control Eat Food**, un sistema integral diseñado para registrar, administrar y monitorear el consumo de alimentos del personal mediante identificación biométrica por huella digital (lector ZKTeco ZK9500). Con soporte para web y móvil, este sistema optimiza los flujos de catering institucional.
 
 Este directorio principal consolida los dos componentes fundamentales del sistema:
 
@@ -88,6 +94,7 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
   - En **Móvil**: La aplicación móvil Android puede conectar el lector directamente usando un cable USB OTG y el SDK integrado en la app.
 - **Soporte Offline**: Ambos clientes, web y móvil, disponen de una capa offline (usando IndexedDB en web y Room en Android) que almacena los registros localmente en caso de pérdida de conectividad, sincronizándolos automáticamente en cuanto la red vuelve a estar disponible.
 - **Retira por otro (Proxy)**: El sistema permite registrar un consumo a nombre de un titular, pero indicando qué otra persona ("apoderado") retira la comida físicamente, manteniendo la trazabilidad en los reportes y auditorías.
+- **Filtros y Validaciones**: Listas ordenadas alfabéticamente para búsquedas rápidas, filtros avanzados en reportes, y validaciones robustas para garantizar la integridad de los datos.
 
 ## 🔐 Seguridad y Privacidad
 

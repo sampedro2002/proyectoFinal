@@ -1,9 +1,11 @@
-# Control de Consumo de Alimentos — App Móvil Android
+# 📱 Control de Consumo de Alimentos — App Móvil Android
+
+[![Kotlin](https://img.shields.io/badge/Kotlin-Android-purple.svg)](https://kotlinlang.org/) [![Jetpack Compose](https://img.shields.io/badge/Jetpack_Compose-Material3-blue.svg)](https://developer.android.com/jetpack/compose)
 
 Aplicación móvil Android para la gestión administrativa del sistema de control de
 consumo de alimentos por huella digital. Permite a administradores y personal de
 catering gestionar empleados, registrar consumos y consultar reportes desde un
-dispositivo móvil.
+dispositivo móvil. Incorpora **validaciones**, **filtros** avanzados y **ordenamiento alfabético** en listas para una navegación óptima.
 
 > Esta app consume la API REST del proyecto hermano **`controlEatFoodWeb`** (backend Spring Boot 3).
 
@@ -109,13 +111,20 @@ API_BASE_URL=http://10.0.2.2:8080/api
 > `10.0.2.2` es el alias de `localhost` del host desde el emulador Android.
 > Para un dispositivo físico, usa la IP de tu máquina en la red local.
 
-### 3. Compilar y ejecutar
+### 3. Compilar, Ejecutar y Generar APK
 
+Para desarrollo:
 ```bash
 ./gradlew :app:assembleDebug
 ```
 
 O abre el proyecto en Android Studio y ejecuta directamente.
+
+Para generar el **APK** de producción listo para instalación:
+```bash
+./gradlew :app:assembleRelease
+```
+El archivo APK generado se encontrará en la ruta `app/build/outputs/apk/release/`.
 
 ### 4. Credenciales
 

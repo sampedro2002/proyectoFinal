@@ -1,10 +1,12 @@
-# Control de Consumo de Alimentos por Huella Digital (ZK9500)
+# 🌐 Control de Consumo de Alimentos Web (ZK9500)
+
+[![React](https://img.shields.io/badge/React-18-blue.svg)](https://reactjs.org/) [![Vite](https://img.shields.io/badge/Vite-PWA-yellow.svg)](https://vitejs.dev/) [![Spring Boot 3](https://img.shields.io/badge/Spring_Boot-3-green.svg)](https://spring.io/projects/spring-boot)
 
 Sistema web para registrar el consumo de alimentos de empleados mediante
 **identificación biométrica 1:N por huella digital** (lector ZKTeco **ZK9500**).
 El empleado solo coloca el dedo en el lector del punto de catering; el sistema lo
 identifica automáticamente y registra el consumo según horarios, permisos y reglas
-de negocio, con soporte **offline**, **auditoría** completa y **reportes**.
+de negocio, con soporte **offline**, **auditoría** completa, **filtros**, **validaciones robustas** y **reportes**.
 
 ---
 
@@ -249,7 +251,8 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. No se validan horario, permiso ni duplicados: pensado para correcciones.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema las guarda en la tabla **`persona_externa`**, totalmente separada de `empleado` (el consumo referencia `consumo.persona_externa_id`): aparecen en el feed del kiosk y en reportes, pero jamás en la gestión ni en la exportación de empleados. Si la cédula ya pertenece a un empleado, el registro externo se rechaza. La lista y edición de personas externas se hace desde la misma vista "Añadir persona externa".
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
- - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos.
+ - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos. Las vistas incluyen **filtros avanzados** y las tablas están **ordenadas alfabéticamente** para una mejor lectura y experiencia de usuario.
+ - **Validaciones Robustas**: Controles estrictos en entrada de datos y respuestas claras al usuario en toda la plataforma.
  - **Configuración por Código QR**: El panel web (vía el ServerInfoController) provee un código QR interactivo con la IP de la red local o la `PUBLIC_URL` del servidor para auto-configurar rápidamente la URL base en la app móvil.
  
  ---
