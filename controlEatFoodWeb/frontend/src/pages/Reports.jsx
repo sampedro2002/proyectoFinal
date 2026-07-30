@@ -5,10 +5,12 @@ import EmployeeSelect from '../components/EmployeeSelect.jsx';
 function today() { return new Date().toISOString().slice(0, 10); }
 
 const METHOD_LABEL = { FINGERPRINT: 'Huella', MANUAL: 'Manual', EXTERNAL: 'Manual-E' };
-const METHOD_OPTIONS = [
-  { value: 'FINGERPRINT', label: 'Huella' },
+// Mismo filtro de 3 opciones que usa el feed del Kiosk (web y móvil): "Manual" incluye
+// los registros EXTERNAL (Manual-E no es filtrable por separado), así el filtro de
+// Reportes queda igual al que ya se aplica en la aplicación móvil.
+const METHOD_FILTER_OPTIONS = [
   { value: 'MANUAL', label: 'Manual' },
-  { value: 'EXTERNAL', label: 'Manual-E' }
+  { value: 'FINGERPRINT', label: 'Huella' },
 ];
 
 export default function Reports() {
@@ -28,11 +30,24 @@ export default function Reports() {
     ]);
   }, []);
 
+  // Devuelve un URLSearchParams (no un objeto plano) para controlar exactamente cómo se
+  // serializa "method" cuando hay que mandar varios valores: el backend espera la misma
+  // clave repetida ("method=MANUAL&method=EXTERNAL"), no "method[]=..." (que es lo que
+  // axios generaría por defecto para un array en un objeto plano).
   function params() {
-    const p = { from: filters.from, to: filters.to };
-    if (filters.restaurantId) p.restaurantId = filters.restaurantId;
-    if (filters.employeeId) p.employeeId = filters.employeeId;
-    if (filters.method && filters.method !== 'ALL') p.method = filters.method;
+    const p = new URLSearchParams();
+    p.set('from', filters.from);
+    p.set('to', filters.to);
+    if (filters.restaurantId) p.set('restaurantId', filters.restaurantId);
+    if (filters.employeeId) p.set('employeeId', filters.employeeId);
+    if (filters.method === 'MANUAL') {
+      // "Manual" en el filtro incluye también los registros EXTERNAL (Manual-E), igual
+      // que el botón "MANUAL" del feed del Kiosk (web y móvil).
+      p.append('method', 'MANUAL');
+      p.append('method', 'EXTERNAL');
+    } else if (filters.method === 'FINGERPRINT') {
+      p.append('method', 'FINGERPRINT');
+    }
     return p;
   }
 
@@ -49,8 +64,10 @@ export default function Reports() {
   async function exportFile(format) {
     setError('');
     try {
+      const p = params();
+      p.set('format', format);
       const res = await api.get('/reports/export', {
-        params: { ...params(), format }, responseType: 'blob'
+        params: p, responseType: 'blob'
       });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
@@ -102,7 +119,7 @@ export default function Reports() {
           <div className="field"><label>Tipo</label>
             <select value={filters.method} onChange={(e) => setFilters({ ...filters, method: e.target.value })}>
               <option value="ALL">Todos</option>
-              {METHOD_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+              {METHOD_FILTER_OPTIONS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
             </select>
           </div>
           <button onClick={search}>Consultar</button>
