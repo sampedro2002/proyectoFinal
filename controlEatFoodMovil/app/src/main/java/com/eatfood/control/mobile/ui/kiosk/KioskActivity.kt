@@ -802,7 +802,7 @@ private fun TodayFeedPanel(
                         }
                     } else {
                         LazyColumn(Modifier.heightIn(max = listMaxHeight)) {
-                            itemsIndexed(filteredFeed) { index, e ->
+                            itemsIndexed(filteredFeed, key = { index, e -> e.id ?: index }) { index, e ->
                                 // Mismo esquema de color que en la web: ámbar para MANUAL,
                                 // naranja para EXTERNAL, sin tinte para FINGERPRINT.
                                 val rowTint = when (e.method) {
@@ -821,7 +821,10 @@ private fun TodayFeedPanel(
                                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("${filteredFeed.size - index}", Modifier.width(24.dp), color = OnSurface, fontSize = 13.sp)
+                                    Text(
+                                        e.id?.toString() ?: "${filteredFeed.size - index}",
+                                        Modifier.width(24.dp), color = OnSurface, fontSize = 13.sp
+                                    )
                                     Text(
                                         e.employeeName ?: "—", Modifier.weight(1.4f), color = OnSurface, fontSize = 13.sp,
                                         maxLines = 2, overflow = TextOverflow.Ellipsis

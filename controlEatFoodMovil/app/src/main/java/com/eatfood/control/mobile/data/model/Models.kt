@@ -176,6 +176,7 @@ data class SyncBatchResponse(
 
 /** Entrada del feed de consumos del día (GET /api/scan/today). */
 data class TodayFeedEntry(
+    val id: Long? = null,
     val employeeName: String?,
     val mealName: String?,
     val time: String?,

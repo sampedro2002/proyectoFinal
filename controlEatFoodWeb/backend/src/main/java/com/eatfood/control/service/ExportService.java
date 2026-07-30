@@ -99,7 +99,6 @@ public class ExportService {
         }
         sb.append("\n");
         sb.append(String.join(";", HEADERS)).append("\n");
-        int n = 1;
         for (ConsumptionRow r : rows) {
             sb.append(r.id()).append(';')
               .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
@@ -222,7 +221,6 @@ public class ExportService {
                 c.setCellStyle(headerStyle);
             }
             int rn = headerRowIdx + 1;
-            int n = 1;
             // Un estilo por método para pintar la fila con su color de marca.
             XSSFCellStyle manualStyle   = (XSSFCellStyle) wb.createCellStyle();
             manualStyle.setFillForegroundColor(new XSSFColor(MANUAL_BG, null));
@@ -298,7 +296,6 @@ public class ExportService {
             addHeaderRow(table, HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
-            int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
                 addBodyCell(table, String.valueOf(r.id()), cf, bg);
@@ -509,7 +506,6 @@ public class ExportService {
         sb.append("Reporte Diario - ").append(restaurantName)
           .append(" - Fecha: ").append(date.format(DATE_FMT)).append("\n\n");
         sb.append(String.join(";", KIOSK_HEADERS)).append("\n");
-        int n = 1;
         for (ConsumptionRow r : rows) {
             sb.append(r.id()).append(';')
               .append(r.consumedAt() != null ? r.consumedAt().format(DT) : "").append(';')
@@ -548,7 +544,6 @@ public class ExportService {
                 c.setCellStyle(headerStyle);
             }
             int rn = headerRowIdx + 1;
-            int n = 1;
             XSSFCellStyle kManualStyle   = (XSSFCellStyle) wb.createCellStyle();
             kManualStyle.setFillForegroundColor(new XSSFColor(MANUAL_BG, null));
             kManualStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
@@ -624,7 +619,6 @@ public class ExportService {
             addHeaderRow(table, KIOSK_HEADERS);
             Font cf = new Font(Font.HELVETICA, 8);
             boolean zebra = false;
-            int n = 1;
             for (ConsumptionRow r : rows) {
                 Color bg = rowColor(r.method(), (zebra = !zebra) ? FINGERPRINT_BG : Color.WHITE);
                 addBodyCell(table, String.valueOf(r.id()), cf, bg);
