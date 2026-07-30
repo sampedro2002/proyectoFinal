@@ -780,7 +780,7 @@ export default function Employees() {
 
               {extError && <p className="error-text">{extError}</p>}
               <div className="row" style={{ marginTop: 12 }}>
-                <button type="submit">{extForm.id ? 'Guardar cambios' : 'Crear persona'}</button>
+                <button type="submit">{extForm.id ? 'Guardar cambios' : 'Crear persona externa'}</button>
                 <button type="button" className="ghost" onClick={closeExtForm}>Cancelar</button>
               </div>
             </form>

@@ -29,7 +29,7 @@ public class ExternalPersonService {
     public ExternalPersonResponse create(ExternalPersonRequest req) {
         String identityCard = normalizedCard(req.identityCard(), Boolean.TRUE.equals(req.isPassport()));
         if (externalPersonRepository.existsByIdentityCard(identityCard)) {
-            throw new BusinessException("DUPLICATE_CARD", "Ya existe otra persona externa con esa cédula.");
+            throw new BusinessException("DUPLICATE_CARD", "Ya existe una persona externa con esa cédula.");
         }
         if (employeeRepository.existsByIdentityCardAndDeletedFalse(identityCard)) {
             throw new BusinessException("IS_EMPLOYEE", "La cédula pertenece a un empleado registrado.");
