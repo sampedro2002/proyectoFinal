@@ -1484,7 +1484,7 @@ fun EditConsumptionsScreen() {
                         Row(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    "${c.employeeName ?: "—"}" + (when (c.method) { "EXTERNAL" -> " · Manual-E"; "MANUAL" -> " · Manual"; else -> "" }) + " · ${c.mealName ?: ""}",
+                                    "${c.employeeName ?: "—"}" + (when (c.method) { "EXTERNAL" -> " · Manual-E"; "MANUAL" -> " · Manual"; "FINGERPRINT" -> " · Huella"; else -> "" }) + " · ${c.mealName ?: ""}",
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
@@ -1510,7 +1510,11 @@ fun EditConsumptionsScreen() {
                                 }
                             }
                             if (!c.cancelled) {
-                                TextButton(onClick = { editing = c }) { Text("Editar") }
+                                // Los consumos por huella solo pueden cancelarse/reactivarse,
+                                // no editar sus detalles (el backend también lo bloquea).
+                                if (c.method != "FINGERPRINT") {
+                                    TextButton(onClick = { editing = c }) { Text("Editar") }
+                                }
                                 TextButton(onClick = { cancelConsumption(c.id) }) { Text("Cancelar", color = MaterialTheme.colorScheme.error) }
                             } else {
                                 TextButton(onClick = { uncancelConsumption(c.id) }) { Text("Reactivar") }

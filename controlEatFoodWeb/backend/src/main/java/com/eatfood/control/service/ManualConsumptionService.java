@@ -57,7 +57,7 @@ public class ManualConsumptionService {
     @Transactional(readOnly = true)
     public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, Pageable pageable) {
         LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
-        return consumptionRepository.findManualConsumptions(search, restaurantId, cancelled, today, pageable)
+        return consumptionRepository.findConsumptionsForEdit(search, restaurantId, cancelled, today, pageable)
                 .map(this::toDetail);
     }
 

@@ -353,8 +353,8 @@ export default function EditManualConsumptions() {
     <div>
       <div className="topbar">
         <div>
-          <h2 style={{ margin: 0 }}>Editar Consumos</h2>
-          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>(Manuales) — {todayStr}</div>
+          <h2 style={{ margin: 0 }}>Editar Consumos del Día</h2>
+          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>{todayStr}</div>
         </div>
       </div>
 
@@ -420,6 +420,9 @@ export default function EditManualConsumptions() {
                     {r.method === 'MANUAL' && (
                       <span className="badge manual">Manual</span>
                     )}
+                    {r.method === 'FINGERPRINT' && (
+                      <span className="badge fingerprint">Huella</span>
+                    )}
                   </div>
                 </td>
                 <td>{r.identityCard || '—'}</td>
@@ -433,7 +436,7 @@ export default function EditManualConsumptions() {
                     : <span className="badge ok">Activo</span>}
                 </td>
                 <td className="row" style={{ gap: 4 }}>
-                  {!r.cancelled && (
+                  {!r.cancelled && r.method !== 'FINGERPRINT' && (
                     <button className="ghost" onClick={() => openEdit(r)}>Editar</button>
                   )}
                   {!r.cancelled && (
@@ -454,7 +457,7 @@ export default function EditManualConsumptions() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={9} style={{ color: 'var(--muted)', textAlign: 'center' }}>
-                  No hay consumos manuales
+                  No hay consumos
                 </td>
               </tr>
             )}

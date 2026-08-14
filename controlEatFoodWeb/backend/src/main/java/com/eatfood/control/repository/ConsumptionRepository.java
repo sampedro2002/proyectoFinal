@@ -94,8 +94,12 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
     List<Object[]> countGroupedByBusinessDate(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
     /**
-     * Consumos MANUAL y EXTERNAL del día, con buscador por titular (empleado o
-     * persona externa) o por quien retira. Todos los joins al titular son LEFT:
+     * Consumos del día de TODOS los métodos (MANUAL, EXTERNAL y FINGERPRINT)
+     * para la pantalla de edición, con buscador por titular (empleado o
+     * persona externa) o por quien retira. Los registros por huella solo
+     * pueden cancelarse/reactivarse; la edición de sus detalles la bloquea
+     * {@link com.eatfood.control.service.ManualConsumptionService#update}.
+     * Todos los joins al titular son LEFT:
      * un consumo tiene empleado XOR persona externa (nunca ambos), y filtrar por
      * {@code c.employee.fullName} con join implícito (inner) excluiría los
      * consumos externos, cuyo empleado es NULL.
@@ -107,8 +111,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             LEFT JOIN FETCH c.externalPerson ep
             LEFT JOIN FETCH c.proxyEmployee pe
             LEFT JOIN FETCH c.proxyExternalPerson
-            WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
-              AND c.businessDate = :businessDate
+            WHERE c.businessDate = :businessDate
               AND (:search IS NULL OR
                    LOWER(e.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(e.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
@@ -124,8 +127,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
             LEFT JOIN c.employee e
             LEFT JOIN c.externalPerson ep
             LEFT JOIN c.proxyEmployee pe
-            WHERE c.method IN (com.eatfood.control.domain.Method.MANUAL, com.eatfood.control.domain.Method.EXTERNAL)
-              AND c.businessDate = :businessDate
+            WHERE c.businessDate = :businessDate
               AND (:search IS NULL OR
                    LOWER(e.fullName) LIKE LOWER(CONCAT('%', :search, '%')) OR
                    LOWER(e.identityCard) LIKE LOWER(CONCAT('%', :search, '%')) OR
@@ -135,7 +137,7 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
               AND (:restaurantId IS NULL OR c.restaurant.id = :restaurantId)
               AND (:cancelled IS NULL OR c.cancelled = :cancelled)
             """)
-    Page<Consumption> findManualConsumptions(@Param("search") String search,
+    Page<Consumption> findConsumptionsForEdit(@Param("search") String search,
                                               @Param("restaurantId") Long restaurantId,
                                               @Param("cancelled") Boolean cancelled,
                                               @Param("businessDate") LocalDate businessDate,

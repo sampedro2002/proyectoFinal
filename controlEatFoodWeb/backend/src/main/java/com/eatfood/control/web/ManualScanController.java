@@ -49,7 +49,7 @@ public class ManualScanController {
         return scanService.mealAvailability(employeeId);
     }
 
-    @Operation(summary = "Lista consumos manuales paginados (solo ADMIN/RRHH)")
+    @Operation(summary = "Lista todos los consumos del día paginados (manuales, externos y huella) para edición; los de huella solo pueden cancelarse/reactivarse (solo ADMIN/RRHH)")
     @GetMapping
     public Page<ConsumptionDetailResponse> list(
             @RequestParam(required = false) String search,

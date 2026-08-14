@@ -89,6 +89,7 @@ button.danger { background: var(--err); }
 .badge.off { background: rgba(220,38,38,.2); color: #f87171; }
 .badge.manual { background: rgba(245,158,11,.2); color: #f59e0b; }
 .badge.external { background: rgba(249,115,22,.2); color: #fb923c; }
+.badge.fingerprint { background: rgba(59,130,246,.2); color: #60a5fa; }
 
 /* Filas de reporte con color de marca por metodo de registro. */
 tr.row-manual   { background: rgba(245,158,11,.10) !important; }
