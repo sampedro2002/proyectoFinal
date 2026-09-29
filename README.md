@@ -16,6 +16,17 @@ Este directorio principal consolida los dos componentes fundamentales del sistem
 *   **[controlEatFoodMovil](./controlEatFoodMovil/)**: La **Aplicación Móvil Android** (desarrollada en Kotlin con Jetpack Compose). Está orientada a la gestión administrativa rápida desde dispositivos móviles, permitiendo consultar dashboards, gestionar empleados y registrar consumos manuales (incluyendo un modo kiosco mediante conexión USB OTG al lector biométrico).
 *   **[RunWindowns](./RunWindowns/)**: Scripts de automatización para Windows.
 
+## 📲 Descargar la App Móvil (Release)
+
+La app móvil Android **ya está publicada como Release en GitHub**, lista para instalar sin compilar nada:
+
+1. Abre **[Releases → última versión](https://github.com/sampedro2002/proyectoFinal/releases/latest)** (versión actual: `v1.0.0`).
+2. Descarga el archivo **`Instalar.apk`** (~75 MB) desde *Assets*.
+3. Cópialo al teléfono Android y ábrelo; si Android lo pide, permite **"Instalar apps de fuentes desconocidas"** para el navegador o el gestor de archivos.
+4. Al abrir la app, configura la URL del servidor (la IP/dominio donde corre el backend) e inicia sesión con tus credenciales.
+
+> El APK no se versiona en git (`*.apk` está en `.gitignore`): se distribuye únicamente vía Releases. Para publicar una versión nueva, ejecuta el workflow **"Crear Release con APK"** (Actions → *Run workflow*) indicando el tag (p. ej. `v1.1.0`) y adjunta el `Instalar.apk` generado con `./gradlew :app:assembleRelease`.
+
 ## 📦 Scripts de Instalación (RunWindowns)
 
 | Archivo | Propósito |
@@ -93,6 +104,8 @@ El sistema opera bajo una arquitectura cliente-servidor, donde el backend de Spr
     - *UX Mejorada en Enrolamiento*: El frontend web avanza automáticamente al siguiente dedo libre tras registrar una huella y deshabilita los dedos ya usados para evitar sobrescrituras. Es necesario colocar **el mismo dedo 3 veces** durante un registro para garantizar una lectura correcta.
   - En **Móvil**: La aplicación móvil Android puede conectar el lector directamente usando un cable USB OTG y el SDK integrado en la app.
 - **Soporte Offline**: Ambos clientes, web y móvil, disponen de una capa offline (usando IndexedDB en web y Room en Android) que almacena los registros localmente en caso de pérdida de conectividad, sincronizándolos automáticamente en cuanto la red vuelve a estar disponible.
+- **Registro manual con fecha**: en el registro manual (web y móvil) se puede elegir la **fecha del consumo** (por defecto hoy, nunca futura). Sirve para cargar los registros llevados en papel cuando hubo un corte de internet o de energía: con una fecha anterior **no se valida el horario**, y los permisos por comida y el duplicado se comprueban contra ese día. Los consumos de días anteriores también se pueden listar y corregir eligiendo la fecha en "Editar consumos".
+- **Retira su propia comida**: además de "Retira por otro" y "Persona externa", existe el modo **"Retira su comida"**, donde la propia persona retira su plato sin intermediario (sin apoderado; la observación queda "X retira su propia comida").
 - **Retira por otro (Proxy)**: El sistema permite registrar un consumo a nombre de un titular, pero indicando qué otra persona ("apoderado") retira la comida físicamente, manteniendo la trazabilidad en los reportes y auditorías.
 - **Filtros y Validaciones**: Listas ordenadas alfabéticamente para búsquedas rápidas, filtros avanzados en reportes, y validaciones robustas para garantizar la integridad de los datos.
 
@@ -218,3 +231,4 @@ server {
    cd controlEatFoodMovil
    ./gradlew :app:assembleRelease
    ```
+3. Publica el APK como `Instalar.apk` en un **Release de GitHub** (workflow *Crear Release con APK*). Los usuarios lo descargan desde [Releases](https://github.com/sampedro2002/proyectoFinal/releases/latest); ver [Descargar la App Móvil](#-descargar-la-app-móvil-release).

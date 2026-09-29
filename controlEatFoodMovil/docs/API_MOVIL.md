@@ -92,6 +92,16 @@ Gestión de plantillas biométricas del SDK ZK9500 para identificación 1:N.
 - `GET /api/schedules` → Listar horarios.
 - `POST /api/schedules` → Guardar/actualizar horario.
 
+### Registro Manual de Consumos (ADMIN / RRHH)
+El campo/parámetro `date` (`YYYY-MM-DD`) es opcional: por defecto hoy, no puede ser futuro. Con una fecha anterior no se valida el horario (registros llevados en papel).
+- `POST /api/manual-consumptions` → Registro manual. Cuerpo `ManualScanRequest` (`proxyEmployeeId?`, `proxyExternalPersonId?`, `restaurantId`, `titulars`, `date?`). Con ambos proxies nulos, cada titular retira su propia comida ("Retira su comida"); solo se rechaza enviar los dos a la vez.
+- `POST /api/manual-consumptions/external` → Persona externa. Cuerpo `ExternalScanRequest` (incluye `date?`).
+- `GET /api/manual-consumptions/availability/{employeeId}?date=` → Comidas permitidas y aún no consumidas ese día.
+- `GET /api/manual-consumptions/proxy-candidates?term=` → Candidatos a "quien retira".
+- `GET /api/manual-consumptions?date=` → Consumos del día (paginado) para edición.
+- `PUT /api/manual-consumptions/{id}` → Editar (también de días anteriores).
+- `POST /api/manual-consumptions/{id}/cancel` y `/uncancel` → Cancelar / reactivar.
+
 ---
 
 ## 📊 5. Reportes y Dashboard (`ApiService`)

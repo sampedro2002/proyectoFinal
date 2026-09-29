@@ -9,6 +9,10 @@ dispositivo móvil. Incorpora **validaciones**, **filtros** avanzados y **ordena
 
 > Esta app consume la API REST del proyecto hermano **`controlEatFoodWeb`** (backend Spring Boot 3).
 
+## 📲 Descargar el APK (Release)
+
+La app **ya está publicada en GitHub Releases**: descarga `Instalar.apk` desde **[la última versión](https://github.com/sampedro2002/proyectoFinal/releases/latest)** (actual: `v1.0.0`), cópiala al teléfono e instálala (permite "fuentes desconocidas" si Android lo pide). No necesitas compilar. Compilar desde el código (abajo) solo es necesario para desarrollo o para generar un APK nuevo.
+
 ---
 
 ## 🧱 Arquitectura
@@ -126,6 +130,8 @@ Para generar el **APK** de producción listo para instalación:
 ```
 El archivo APK generado se encontrará en la ruta `app/build/outputs/apk/release/`.
 
+Para distribuirlo, súbelo como `Instalar.apk` a un Release de GitHub (workflow *Crear Release con APK* del repositorio, que pide el tag, p. ej. `v1.1.0`). El APK no se versiona en git.
+
 ### 4. Credenciales
 
 | Rol | Usuario | Contraseña |
@@ -148,7 +154,8 @@ El archivo APK generado se encontrará en la ruta `app/build/outputs/apk/release
 | **Cargos** | CRUD de cargos/posiciones |
 | **Caterings** | CRUD de caterings |
 | **Horarios** | Editar horarios de Almuerzo/Merienda |
-| **Almuerzos Extra** | Registro manual de consumos para empleados existentes o **personas externas** (cédula + nombre), con selector de catering y comida. Soporta **"Retira por otro"** (proxy). No valida horario/permiso/duplicado. |
+| **Almuerzos Extra** | Registro manual de consumos para empleados existentes o **personas externas** (cédula + nombre), con selector de restaurante, comida y **fecha del consumo** (hoy o anterior, para lo llevado en papel; con fecha anterior no se valida el horario). Modos: **"Retira por otro"** (proxy), **"Retira su comida"** (sin apoderado) y persona externa. Valida permiso por comida y duplicado del día. |
+| **Editar consumos** | Lista los consumos de un día (selector de fecha, hoy por defecto) para editar, cancelar o reactivar. |
 | **Reportes** | Consulta por fecha/catering/comida, exportación a CSV/Excel/PDF |
 | **Auditoría** | Log de acciones críticas con filtros |
 | **Kiosco** | Modo kiosco con lector biométrico USB OTG + cola offline (Room) y descarga de reportes diarios (PDF/Excel/CSV) |
@@ -180,12 +187,14 @@ El archivo APK generado se encontrará en la ruta `app/build/outputs/apk/release
 | CRUD catering | POST/PUT | `/caterings` |
 | Tipos de comida | GET | `/meal-types` |
 | Horarios | GET/POST | `/schedules` |
-| Registro manual (empleado) | POST | `/manual-consumptions` |
-| Registro persona externa | POST | `/manual-consumptions/external` |
-| Listar consumos manuales | GET | `/manual-consumptions` |
+| Registro manual (retira por otro / su comida) | POST | `/manual-consumptions` (`date` opcional) |
+| Registro persona externa | POST | `/manual-consumptions/external` (`date` opcional) |
+| Comidas disponibles de un empleado | GET | `/manual-consumptions/availability/{employeeId}?date=` |
+| Candidatos a "quien retira" | GET | `/manual-consumptions/proxy-candidates?term=` |
+| Listar consumos manuales | GET | `/manual-consumptions?date=` |
 | Actualizar manual | PUT | `/manual-consumptions/{id}` |
-| Cancelar manual | DELETE | `/manual-consumptions/{id}` |
-| Reactivar manual | POST | `/manual-consumptions/{id}/reactivate` |
+| Cancelar manual | POST | `/manual-consumptions/{id}/cancel` |
+| Reactivar manual | POST | `/manual-consumptions/{id}/uncancel` |
 | Conectar dispositivo | POST | `/scan/connect` |
 | Escanear huella | POST | `/scan` |
 | Sincronizar offline | POST | `/scan/sync` |

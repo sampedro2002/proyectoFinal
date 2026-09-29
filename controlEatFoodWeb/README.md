@@ -226,7 +226,7 @@ Si prefieres instalar manualmente o en Linux:
 
 ## 🔐 Roles y permisos
 
-- **Administrador (ADMIN) / Recursos Humanos (RRHH):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **administra consumos manuales** (registro, edición, cancelación y reactivación) sin validar horario/permiso/duplicado.
+- **Administrador (ADMIN) / Recursos Humanos (RRHH):** gestiona empleados, huellas, cargos, caterings, horarios, permisos; consulta auditoría; genera y exporta reportes; **administra consumos manuales** (registro, edición, cancelación y reactivación). El registro de hoy valida horario, permiso por comida y duplicado; el de una **fecha anterior** (registros en papel) no valida horario.
 - **Catering (CATERING):** registra consumos desde su dispositivo; ve solo lo propio. Usuarios: `restauranteNorte`, `restauranteCentro`, `restauranteSur`.
 
 > *Nota: El rol SUPERVISOR fue eliminado en la migración V7.*
@@ -248,7 +248,9 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  ## 🚀 Funcionalidades Avanzadas
  
  - **Gestión de Fallos**: El sistema registra y audita los escaneos fallidos (`FailedScan`) para analizar problemas de lectura o intentos no autorizados.
- - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. No se validan horario, permiso ni duplicados: pensado para correcciones.
+ - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. Se valida el permiso por comida y que no se repita un plato el mismo día; el horario se valida solo para registros de hoy.
+ - **Fecha en registros manuales**: el registro (y la edición) admite elegir la fecha del consumo, nunca futura, para cargar lo llevado en papel tras un corte de internet o energía. Con fecha anterior no se valida el horario; la hora guardada es el inicio del horario configurado.
+ - **Retira su propia comida**: modo del registro manual sin apoderado (la persona retira su propio plato). `proxyEmployeeId` y `proxyExternalPersonId` pueden ir ambos nulos; solo se rechaza enviar los dos a la vez.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema las guarda en la tabla **`persona_externa`**, totalmente separada de `empleado` (el consumo referencia `consumo.persona_externa_id`): aparecen en el feed del kiosk y en reportes, pero jamás en la gestión ni en la exportación de empleados. Si la cédula ya pertenece a un empleado, el registro externo se rechaza. La lista y edición de personas externas se hace desde la misma vista "Añadir persona externa".
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
  - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos. Las vistas incluyen **filtros avanzados** y las tablas están **ordenadas alfabéticamente** para una mejor lectura y experiencia de usuario.
@@ -290,7 +292,9 @@ Existe una aplicación móvil complementaria en **[`../controlEatFoodMovil`](../
 - Login con JWT (mismas credenciales que el panel web).
 - Dashboard con estadísticas del día.
 - CRUD de empleados, cargos, caterings, horarios y huellas (con lector ZK9500 vía USB OTG).
-- **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas**, con selector de comida y soporte para **"Retira por otro"** (proxy).
+- **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas**, con selector de comida, **selector de fecha** y los modos **"Retira por otro"** (proxy) y **"Retira su comida"**.
+
+📲 **Descarga:** el APK (`Instalar.apk`) está publicado en [GitHub Releases](https://github.com/sampedro2002/proyectoFinal/releases/latest); no hace falta compilar la app para usarla.
 - Reportes y auditoría.
 - Modo kiosco con lector biométrico USB OTG, cola offline (Room) y exportación de reportes diarios (PDF/Excel/CSV).
 
@@ -300,17 +304,22 @@ Ver su README en [`../controlEatFoodMovil/README.md`](../controlEatFoodMovil/REA
 
 ## 📝 Endpoints de registro manual
 
-| Función | Método | Endpoint | Body | Autorización |
-|---------|--------|----------|------|--------------|
-| Registro manual (empleado existente) | POST | `/api/manual-consumptions` | `{ employeeId, mealTypeCode, cateringId }` | `ADMIN, RRHH` |
-| Registro de persona externa | POST | `/api/manual-consumptions/external` | `{ identityCard, fullName, mealTypeCode, cateringId }` | `ADMIN, RRHH` |
-| Listar consumos manuales | GET | `/api/manual-consumptions` | | `ADMIN, RRHH` |
-| Detalle consumo manual | GET | `/api/manual-consumptions/{id}` | | `ADMIN, RRHH` |
-| Editar consumo manual | PUT | `/api/manual-consumptions/{id}` | `{ mealTypeCode, cateringId, comment }` | `ADMIN, RRHH` |
-| Cancelar consumo manual | DELETE | `/api/manual-consumptions/{id}` | | `ADMIN, RRHH` |
-| Reactivar consumo manual | POST | `/api/manual-consumptions/{id}/reactivate` | | `ADMIN, RRHH` |
-| Comidas permitidas | GET | `/api/manual-consumptions/allowed-meals` | | `ADMIN, RRHH` |
-| Listar personas externas | GET | `/api/external-persons?term=` | | `ADMIN, RRHH` |
-| Editar persona externa | PUT | `/api/external-persons/{id}` | `{ identityCard, fullName, observation, isPassport }` | `ADMIN, RRHH` |
+Todos requieren rol `ADMIN` o `RRHH`. El campo `date` (`YYYY-MM-DD`) es opcional en todos los que lo aceptan: por defecto es hoy y **no puede ser futuro** (`FUTURE_DATE`).
 
-El sistema permite la administración completa del ciclo de vida de los consumos manuales. Los consumos creados manualmente registran con `businessDate = hoy (America/Guayaquil)`, `offline=false`, `syncStatus=SYNCED`, y un `clientUuid` aleatorio. El consumo aparece en el feed del kiosk y reportes. Además de registrar, se puede listar con paginación, modificar su contenido, o cancelarlo (excluyéndolo de reportes) y reactivarlo.
+| Función | Método | Endpoint | Body / Query |
+|---------|--------|----------|--------------|
+| Registro manual ("retira por otro" / "retira su comida") | POST | `/api/manual-consumptions` | `{ proxyEmployeeId?, proxyExternalPersonId?, restaurantId, titulars: [{ employeeId? \| externalPersonId?, mealTypeCodes[] }], date? }` — sin proxy = cada titular retira su comida |
+| Registro de persona externa | POST | `/api/manual-consumptions/external` | `{ identityCard, isPassport?, fullName, mealTypeCode, restaurantId, observation?, proxyEmployeeId?, proxyExternalPersonId?, date? }` |
+| Candidatos a "quien retira" | GET | `/api/manual-consumptions/proxy-candidates?term=` | empleados ACTIVOS y personas externas |
+| Comidas disponibles de un empleado | GET | `/api/manual-consumptions/availability/{employeeId}?date=` | permitidas y aún no consumidas ese día |
+| Listar consumos (paginado) | GET | `/api/manual-consumptions?search=&restaurantId=&cancelled=&date=` | `date` por defecto hoy |
+| Detalle | GET | `/api/manual-consumptions/{id}` | |
+| Editar | PUT | `/api/manual-consumptions/{id}` | `{ proxyEmployeeId?, proxyExternalPersonId?, employeeId?, restaurantId?, mealName?, observation? }` |
+| Cancelar | POST | `/api/manual-consumptions/{id}/cancel` | |
+| Reactivar | POST | `/api/manual-consumptions/{id}/uncancel` | |
+| Listar personas externas | GET | `/api/external-persons?term=` | |
+| Editar persona externa | PUT | `/api/external-persons/{id}` | `{ identityCard, fullName, observation, isPassport }` |
+
+Códigos de comida: `BREAKFAST` = Almuerzo (1.er plato) y `LUNCH` = Merienda (2.º plato).
+
+**Reglas.** Se valida el permiso del titular por comida y que no se repita el mismo plato el mismo día. El horario se valida **solo si la fecha es hoy**; con una fecha anterior no. El horario de edición aplica solo a consumos de hoy. Los consumos manuales registran `businessDate = fecha elegida (America/Guayaquil)`, `offline=false`, `syncStatus=SYNCED` y un `clientUuid` aleatorio; con fecha pasada `consumedAt` es el inicio del horario configurado. Aparecen en el feed del kiosk y en reportes; se pueden cancelar (excluyéndolos de reportes) y reactivar.
