@@ -1,3 +1,7 @@
+# Binarios pesados → se distribuyen vía GitHub Releases (no versionar en git)
+APKAndriodInstall/*.apk
+RunWindowns/setup.exe
+
 # AI / Asistentes
 .claude/
 .cursor/

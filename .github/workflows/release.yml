@@ -1,0 +1,40 @@
+name: 📦 Crear Release con APK y Setup
+
+# Se dispara cuando se pushea un tag con formato v*.*.*
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Crear Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Crear Release y subir archivos
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            ## 📱 App Móvil Android
+            Descarga el archivo **Instalar.apk** e instálalo en tu dispositivo Android.
+
+            ## 🖥️ Instalador Windows
+            Descarga **setup.exe** y ejecútalo para instalar la aplicación en Windows.
+
+            ---
+            _Release generado automáticamente desde el tag `${{ github.ref_name }}`_
+          files: |
+            APKAndriodInstall/Instalar.apk
+            RunWindowns/setup.exe
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
