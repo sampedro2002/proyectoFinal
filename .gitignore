@@ -53,3 +53,6 @@ RunWindowns/config/
 RunWindowns/logs/
 RunWindowns/native/
 RunWindowns/credenciales.txt
+
+# CodeGraph (índice local)
+.codegraph/
