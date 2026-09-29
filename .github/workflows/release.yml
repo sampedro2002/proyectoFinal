@@ -1,10 +1,19 @@
 name: 📦 Crear Release con APK y Setup
 
-# Se dispara cuando se pushea un tag con formato v*.*.*
+# Se dispara manualmente desde la pestaña Actions de GitHub
+# Esto permite subir los binarios como assets sin necesidad de tenerlos en el repo
 on:
-  push:
-    tags:
-      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Nombre del tag para el release (ej: v1.1.0)'
+        required: true
+        type: string
+      release_notes:
+        description: 'Notas del release (opcional)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -15,13 +24,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout código
-        uses: actions/checkout@v4
-
-      - name: Crear Release y subir archivos
+      - name: Crear Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "Release ${{ github.ref_name }}"
+          tag_name: ${{ inputs.tag_name }}
+          name: "Release ${{ inputs.tag_name }}"
           body: |
             ## 📱 App Móvil Android
             Descarga el archivo **Instalar.apk** e instálalo en tu dispositivo Android.
@@ -29,11 +36,10 @@ jobs:
             ## 🖥️ Instalador Windows
             Descarga **setup.exe** y ejecútalo para instalar la aplicación en Windows.
 
+            ${{ inputs.release_notes }}
+
             ---
-            _Release generado automáticamente desde el tag `${{ github.ref_name }}`_
-          files: |
-            APKAndriodInstall/Instalar.apk
-            RunWindowns/setup.exe
+            _Release generado desde GitHub Actions_
           draft: false
           prerelease: false
         env:
