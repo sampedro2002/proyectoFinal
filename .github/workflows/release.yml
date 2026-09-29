@@ -1,7 +1,5 @@
-name: 📦 Crear Release con APK y Setup
+name: 📦 Crear Release con APK
 
-# Se dispara manualmente desde la pestaña Actions de GitHub
-# Esto permite subir los binarios como assets sin necesidad de tenerlos en el repo
 on:
   workflow_dispatch:
     inputs:
@@ -9,11 +7,6 @@ on:
         description: 'Nombre del tag para el release (ej: v1.1.0)'
         required: true
         type: string
-      release_notes:
-        description: 'Notas del release (opcional)'
-        required: false
-        type: string
-        default: ''
 
 permissions:
   contents: write
@@ -32,11 +25,6 @@ jobs:
           body: |
             ## 📱 App Móvil Android
             Descarga el archivo **Instalar.apk** e instálalo en tu dispositivo Android.
-
-            ## 🖥️ Instalador Windows
-            Descarga **setup.exe** y ejecútalo para instalar la aplicación en Windows.
-
-            ${{ inputs.release_notes }}
 
             ---
             _Release generado desde GitHub Actions_

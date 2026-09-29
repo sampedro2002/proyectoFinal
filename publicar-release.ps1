@@ -1,28 +1,23 @@
 <#
 .SYNOPSIS
-  Publica o actualiza un Release en GitHub con el APK y setup.exe.
+  Publica o actualiza el APK en un Release de GitHub.
 
 .DESCRIPTION
   Uso:
     .\publicar-release.ps1              → Actualiza el release más reciente
     .\publicar-release.ps1 v1.2.0       → Crea un release nuevo con ese tag
-    .\publicar-release.ps1 v1.1.0 -Solo apk   → Sube solo el APK
-    .\publicar-release.ps1 v1.1.0 -Solo exe   → Sube solo el setup.exe
 
 .EXAMPLE
   .\publicar-release.ps1
   .\publicar-release.ps1 v2.0.0
 #>
 param(
-    [string]$Version,
-    [ValidateSet("apk","exe","todos")]
-    [string]$Solo = "todos"
+    [string]$Version
 )
 
 $ErrorActionPreference = "Stop"
 $repo = "sampedro2002/proyectoFinal"
 $apkPath = "APKAndriodInstall\Instalar.apk"
-$exePath = "RunWindowns\setup.exe"
 
 # ── Verificar que gh está instalado ──
 if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
@@ -30,27 +25,14 @@ if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-# ── Determinar archivos a subir ──
-$archivos = @()
-if ($Solo -eq "todos" -or $Solo -eq "apk") {
-    if (Test-Path $apkPath) { $archivos += $apkPath }
-    else { Write-Host "⚠️  No se encontró $apkPath" -ForegroundColor Yellow }
-}
-if ($Solo -eq "todos" -or $Solo -eq "exe") {
-    if (Test-Path $exePath) { $archivos += $exePath }
-    else { Write-Host "⚠️  No se encontró $exePath" -ForegroundColor Yellow }
-}
-
-if ($archivos.Count -eq 0) {
-    Write-Host "❌ No hay archivos para subir." -ForegroundColor Red
+# ── Verificar que existe el APK ──
+if (-not (Test-Path $apkPath)) {
+    Write-Host "❌ No se encontró $apkPath" -ForegroundColor Red
     exit 1
 }
 
-# Mostrar tamaños
-foreach ($f in $archivos) {
-    $sizeMB = [math]::Round((Get-Item $f).Length / 1MB, 2)
-    Write-Host "📦 $f → $sizeMB MB" -ForegroundColor Cyan
-}
+$sizeMB = [math]::Round((Get-Item $apkPath).Length / 1MB, 2)
+Write-Host "📦 $apkPath → $sizeMB MB" -ForegroundColor Cyan
 
 # ── Si no se dio versión, actualizar el release más reciente ──
 if (-not $Version) {
@@ -60,18 +42,7 @@ if (-not $Version) {
         exit 1
     }
     Write-Host "`n🔄 Actualizando release existente: $Version" -ForegroundColor Yellow
-
-    # Borrar assets viejos con el mismo nombre y subir los nuevos
-    foreach ($f in $archivos) {
-        $nombre = Split-Path $f -Leaf
-        Write-Host "   Reemplazando $nombre..." -ForegroundColor Gray
-        # Intentar borrar el asset viejo (si existe)
-        $assetId = gh api "repos/$repo/releases/tags/$Version" --jq ".assets[] | select(.name==\""$nombre\"") | .id" 2>$null
-        if ($assetId) {
-            gh api -X DELETE "repos/$repo/releases/assets/$assetId" 2>$null | Out-Null
-        }
-    }
-    gh release upload $Version @archivos --repo $repo --clobber
+    gh release upload $Version $apkPath --repo $repo --clobber
 }
 else {
     # ── Crear release nuevo ──
@@ -83,10 +54,10 @@ else {
     }
 
     Write-Host "🚀 Creando release $Version..." -ForegroundColor Green
-    gh release create $Version @archivos `
+    gh release create $Version $apkPath `
         --repo $repo `
         --title "Release $Version" `
-        --notes "## 📱 App Móvil Android`nDescarga **Instalar.apk** e instálalo en tu dispositivo Android.`n`n## 🖥️ Instalador Windows`nDescarga **setup.exe** y ejecútalo para instalar.`n`n---`n_Release $Version_"
+        --notes "## 📱 App Móvil Android`nDescarga **Instalar.apk** e instálalo en tu dispositivo Android.`n`n---`n_Release $Version_"
 }
 
 Write-Host "`n✅ ¡Listo! Release disponible en:" -ForegroundColor Green

@@ -1,6 +1,5 @@
-# Binarios pesados → se distribuyen vía GitHub Releases (no versionar en git)
+﻿# Binarios pesados â†’ se distribuyen vÃ­a GitHub Releases (no versionar en git)
 APKAndriodInstall/*.apk
-RunWindowns/setup.exe
 
 # AI / Asistentes
 .claude/
@@ -29,7 +28,7 @@ Thumbs.db
 # Logs
 *.log
 
-# Librerías nativas del SDK biométrico ZKFinger (binarios; no versionar)
+# LibrerÃ­as nativas del SDK biomÃ©trico ZKFinger (binarios; no versionar)
 *.so
 *.so.*
 RunLinux/lib-x64/
@@ -54,5 +53,5 @@ RunWindowns/logs/
 RunWindowns/native/
 RunWindowns/credenciales.txt
 
-# CodeGraph (índice local)
+# CodeGraph (Ã­ndice local)
 .codegraph/
