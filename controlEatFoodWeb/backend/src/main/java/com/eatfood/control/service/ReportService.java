@@ -72,13 +72,31 @@ public class ReportService {
     private ConsumptionRow toRow(Consumption c) {
         return new ConsumptionRow(
                 c.getId(), c.getBusinessDate(), c.getConsumedAt(),
-                c.titularName(), c.titularIdentityCard(),
+                c.getEmployee() != null ? surnameFirst(c.getEmployee().getFullName()) : c.titularName(),
+                c.titularIdentityCard(),
                 c.getRestaurant().getName(), c.getMealName(),
                 c.getObservation(), c.isOffline(),
                 c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),
-                c.proxyName(),
+                c.getProxyEmployee() != null ? surnameFirst(c.getProxyEmployee().getFullName()) : c.proxyName(),
                 c.proxyIsExternal(),
                 c.isCancelled());
+    }
+
+    /**
+     * Los empleados se registran con nombres seguidos de sus dos apellidos.
+     * En reportes se presentan como "Apellidos, Nombres" para facilitar su
+     * identificación y conservar el formato en pantalla y en todas las exportaciones.
+     */
+    static String surnameFirst(String fullName) {
+        if (fullName == null || fullName.isBlank()) return fullName;
+
+        String[] parts = fullName.trim().split("\\s+");
+        if (parts.length < 2) return parts[0];
+
+        int surnameStart = Math.max(1, parts.length - 2);
+        String surnames = String.join(" ", java.util.Arrays.copyOfRange(parts, surnameStart, parts.length));
+        String names = String.join(" ", java.util.Arrays.copyOfRange(parts, 0, surnameStart));
+        return surnames + ", " + names;
     }
 
     @Transactional(readOnly = true)

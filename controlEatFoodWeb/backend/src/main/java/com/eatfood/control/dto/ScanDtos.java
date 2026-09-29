@@ -3,6 +3,7 @@ package com.eatfood.control.dto;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -84,7 +85,15 @@ public final class ScanDtos {
             Long proxyEmployeeId,
             Long proxyExternalPersonId,
             @NotNull Long restaurantId,
-            @NotNull List<ManualScanItem> titulars) {}
+            @NotNull List<ManualScanItem> titulars,
+            // Opcional: fecha del consumo (registros llevados en papel tras un corte).
+            // null = hoy. No puede ser futura.
+            LocalDate date) {
+        public ManualScanRequest(Long proxyEmployeeId, Long proxyExternalPersonId,
+                                 Long restaurantId, List<ManualScanItem> titulars) {
+            this(proxyEmployeeId, proxyExternalPersonId, restaurantId, titulars, null);
+        }
+    }
 
     /** Un titular y los tipos de comida que el proxy retira por el. */
     public record ManualScanItem(
@@ -135,7 +144,16 @@ public final class ScanDtos {
             // registrada (proxyExternalPersonId) — como mucho uno de los dos.
             // Si ambos son null, el propio externo lo retira.
             Long proxyEmployeeId,
-            Long proxyExternalPersonId) {}
+            Long proxyExternalPersonId,
+            // Opcional: fecha del consumo (null = hoy; no puede ser futura).
+            LocalDate date) {
+        public ExternalScanRequest(String identityCard, Boolean isPassport, String fullName,
+                                   String mealTypeCode, Long restaurantId, String observation,
+                                   Long proxyEmployeeId, Long proxyExternalPersonId) {
+            this(identityCard, isPassport, fullName, mealTypeCode, restaurantId, observation,
+                    proxyEmployeeId, proxyExternalPersonId, null);
+        }
+    }
 
     public record UpdateManualConsumptionRequest(
             Long proxyEmployeeId,

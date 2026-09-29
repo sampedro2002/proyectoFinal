@@ -45,8 +45,10 @@ public class ManualScanController {
 
     @Operation(summary = "Comidas permitidas y aún no consumidas hoy por un empleado (solo ADMIN/RRHH)")
     @GetMapping("/availability/{employeeId}")
-    public MealAvailabilityResponse availability(@PathVariable Long employeeId) {
-        return scanService.mealAvailability(employeeId);
+    public MealAvailabilityResponse availability(
+            @PathVariable Long employeeId,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date) {
+        return scanService.mealAvailability(employeeId, date);
     }
 
     @Operation(summary = "Lista todos los consumos del día paginados (manuales, externos y huella) para edición; los de huella solo pueden cancelarse/reactivarse (solo ADMIN/RRHH)")
@@ -55,8 +57,9 @@ public class ManualScanController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Boolean cancelled,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date,
             @PageableDefault(size = 20) Pageable pageable) {
-        return manualConsumptionService.listManual(search, restaurantId, cancelled, pageable);
+        return manualConsumptionService.listManual(search, restaurantId, cancelled, date, pageable);
     }
 
     @Operation(summary = "Obtiene detalle de un consumo manual (solo ADMIN/RRHH)")

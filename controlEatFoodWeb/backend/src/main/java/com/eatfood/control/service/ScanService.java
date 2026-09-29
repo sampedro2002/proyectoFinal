@@ -284,11 +284,13 @@ public class ScanService {
 
         // Quien retira: empleado interno ACTIVO o persona externa registrada.
         // Exactamente uno de los dos (el CHECK de la BD también lo garantiza).
+        // Ninguno = cada titular retira su propia comida.
         boolean hasEmpProxy = req.proxyEmployeeId() != null;
         boolean hasExtProxy = req.proxyExternalPersonId() != null;
-        if (hasEmpProxy == hasExtProxy) {
+        boolean selfPickup = !hasEmpProxy && !hasExtProxy;
+        if (hasEmpProxy && hasExtProxy) {
             return new ManualScanResponse("ERROR",
-                    "Debe indicar quién retira: un empleado o una persona externa registrada (solo uno).",
+                    "Indique solo una persona que retira: un empleado o una persona externa registrada.",
                     null, null, 0);
         }
 
@@ -304,14 +306,15 @@ public class ScanService {
                 return new ManualScanResponse("ERROR",
                         "El empleado que retira está inactivo y no puede realizar registros manuales.", proxy.getFullName(), null, 0);
             }
-        } else {
+        } else if (hasExtProxy) {
             proxyExt = externalPersonRepository.findById(req.proxyExternalPersonId()).orElse(null);
             if (proxyExt == null) {
                 return new ManualScanResponse("NOT_FOUND",
                         "La persona externa que retira no está registrada.", null, null, 0);
             }
         }
-        final String proxyName = proxy != null ? proxy.getFullName() : proxyExt.getFullName();
+        final String proxyName = proxy != null ? proxy.getFullName()
+                : (proxyExt != null ? proxyExt.getFullName() : null);
 
         Restaurant restaurant = restaurantRepository.findById(req.restaurantId())
                 .orElse(null);
@@ -320,14 +323,16 @@ public class ScanService {
                     proxyName, null, 0);
         }
 
-        LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
-        OffsetDateTime now = OffsetDateTime.now(BUSINESS_ZONE);
+        LocalDate businessDate = resolveManualDate(req.date());
+        boolean backdated = !businessDate.equals(LocalDate.now(BUSINESS_ZONE));
 
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-        if (sch == null || !sch.isActive() || !sch.contains(now.toLocalTime())) {
+        // El horario solo aplica al registro de hoy; un día pasado (papel) no lo valida.
+        if (!backdated && (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE)))) {
             return new ManualScanResponse("OUT_OF_SCHEDULE",
                     "Fuera del horario permitido para registros manuales", proxyName, null, 0);
         }
+        OffsetDateTime now = manualConsumedAt(businessDate, sch);
 
         int created = 0;
         String lastMealName = null;
@@ -415,7 +420,9 @@ public class ScanService {
                     : consumptionRepository.findMealNamesByExternalPersonIdAndBusinessDate(titularExt.getId(), businessDate);
             Set<String> consumedToday = new HashSet<>(todayList);
 
-            String observation = proxyName + " retira de " + titularName;
+            String observation = selfPickup
+                    ? titularName + " retira su propia comida"
+                    : proxyName + " retira de " + titularName;
             for (String code : item.mealTypeCodes()) {
                 String mealName = mealNameForCode(code);
                 // Permiso del empleado: Merienda requiere allowsSnack; Almuerzo, allowsLunch. (Externos siempre true)
@@ -462,7 +469,8 @@ public class ScanService {
             String status = skipped.stream().anyMatch(s -> s.contains("ya registrada")) ? "DUPLICATE" : "ERROR";
             return new ManualScanResponse(status, msg, proxyName, null, 0);
         }
-        String msg = created + " registro(s) creado(s) por " + proxyName;
+        String msg = created + " registro(s) creado(s)" + (proxyName != null ? " por " + proxyName : "");
+        if (backdated) msg += " con fecha " + businessDate;
         if (!skipped.isEmpty()) msg += ". Omitidos: " + String.join("; ", skipped);
         return new ManualScanResponse("SUCCESS", msg, proxyName, lastMealName, created);
     }
@@ -473,10 +481,10 @@ public class ScanService {
      * y pre-seleccionar solo las comidas registrables.
      */
     @Transactional(readOnly = true)
-    public MealAvailabilityResponse mealAvailability(Long employeeId) {
+    public MealAvailabilityResponse mealAvailability(Long employeeId, LocalDate date) {
         Employee e = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new BusinessException("NOT_FOUND", "Empleado no encontrado."));
-        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        LocalDate today = resolveManualDate(date);
         List<String> consumed = consumptionRepository
                 .findMealNamesByEmployeeIdAndBusinessDate(employeeId, today);
         boolean hadAlmuerzo = consumed.contains("Almuerzo");
@@ -538,8 +546,10 @@ public class ScanService {
         // El horario se valida ANTES de crear la persona externa: si se validara
         // después, un intento fuera de horario dejaría una persona externa huérfana
         // (sin consumo asociado) en la base.
+        LocalDate businessDate = resolveManualDate(req.date());
+        boolean backdated = !businessDate.equals(LocalDate.now(BUSINESS_ZONE));
         Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE))) {
+        if (!backdated && (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(BUSINESS_ZONE)))) {
             return new ManualScanResponse("OUT_OF_SCHEDULE",
                     "Fuera del horario permitido para registros externos", req.fullName(), null, 0);
         }
@@ -607,7 +617,6 @@ public class ScanService {
         String proxyName = proxy != null ? proxy.getFullName()
                 : (proxyExt != null ? proxyExt.getFullName() : null);
 
-        LocalDate businessDate = LocalDate.now(BUSINESS_ZONE);
         String mealName = mealNameForCode(req.mealTypeCode());
         // No permitir registrar dos veces el mismo plato el mismo día para esta persona
         // externa (misma cédula/pasaporte). En un externo recién creado la lista está vacía.
@@ -634,7 +643,7 @@ public class ScanService {
                 .restaurant(restaurant)
                 .proxyEmployee(proxy)
                 .proxyExternalPerson(proxyExt)
-                .consumedAt(OffsetDateTime.now(BUSINESS_ZONE))
+                .consumedAt(manualConsumedAt(businessDate, sch))
                 .businessDate(businessDate)
                 .observation(observation)
                 .method(Method.EXTERNAL)
@@ -652,6 +661,23 @@ public class ScanService {
                 : "REGISTRO EXITOSO";
         return new ManualScanResponse("SUCCESS", message,
                 person.getFullName(), mealName, 1);
+    }
+
+    /** Fecha efectiva del registro manual: null = hoy; una fecha futura se rechaza. */
+    private static LocalDate resolveManualDate(LocalDate requested) {
+        LocalDate today = LocalDate.now(BUSINESS_ZONE);
+        if (requested == null) return today;
+        if (requested.isAfter(today)) {
+            throw new BusinessException("FUTURE_DATE", "No se puede registrar un consumo con fecha futura.");
+        }
+        return requested;
+    }
+
+    /** Hora del consumo: ahora si es hoy; si es un día pasado, el inicio del horario (o 12:00). */
+    private OffsetDateTime manualConsumedAt(LocalDate date, Schedule sch) {
+        if (date.equals(LocalDate.now(BUSINESS_ZONE))) return OffsetDateTime.now(BUSINESS_ZONE);
+        LocalTime t = (sch != null && sch.getStartTime() != null) ? sch.getStartTime() : LocalTime.NOON;
+        return date.atTime(t).atZone(BUSINESS_ZONE).toOffsetDateTime();
     }
 
     private static String blankToNull(String v) {

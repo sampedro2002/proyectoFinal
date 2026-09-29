@@ -1,5 +1,6 @@
 package com.eatfood.control.mobile.ui
 
+import android.app.DatePickerDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -945,6 +946,22 @@ private fun ProxyCandidateSearchField(
     }
 }
 
+private fun pickManualConsumptionDate(
+    context: Context,
+    initial: LocalDate,
+    onPick: (LocalDate) -> Unit
+) {
+    DatePickerDialog(
+        context,
+        { _, year, month, day -> onPick(LocalDate.of(year, month + 1, day)) },
+        initial.year,
+        initial.monthValue - 1,
+        initial.dayOfMonth
+    ).apply {
+        datePicker.maxDate = System.currentTimeMillis()
+    }.show()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ExtraMealsScreen() {
@@ -955,8 +972,9 @@ fun ExtraMealsScreen() {
 
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
 
-    // "proxy" = retira por otro; "external" = persona externa (mismas dos pestañas de la web).
+    // "proxy" = retira por otro; "self" = cada titular retira su comida; "external" = persona externa.
     var mode by remember { mutableStateOf("proxy") }
 
     // Retira por otro: quien retira y cada titular pueden ser un empleado ACTIVO o
@@ -1021,7 +1039,7 @@ fun ExtraMealsScreen() {
         var hadMerienda = false
         var codes: List<String>? = null
         if (c.type == "EMPLOYEE") {
-            val av = runCatching { api.mealAvailability(c.id) }.getOrNull()
+            val av = runCatching { api.mealAvailability(c.id, selectedDate.toString()) }.getOrNull()
             allowsLunch = av?.allowsLunch ?: false
             allowsSnack = av?.allowsSnack ?: false
             hadAlmuerzo = av?.hadAlmuerzo ?: false
@@ -1053,10 +1071,11 @@ fun ExtraMealsScreen() {
             Text("Registro manual de consumo", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
             Text(
-                if (mode == "proxy")
-                    "Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
-                else
-                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de personas registradas. Solo se puede registrar dentro del horario configurado.",
+                when (mode) {
+                    "proxy" -> "Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
+                    "self" -> "Cada titular retira su propia comida. Para cada titular marque las comidas que desea registrar."
+                    else -> "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de personas registradas. Solo se puede registrar dentro del horario configurado."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -1072,10 +1091,41 @@ fun ExtraMealsScreen() {
                 )
                 Spacer(Modifier.width(8.dp))
                 FilterChip(
+                    selected = mode == "self",
+                    onClick = { mode = "self"; proxy = null; results = emptyList() },
+                    label = { Text("Retira su comida") },
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(8.dp))
+                FilterChip(
                     selected = mode == "external",
                     onClick = { mode = "external"; results = emptyList() },
                     label = { Text("Persona externa") },
                     modifier = Modifier.weight(1f)
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+
+            Text("Fecha del consumo:", style = MaterialTheme.typography.labelLarge)
+            Spacer(Modifier.height(4.dp))
+            OutlinedButton(
+                onClick = {
+                    pickManualConsumptionDate(context, selectedDate) { date ->
+                        if (date != selectedDate) {
+                            selectedDate = date
+                            titulars = emptyList()
+                            results = emptyList()
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(selectedDate.toString()) }
+            if (selectedDate != LocalDate.now()) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Registro con fecha anterior: no se valida el horario",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             Spacer(Modifier.height(16.dp))
@@ -1107,7 +1157,8 @@ fun ExtraMealsScreen() {
             }
             Spacer(Modifier.height(16.dp))
 
-            if (mode == "proxy") {
+            if (mode != "external") {
+                if (mode == "proxy") {
                 // ── Persona que retira (empleado o persona externa) ─────────────────
                 Text("Persona que retira", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
@@ -1133,12 +1184,14 @@ fun ExtraMealsScreen() {
                     }
                 }
 
+                }
+
                 Spacer(Modifier.height(16.dp))
                 // ── Titulares ──────────────────────────────────────────────────────
                 Text("Agregar titular", style = MaterialTheme.typography.labelLarge)
                 Spacer(Modifier.height(4.dp))
                 ProxyCandidateSearchField("Busque y seleccione titulares para agregar…", api) { c ->
-                    if (proxy != null && proxy!!.id == c.id && proxy!!.type == c.type) {
+                    if (mode == "proxy" && proxy != null && proxy!!.id == c.id && proxy!!.type == c.type) {
                         scope.launch { snackbar.showSnackbar("El titular no puede ser el mismo que la persona que retira.") }
                     } else {
                         scope.launch { addTitular(c) }
@@ -1194,7 +1247,7 @@ fun ExtraMealsScreen() {
                 }
 
                 Spacer(Modifier.height(20.dp))
-                val canSubmit = !busy && proxy != null && selectedRestaurantId != null &&
+                val canSubmit = !busy && (mode != "proxy" || proxy != null) && selectedRestaurantId != null &&
                     titulars.any { it.mealCodes.isNotEmpty() }
                 Button(
                     enabled = canSubmit,
@@ -1214,10 +1267,11 @@ fun ExtraMealsScreen() {
                             runCatching {
                                 api.manualScan(
                                     ManualScanRequest(
-                                        proxyEmployeeId = if (proxy!!.type == "EMPLOYEE") proxy!!.id else null,
-                                        proxyExternalPersonId = if (proxy!!.type == "EXTERNAL") proxy!!.id else null,
+                                        proxyEmployeeId = if (mode == "proxy" && proxy?.type == "EMPLOYEE") proxy?.id else null,
+                                        proxyExternalPersonId = if (mode == "proxy" && proxy?.type == "EXTERNAL") proxy?.id else null,
                                         restaurantId = selectedRestaurantId!!,
-                                        titulars = items
+                                        titulars = items,
+                                        date = selectedDate.toString()
                                     )
                                 )
                             }.onSuccess { r ->
@@ -1350,7 +1404,8 @@ fun ExtraMealsScreen() {
                                             observation = obs,
                                             isPassport = isPassport,
                                             proxyEmployeeId = if (extProxyEnabled && extProxy?.type == "EMPLOYEE") extProxy?.id else null,
-                                            proxyExternalPersonId = if (extProxyEnabled && extProxy?.type == "EXTERNAL") extProxy?.id else null
+                                            proxyExternalPersonId = if (extProxyEnabled && extProxy?.type == "EXTERNAL") extProxy?.id else null,
+                                            date = selectedDate.toString()
                                         )
                                     )
                                 }.onSuccess { r ->
@@ -1405,6 +1460,7 @@ fun EditConsumptionsScreen() {
     var editing by remember { mutableStateOf<ConsumptionDetailResponse?>(null) }
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now()) }
 
     suspend fun reload() {
         runCatching {
@@ -1412,7 +1468,8 @@ fun EditConsumptionsScreen() {
                 search = search.ifBlank { null },
                 restaurantId = selectedRestaurantId,
                 cancelled = if (showCancelled) null else false,
-                size = 100
+                size = 100,
+                date = selectedDate.toString()
             ).content ?: emptyList()
         }.onSuccess { items = it }.onFailure { snackbar.showSnackbar(it.apiMessage()) }
     }
@@ -1439,6 +1496,17 @@ fun EditConsumptionsScreen() {
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            OutlinedButton(
+                onClick = {
+                    pickManualConsumptionDate(context, selectedDate) { date ->
+                        if (date != selectedDate) {
+                            selectedDate = date
+                            scope.launch { reload() }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)
+            ) { Text("Fecha: $selectedDate") }
             OutlinedTextField(
                 value = search, onValueChange = { search = it },
                 label = { Text("Buscar persona…") }, singleLine = true,

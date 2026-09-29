@@ -55,9 +55,13 @@ public class ManualConsumptionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, Pageable pageable) {
+    public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, LocalDate date, Pageable pageable) {
         LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
-        return consumptionRepository.findConsumptionsForEdit(search, restaurantId, cancelled, today, pageable)
+        if (date != null && date.isAfter(today)) {
+            throw new BusinessException("FUTURE_DATE", "No se puede consultar una fecha futura.");
+        }
+        LocalDate day = date != null ? date : today;
+        return consumptionRepository.findConsumptionsForEdit(search, restaurantId, cancelled, day, pageable)
                 .map(this::toDetail);
     }
 
@@ -70,17 +74,17 @@ public class ManualConsumptionService {
 
     @Transactional
     public ConsumptionDetailResponse update(Long id, UpdateManualConsumptionRequest req) {
-        Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-        if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(ZoneId.of("America/Guayaquil")))) {
-            throw new BusinessException("OUT_OF_SCHEDULE", "Fuera del horario permitido para editar registros.");
-        }
-
         Consumption c = consumptionRepository.findById(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
 
+        // El horario solo rige para consumos de hoy; los de días anteriores (registrados
+        // desde papel tras un corte) se pueden corregir a cualquier hora.
         LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
-        if (!c.getBusinessDate().equals(today)) {
-            throw new BusinessException("OUT_OF_DATE", "Solo se pueden editar los consumos del día actual.");
+        if (c.getBusinessDate().equals(today)) {
+            Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
+            if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(ZoneId.of("America/Guayaquil")))) {
+                throw new BusinessException("OUT_OF_SCHEDULE", "Fuera del horario permitido para editar registros.");
+            }
         }
 
         if (c.getMethod() != Method.MANUAL && c.getMethod() != Method.EXTERNAL) {

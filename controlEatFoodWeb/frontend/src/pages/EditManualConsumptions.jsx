@@ -95,6 +95,14 @@ export default function EditManualConsumptions() {
   const [restaurantId, setRestaurantId] = useState('');
   const [restaurants, setRestaurants]   = useState([]);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [date, setDate]                 = useState(() => {
+    const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  });
+  const maxDate = (() => {
+    const d = new Date(); const p = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  })();
   const [editTarget, setEditTarget]     = useState(null);
   const [saving, setSaving]             = useState(false);
   const [loadError, setLoadError]       = useState('');
@@ -167,6 +175,7 @@ export default function EditManualConsumptions() {
       if (search)       q.set('search', search);
       if (restaurantId) q.set('restaurantId', restaurantId);
       if (!showCancelled) q.set('cancelled', 'false');
+      q.set('date', date);
       q.set('page', p ?? page);
       q.set('size', '20');
       const res = await api.get(`/manual-consumptions?${q}`);
@@ -176,7 +185,7 @@ export default function EditManualConsumptions() {
       setRows([]);
       setLoadError(err.response?.data?.message || 'No se pudieron cargar los consumos');
     }
-  }, [search, restaurantId, showCancelled, page]);
+  }, [search, restaurantId, showCancelled, date, page]);
 
   useEffect(() => { fetchList(0); setPage(0); }, [fetchList]);
 
@@ -203,7 +212,7 @@ export default function EditManualConsumptions() {
       let avail = null;
       if (d.employeeId) {
         try {
-          const availRes = await api.get(`/manual-consumptions/availability/${d.employeeId}`);
+          const availRes = await api.get(`/manual-consumptions/availability/${d.employeeId}`, { params: { date: d.businessDate } });
           avail = availRes.data;
         } catch (e) {}
       }
@@ -294,7 +303,7 @@ export default function EditManualConsumptions() {
     
     let avail = null;
     try {
-      const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`);
+      const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`, { params: { date: editTarget?.businessDate } });
       avail = data;
     } catch (e) {}
 
@@ -346,14 +355,14 @@ export default function EditManualConsumptions() {
     setEditTarget(t => t ? { ...t, proxyEmployeeId: null, proxyExternalPersonId: null } : t);
   };
 
-  const todayStr = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  const todayStr = new Date(`${date}T00:00:00`).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
 
   /* ───── render ───── */
   return (
     <div>
       <div className="topbar">
         <div>
-          <h2 style={{ margin: 0 }}>Editar Consumos del Día</h2>
+          <h2 style={{ margin: 0 }}>Editar Consumos</h2>
           <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>{todayStr}</div>
         </div>
       </div>
@@ -366,6 +375,13 @@ export default function EditManualConsumptions() {
       {/* ── filtros ── */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
+          <input
+            type="date"
+            value={date}
+            max={maxDate}
+            onChange={e => setDate(e.target.value || maxDate)}
+            title="Fecha de los consumos"
+          />
           <input
             placeholder="Buscar persona o cédula..."
             value={search}

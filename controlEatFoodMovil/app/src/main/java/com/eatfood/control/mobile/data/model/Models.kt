@@ -246,13 +246,14 @@ data class ApiError(
  * Registro manual "retira por otro" (solo ADMIN). Debe coincidir EXACTAMENTE con el
  * DTO del backend (ScanDtos.ManualScanRequest): quien retira es un empleado
  * (proxyEmployeeId) O una persona externa ya registrada (proxyExternalPersonId) —
- * exactamente uno de los dos.
+ * como mucho uno de los dos; ambos pueden ser nulos cuando cada titular retira su comida.
  */
 data class ManualScanRequest(
     val proxyEmployeeId: Long? = null,
     val proxyExternalPersonId: Long? = null,
     val restaurantId: Long,
-    val titulars: List<ManualScanItem>
+    val titulars: List<ManualScanItem>,
+    val date: String? = null
 )
 
 /**
@@ -277,7 +278,8 @@ data class ExternalScanRequest(
     // interno (proxyEmployeeId) o una persona externa ya registrada
     // (proxyExternalPersonId) — como mucho uno de los dos.
     val proxyEmployeeId: Long? = null,
-    val proxyExternalPersonId: Long? = null
+    val proxyExternalPersonId: Long? = null,
+    val date: String? = null
 )
 
 /**

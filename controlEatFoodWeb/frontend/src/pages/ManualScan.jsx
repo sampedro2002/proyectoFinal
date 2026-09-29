@@ -121,8 +121,18 @@ function EmployeePicker({ label, term, setTerm, suggestions, show, setShow, onPi
   );
 }
 
+function todayStr() {
+  // Fecha local YYYY-MM-DD (no UTC) para el <input type="date">.
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
 export default function ManualScan() {
-  const [mode, setMode] = useState('proxy'); // 'proxy' | 'external'
+  const [mode, setMode] = useState('proxy'); // 'proxy' | 'self' | 'external'
+  // Fecha del consumo: por defecto hoy; se puede elegir un día anterior (registros en papel).
+  const [date, setDate] = useState(todayStr());
+  const isToday = date === todayStr();
 
   // --- sugerencias reutilizables (autosuggest de empleados) ---
   const [proxyTerm, setProxyTerm] = useState('');
@@ -190,7 +200,7 @@ export default function ManualScan() {
 
   const titularSeqRef = useRef(0);
   useEffect(() => {
-    if (mode !== 'proxy' || !titularTerm || titularTerm.trim().length < 2) {
+    if ((mode !== 'proxy' && mode !== 'self') || !titularTerm || titularTerm.trim().length < 2) {
       setTitularSuggestions([]); return;
     }
     const t = setTimeout(() => {
@@ -303,6 +313,7 @@ export default function ManualScan() {
       setTitularTerm(''); setTitularSuggestions([]); setShowTitularSuggest(false);
       return;
     }
+    // En "retira su propia comida" solo aplica a empleados (tienen permisos de comida).
 
     let avail = null;
     let allowsLunch = true;
@@ -313,7 +324,7 @@ export default function ManualScan() {
     // Solo consultar disponibilidad si es empleado
     if (emp.type === 'EMPLOYEE') {
       try {
-        const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`);
+        const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`, { params: { date } });
         avail = data;
       } catch { /* ignorar */ }
       allowsLunch = avail ? avail.allowsLunch : false;
@@ -345,6 +356,13 @@ export default function ManualScan() {
       : t));
   }
 
+  function changeDate(v) {
+    // Las disponibilidades de los titulares dependen del día: se vuelven a agregar.
+    setDate(v || todayStr());
+    setTitulars([]);
+    setResult(null); setError('');
+  }
+
   function switchMode(nextMode) {
     setMode(nextMode);
     setError(''); setResult(null);
@@ -360,8 +378,10 @@ export default function ManualScan() {
     e.preventDefault();
     setError(''); setResult(null);
 
-    if (mode === 'proxy') {
-      if (!proxy) { setError('Seleccione la persona que retira.'); return; }
+    if (date > todayStr()) { setError('No se puede registrar con fecha futura.'); return; }
+
+    if (mode === 'proxy' || mode === 'self') {
+      if (mode === 'proxy' && !proxy) { setError('Seleccione la persona que retira.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (titulars.length === 0) { setError('Agregue al menos un titular.'); return; }
       const items = titulars
@@ -376,17 +396,21 @@ export default function ManualScan() {
       setLoading(true);
       try {
         const { data } = await api.post('/manual-consumptions', {
-          proxyEmployeeId: proxy.type === 'EMPLOYEE' ? proxy.id : null,
-          proxyExternalPersonId: proxy.type === 'EXTERNAL' ? proxy.id : null,
+          proxyEmployeeId: mode === 'proxy' && proxy.type === 'EMPLOYEE' ? proxy.id : null,
+          proxyExternalPersonId: mode === 'proxy' && proxy.type === 'EXTERNAL' ? proxy.id : null,
           restaurantId: Number(restaurantId),
           titulars: items,
+          date,
         });
         setResult({
           status: data.status,
           message: data.status === 'SUCCESS'
-            ? `Se crearon ${data.created} registro(s): ${proxy.fullName} retiró por ${titulars.map((t) => t.fullName).join(', ')}`
+            ? (mode === 'proxy'
+                ? `Se crearon ${data.created} registro(s): ${proxy.fullName} retiró por ${titulars.map((t) => t.fullName).join(', ')}`
+                : `Se crearon ${data.created} registro(s): ${titulars.map((t) => t.fullName).join(', ')} retiró su propia comida`)
+              + (isToday ? '' : ` (fecha ${date})`)
             : data.message,
-          employeeName: proxy.fullName,
+          employeeName: proxy ? proxy.fullName : titulars.map((t) => t.fullName).join(', '),
         });
         setTitulars([]);
       } catch (err) {
@@ -424,6 +448,7 @@ export default function ManualScan() {
             observation: observation.trim() || null,
             proxyEmployeeId: extProxyEnabled && extProxy && extProxy.type === 'EMPLOYEE' ? extProxy.id : null,
             proxyExternalPersonId: extProxyEnabled && extProxy && extProxy.type === 'EXTERNAL' ? extProxy.id : null,
+            date,
           });
           // El endpoint responde 200 también cuando NO registró (OUT_OF_SCHEDULE,
           // DUPLICATE…), así que el éxito se decide por data.status, no por el HTTP.
@@ -458,6 +483,8 @@ export default function ManualScan() {
   const canSubmit =
     mode === 'proxy'
       ? proxy && restaurantId && titulars.some((t) => t.mealCodes.length > 0)
+      : mode === 'self'
+      ? restaurantId && titulars.some((t) => t.mealCodes.length > 0)
       : extCard.trim() && extName.trim() && restaurantId && selectedMealCodes.length > 0
         && (!extProxyEnabled || !!extProxy);
 
@@ -479,6 +506,14 @@ export default function ManualScan() {
           </button>
           <button
             type="button"
+            className={mode === 'self' ? '' : 'ghost'}
+            onClick={() => switchMode('self')}
+            style={{ flex: 1 }}
+          >
+            Retira su comida
+          </button>
+          <button
+            type="button"
             className={mode === 'external' ? '' : 'ghost'}
             onClick={() => switchMode('external')}
             style={{ flex: 1 }}
@@ -488,14 +523,32 @@ export default function ManualScan() {
         </div>
 
         <p style={{ color: '#94a3b8', marginTop: 0, fontSize: 13 }}>
-          {mode === 'proxy'
+          {mode === 'self'
+            ? 'La propia persona retira su comida (sin intermediario). Agregue a los empleados y marque sus comidas; se crea un registro por (persona × comida). Si elige una fecha anterior no se valida el horario (registros llevados en papel tras un corte).'
+            : mode === 'proxy'
             ? 'Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. Solo se puede registrar dentro del horario configurado; se omiten los platos no permitidos o ya registrados hoy.'
             : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de personas registradas. Solo se puede registrar dentro del horario configurado. El consumo aparecerá en el feed del kiosk y en reportes.'}
         </p>
 
         <form onSubmit={submit}>
-          {mode === 'proxy' ? (
+          <div className="field">
+            <label>Fecha del consumo</label>
+            <input
+              type="date"
+              value={date}
+              max={todayStr()}
+              onChange={(e) => changeDate(e.target.value)}
+              required
+            />
+            {!isToday && (
+              <p style={{ color: 'var(--warn, #d97706)', fontSize: 13, margin: '4px 0 0' }}>
+                Registro con fecha anterior ({date}): no se valida el horario.
+              </p>
+            )}
+          </div>
+          {mode !== 'external' ? (
             <>
+              {mode === 'proxy' && (
               <EmployeePicker
                 label="Persona que retira"
                 term={proxyTerm}
@@ -509,6 +562,7 @@ export default function ManualScan() {
                 selectedLabel={proxy ? `Seleccionado: ${proxy.fullName} · ${proxy.identityCard}` : null}
                 placeholder="Busque por nombre o cédula a quien retira…"
               />
+              )}
 
               <EmployeePicker
                 label="Agregar titular"

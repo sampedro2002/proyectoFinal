@@ -138,9 +138,12 @@ interface ApiService {
     @POST("manual-consumptions/external")
     suspend fun manualScanExternal(@Body body: ExternalScanRequest): ManualScanResponse
 
-    /** Comidas permitidas y aún no consumidas hoy por el empleado (para pre-seleccionar en el registro manual). */
+    /** Comidas permitidas y aún no consumidas en la fecha indicada por el empleado. */
     @GET("manual-consumptions/availability/{employeeId}")
-    suspend fun mealAvailability(@Path("employeeId") employeeId: Long): MealAvailabilityResponse
+    suspend fun mealAvailability(
+        @Path("employeeId") employeeId: Long,
+        @Query("date") date: String? = null
+    ): MealAvailabilityResponse
 
     /** Candidatos a "quien retira": empleados ACTIVOS y personas externas registradas. */
     @GET("manual-consumptions/proxy-candidates")
@@ -153,7 +156,8 @@ interface ApiService {
         @Query("restaurantId") restaurantId: Long? = null,
         @Query("cancelled") cancelled: Boolean? = null,
         @Query("page") page: Int = 0,
-        @Query("size") size: Int = 50
+        @Query("size") size: Int = 50,
+        @Query("date") date: String? = null
     ): Page<ConsumptionDetailResponse>
 
     @GET("manual-consumptions/{id}")
