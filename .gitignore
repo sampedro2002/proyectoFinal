@@ -28,12 +28,6 @@ Thumbs.db
 # Logs
 *.log
 
-# LibrerÃ­as nativas del SDK biomÃ©trico ZKFinger (binarios; no versionar)
-*.so
-*.so.*
-RunLinux/lib-x64/
-RunLinux/lib-x86/
-
 # Frontend compilado e integrado en el backend por el instalador (generado, no versionar)
 controlEatFoodWeb/backend/src/main/resources/static/
 controlEatFoodWeb/backend/src/main/resources/application-prod.yml
