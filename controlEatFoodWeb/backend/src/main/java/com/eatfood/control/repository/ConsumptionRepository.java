@@ -16,6 +16,24 @@ import org.springframework.data.domain.Pageable;
 
 public interface ConsumptionRepository extends JpaRepository<Consumption, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT c FROM Consumption c WHERE c.id = :id")
+    Optional<Consumption> findByIdForUpdate(@Param("id") Long id);
+
+    @Query("""
+            SELECT c.mealName FROM Consumption c
+            LEFT JOIN c.employee e
+            LEFT JOIN c.externalPerson ep
+            WHERE c.cancelled = FALSE AND c.businessDate = :date
+              AND (:excludedId IS NULL OR c.id <> :excludedId)
+              AND ((:employeeId IS NOT NULL AND e.id = :employeeId)
+                   OR (:externalId IS NOT NULL AND ep.id = :externalId))
+            """)
+    List<String> findActiveMeals(@Param("employeeId") Long employeeId,
+                                 @Param("externalId") Long externalId,
+                                 @Param("date") LocalDate date,
+                                 @Param("excludedId") Long excludedId);
+
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
     /** "First" porque un empleado puede tener hasta 2 consumos el mismo día (almuerzo y merienda). */

@@ -58,6 +58,19 @@ public class GlobalExceptionHandler {
         return ResponseEntity.badRequest().body(b);
     }
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidJson(
+            org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        Throwable cause = ex.getMostSpecificCause();
+        if (cause instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException invalid
+                && invalid.getTargetType() == com.eatfood.control.domain.PersonnelType.class) {
+            return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST, "INVALID_PERSONNEL_TYPE",
+                    "Tipo de personal inválido. Seleccione NOMINA o SERVICIOS_PROFESIONALES."));
+        }
+        return ResponseEntity.badRequest().body(body(HttpStatus.BAD_REQUEST, "INVALID_REQUEST",
+                "El contenido de la solicitud no tiene el formato esperado."));
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneric(Exception ex) {
         // Log interno completo para diagnóstico; al cliente sólo se le devuelve un

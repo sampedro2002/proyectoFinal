@@ -2,8 +2,10 @@ package com.eatfood.control.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -86,12 +88,13 @@ public final class ScanDtos {
             Long proxyExternalPersonId,
             @NotNull Long restaurantId,
             @NotNull List<ManualScanItem> titulars,
-            // Opcional: fecha del consumo (registros llevados en papel tras un corte).
-            // null = hoy. No puede ser futura.
-            LocalDate date) {
+            LocalDate businessDate,
+            LocalTime consumptionTime,
+            Boolean contingency,
+            @Size(max = 500) String reason) {
         public ManualScanRequest(Long proxyEmployeeId, Long proxyExternalPersonId,
                                  Long restaurantId, List<ManualScanItem> titulars) {
-            this(proxyEmployeeId, proxyExternalPersonId, restaurantId, titulars, null);
+            this(proxyEmployeeId, proxyExternalPersonId, restaurantId, titulars, null, null, false, null);
         }
     }
 
@@ -119,7 +122,7 @@ public final class ScanDtos {
             String fullName) {}
 
     /**
-     * Disponibilidad de comidas de un empleado para el registro manual de HOY.
+     * Disponibilidad de comidas de un empleado para la fecha de registro elegida.
      * Sirve para que las UIs (web y móvil) muestren/pre-seleccionen solo las comidas
      * que el empleado tiene permitidas y que aún no consumió en el día.
      * Códigos: BREAKFAST=Almuerzo (requiere allowsLunch), LUNCH=Merienda (requiere allowsSnack).
@@ -145,13 +148,15 @@ public final class ScanDtos {
             // Si ambos son null, el propio externo lo retira.
             Long proxyEmployeeId,
             Long proxyExternalPersonId,
-            // Opcional: fecha del consumo (null = hoy; no puede ser futura).
-            LocalDate date) {
+            LocalDate businessDate,
+            LocalTime consumptionTime,
+            Boolean contingency,
+            @Size(max = 500) String reason) {
         public ExternalScanRequest(String identityCard, Boolean isPassport, String fullName,
                                    String mealTypeCode, Long restaurantId, String observation,
                                    Long proxyEmployeeId, Long proxyExternalPersonId) {
             this(identityCard, isPassport, fullName, mealTypeCode, restaurantId, observation,
-                    proxyEmployeeId, proxyExternalPersonId, null);
+                    proxyEmployeeId, proxyExternalPersonId, null, null, false, null);
         }
     }
 
@@ -163,7 +168,11 @@ public final class ScanDtos {
             Long employeeId,
             Long restaurantId,
             String mealName,
-            String observation) {}
+            String observation,
+            LocalDate businessDate,
+            LocalTime consumptionTime,
+            Boolean contingency,
+            @Size(max = 500) String reason) {}
 
     public record ConsumptionDetailResponse(
             Long id,

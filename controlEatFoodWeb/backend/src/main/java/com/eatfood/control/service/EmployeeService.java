@@ -51,16 +51,17 @@ public class EmployeeService {
         // con los datos nuevos en lugar de crear una fila duplicada.
         Employee revived = employeeRepository.findByIdentityCard(identityCard).orElse(null);
         if (revived != null) {
+            String before = snapshot(revived);
             apply(revived, req);
             revived.setDeleted(false);
             Employee saved = employeeRepository.save(revived);
-            auditService.record("Employee", String.valueOf(saved.getId()), "REACTIVATE", null, saved.getFullName());
+            auditService.record("Employee", String.valueOf(saved.getId()), "REACTIVATE", before, snapshot(saved));
             return toResponse(saved);
         }
         Employee e = new Employee();
         apply(e, req);
         e = employeeRepository.save(e);
-        auditService.record("Employee", String.valueOf(e.getId()), "CREATE", null, e.getFullName());
+        auditService.record("Employee", String.valueOf(e.getId()), "CREATE", null, snapshot(e));
         return toResponse(e);
     }
 
@@ -100,6 +101,8 @@ public class EmployeeService {
         }
         if (req.allowsLunch() != null) e.setAllowsLunch(req.allowsLunch());
         if (req.allowsSnack() != null) e.setAllowsSnack(req.allowsSnack());
+        // Clientes anteriores omiten el campo: conservar la categoría al editar/reactivar.
+        if (req.personnelType() != null) e.setPersonnelType(req.personnelType());
     }
 
     private static String blankToNull(String v) {
@@ -127,9 +130,9 @@ public class EmployeeService {
     }
 
     private String snapshot(Employee e) {
-        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s".formatted(
+        return "%s|%s|almuerzo=%s|merienda=%s|estado=%s|tipoPersonal=%s".formatted(
                 e.getIdentityCard(), e.getFullName(),
-                e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus());
+                e.isAllowsLunch(), e.isAllowsSnack(), e.getStatus(), e.getPersonnelType());
     }
 
     private EmployeeResponse toResponse(Employee e) {
@@ -143,6 +146,7 @@ public class EmployeeService {
                 e.isAllowsLunch(),
                 e.isAllowsSnack(),
                 e.effectiveSnack(),
-                (int) fpCount);
+                (int) fpCount,
+                e.getPersonnelType());
     }
 }

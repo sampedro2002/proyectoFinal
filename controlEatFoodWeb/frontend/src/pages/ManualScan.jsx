@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
+import ConsumptionDateFields, { businessDateNow } from '../components/ConsumptionDateFields.jsx';
 import { isValidCedulaEC } from '../utils/cedula.js';
 
 /**
@@ -121,18 +122,8 @@ function EmployeePicker({ label, term, setTerm, suggestions, show, setShow, onPi
   );
 }
 
-function todayStr() {
-  // Fecha local YYYY-MM-DD (no UTC) para el <input type="date">.
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
-
 export default function ManualScan() {
-  const [mode, setMode] = useState('proxy'); // 'proxy' | 'self' | 'external'
-  // Fecha del consumo: por defecto hoy; se puede elegir un día anterior (registros en papel).
-  const [date, setDate] = useState(todayStr());
-  const isToday = date === todayStr();
+  const [mode, setMode] = useState('proxy'); // 'proxy' | 'external'
 
   // --- sugerencias reutilizables (autosuggest de empleados) ---
   const [proxyTerm, setProxyTerm] = useState('');
@@ -168,6 +159,21 @@ export default function ManualScan() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [dateFields, setDateFields] = useState(() => ({
+    businessDate: businessDateNow(), consumptionTime: '', contingency: false, reason: '',
+  }));
+  const dateRef = useRef(dateFields.businessDate);
+
+  function changeDateFields(next) {
+    if (next.businessDate !== dateFields.businessDate) {
+      dateRef.current = next.businessDate;
+      setTitulars([]);
+      setTitularTerm('');
+      setSelectedMealCodes([]);
+      setResult(null);
+    }
+    setDateFields(next);
+  }
 
   useEffect(() => {
     api.get('/restaurants').then((r) => {
@@ -200,7 +206,7 @@ export default function ManualScan() {
 
   const titularSeqRef = useRef(0);
   useEffect(() => {
-    if ((mode !== 'proxy' && mode !== 'self') || !titularTerm || titularTerm.trim().length < 2) {
+    if (mode !== 'proxy' || !titularTerm || titularTerm.trim().length < 2) {
       setTitularSuggestions([]); return;
     }
     const t = setTimeout(() => {
@@ -298,6 +304,7 @@ export default function ManualScan() {
   }
 
   async function addTitular(emp) {
+    const selectedDate = dateFields.businessDate;
     // Igual que selectProxy: onChange manda null al escribir. Un titular solo se
     // agrega al elegirlo de las sugerencias, así que con null no se hace nada.
     if (!emp) return;
@@ -313,7 +320,6 @@ export default function ManualScan() {
       setTitularTerm(''); setTitularSuggestions([]); setShowTitularSuggest(false);
       return;
     }
-    // En "retira su propia comida" solo aplica a empleados (tienen permisos de comida).
 
     let avail = null;
     let allowsLunch = true;
@@ -324,7 +330,9 @@ export default function ManualScan() {
     // Solo consultar disponibilidad si es empleado
     if (emp.type === 'EMPLOYEE') {
       try {
-        const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`, { params: { date } });
+        const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`, {
+          params: { date: selectedDate },
+        });
         avail = data;
       } catch { /* ignorar */ }
       allowsLunch = avail ? avail.allowsLunch : false;
@@ -337,6 +345,7 @@ export default function ManualScan() {
       ...(allowsSnack ? ['LUNCH'] : []),
     ];
 
+    if (dateRef.current !== selectedDate) return;
     setTitulars((arr) => arr.find((t) => t.id === emp.id && t.type === emp.type)
       ? arr
       : [...arr, { ...emp, allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, mealCodes: [...availableCodes] }]);
@@ -356,13 +365,6 @@ export default function ManualScan() {
       : t));
   }
 
-  function changeDate(v) {
-    // Las disponibilidades de los titulares dependen del día: se vuelven a agregar.
-    setDate(v || todayStr());
-    setTitulars([]);
-    setResult(null); setError('');
-  }
-
   function switchMode(nextMode) {
     setMode(nextMode);
     setError(''); setResult(null);
@@ -377,11 +379,14 @@ export default function ManualScan() {
   async function submit(e) {
     e.preventDefault();
     setError(''); setResult(null);
+    if (!dateFields.businessDate) { setError('Seleccione la fecha del consumo.'); return; }
+    if ((dateFields.contingency || dateFields.businessDate !== businessDateNow()) && !dateFields.reason.trim()) {
+      setError('Indique el motivo del registro.'); return;
+    }
+    const datePayload = { ...dateFields, consumptionTime: dateFields.consumptionTime || null, reason: dateFields.reason.trim() || null };
 
-    if (date > todayStr()) { setError('No se puede registrar con fecha futura.'); return; }
-
-    if (mode === 'proxy' || mode === 'self') {
-      if (mode === 'proxy' && !proxy) { setError('Seleccione la persona que retira.'); return; }
+    if (mode === 'proxy') {
+      if (!proxy) { setError('Seleccione la persona que retira.'); return; }
       if (!restaurantId) { setError('Seleccione un restaurante.'); return; }
       if (titulars.length === 0) { setError('Agregue al menos un titular.'); return; }
       const items = titulars
@@ -396,23 +401,18 @@ export default function ManualScan() {
       setLoading(true);
       try {
         const { data } = await api.post('/manual-consumptions', {
-          proxyEmployeeId: mode === 'proxy' && proxy.type === 'EMPLOYEE' ? proxy.id : null,
-          proxyExternalPersonId: mode === 'proxy' && proxy.type === 'EXTERNAL' ? proxy.id : null,
+          ...datePayload,
+          proxyEmployeeId: proxy.type === 'EMPLOYEE' ? proxy.id : null,
+          proxyExternalPersonId: proxy.type === 'EXTERNAL' ? proxy.id : null,
           restaurantId: Number(restaurantId),
           titulars: items,
-          date,
         });
         setResult({
           status: data.status,
-          message: data.status === 'SUCCESS'
-            ? (mode === 'proxy'
-                ? `Se crearon ${data.created} registro(s): ${proxy.fullName} retiró por ${titulars.map((t) => t.fullName).join(', ')}`
-                : `Se crearon ${data.created} registro(s): ${titulars.map((t) => t.fullName).join(', ')} retiró su propia comida`)
-              + (isToday ? '' : ` (fecha ${date})`)
-            : data.message,
-          employeeName: proxy ? proxy.fullName : titulars.map((t) => t.fullName).join(', '),
+          message: `${data.message} (Fecha: ${dateFields.businessDate})`,
+          employeeName: proxy.fullName,
         });
-        setTitulars([]);
+        if (data.status === 'SUCCESS') setTitulars([]);
       } catch (err) {
         setError(err.response?.data?.message || 'No se pudo registrar el consumo');
       } finally {
@@ -440,6 +440,7 @@ export default function ManualScan() {
       for (const code of selectedMealCodes) {
         try {
           const { data } = await api.post('/manual-consumptions/external', {
+            ...datePayload,
             identityCard: extCard.trim(),
             isPassport,
             fullName: extName.trim(),
@@ -448,7 +449,6 @@ export default function ManualScan() {
             observation: observation.trim() || null,
             proxyEmployeeId: extProxyEnabled && extProxy && extProxy.type === 'EMPLOYEE' ? extProxy.id : null,
             proxyExternalPersonId: extProxyEnabled && extProxy && extProxy.type === 'EXTERNAL' ? extProxy.id : null,
-            date,
           });
           // El endpoint responde 200 también cuando NO registró (OUT_OF_SCHEDULE,
           // DUPLICATE…), así que el éxito se decide por data.status, no por el HTTP.
@@ -483,8 +483,6 @@ export default function ManualScan() {
   const canSubmit =
     mode === 'proxy'
       ? proxy && restaurantId && titulars.some((t) => t.mealCodes.length > 0)
-      : mode === 'self'
-      ? restaurantId && titulars.some((t) => t.mealCodes.length > 0)
       : extCard.trim() && extName.trim() && restaurantId && selectedMealCodes.length > 0
         && (!extProxyEnabled || !!extProxy);
 
@@ -506,14 +504,6 @@ export default function ManualScan() {
           </button>
           <button
             type="button"
-            className={mode === 'self' ? '' : 'ghost'}
-            onClick={() => switchMode('self')}
-            style={{ flex: 1 }}
-          >
-            Retira su comida
-          </button>
-          <button
-            type="button"
             className={mode === 'external' ? '' : 'ghost'}
             onClick={() => switchMode('external')}
             style={{ flex: 1 }}
@@ -523,32 +513,16 @@ export default function ManualScan() {
         </div>
 
         <p style={{ color: '#94a3b8', marginTop: 0, fontSize: 13 }}>
-          {mode === 'self'
-            ? 'La propia persona retira su comida (sin intermediario). Agregue a los empleados y marque sus comidas; se crea un registro por (persona × comida). Si elige una fecha anterior no se valida el horario (registros llevados en papel tras un corte).'
-            : mode === 'proxy'
-            ? 'Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se creará un registro por (titular × comida) con la descripción "X retira de Y" autogenerada. Solo se puede registrar dentro del horario configurado; se omiten los platos no permitidos o ya registrados hoy.'
-            : 'Registre un consumo para una persona externa (visitante, contratista, etc.). No es necesario que esté en la lista de personas registradas. Solo se puede registrar dentro del horario configurado. El consumo aparecerá en el feed del kiosk y en reportes.'}
+          {mode === 'proxy'
+            ? 'Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se omiten los platos no permitidos o ya registrados en la fecha seleccionada. Para ingresar el control en papel fuera de horario, active Registro por contingencia.'
+            : 'Registre un consumo para una persona externa (visitante, contratista, etc.) en la fecha seleccionada. Para ingresar el control en papel fuera de horario, active Registro por contingencia. El consumo aparecerá en los reportes de esa fecha.'}
         </p>
 
         <form onSubmit={submit}>
-          <div className="field">
-            <label>Fecha del consumo</label>
-            <input
-              type="date"
-              value={date}
-              max={todayStr()}
-              onChange={(e) => changeDate(e.target.value)}
-              required
-            />
-            {!isToday && (
-              <p style={{ color: 'var(--warn, #d97706)', fontSize: 13, margin: '4px 0 0' }}>
-                Registro con fecha anterior ({date}): no se valida el horario.
-              </p>
-            )}
-          </div>
-          {mode !== 'external' ? (
+          <ConsumptionDateFields value={dateFields} onChange={changeDateFields} disabled={loading} />
+          <p className="muted">Seleccione la fecha antes de agregar las personas. Al cambiarla se limpia la selección de titulares y comidas para consultar su disponibilidad de nuevo.</p>
+          {mode === 'proxy' ? (
             <>
-              {mode === 'proxy' && (
               <EmployeePicker
                 label="Persona que retira"
                 term={proxyTerm}
@@ -562,7 +536,6 @@ export default function ManualScan() {
                 selectedLabel={proxy ? `Seleccionado: ${proxy.fullName} · ${proxy.identityCard}` : null}
                 placeholder="Busque por nombre o cédula a quien retira…"
               />
-              )}
 
               <EmployeePicker
                 label="Agregar titular"
@@ -628,7 +601,7 @@ export default function ManualScan() {
                                           checked={!consumed && t.mealCodes.includes(m.code)}
                                           onChange={(e) => setTitularMeals(t.id, t.type, m.code, e.target.checked)}
                                         />
-                                        {m.name}{consumed ? ' (ya registrada hoy)' : ''}
+                                        {m.name}{consumed ? ' (ya registrada en esta fecha)' : ''}
                                       </label>
                                     );
                                   })}

@@ -11,8 +11,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
 
 @PreAuthorize("hasAnyRole('ADMIN', 'RECURSOS_HUMANOS')")
 
@@ -43,21 +46,21 @@ public class ManualScanController {
         return manualConsumptionService.proxyCandidates(term);
     }
 
-    @Operation(summary = "Comidas permitidas y aún no consumidas hoy por un empleado (solo ADMIN/RRHH)")
+    @Operation(summary = "Comidas disponibles de un empleado en la fecha indicada; por defecto hoy (solo ADMIN/RRHH)")
     @GetMapping("/availability/{employeeId}")
-    public MealAvailabilityResponse availability(
-            @PathVariable Long employeeId,
-            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date) {
-        return scanService.mealAvailability(employeeId, date);
+    public MealAvailabilityResponse availability(@PathVariable Long employeeId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) Long excludedId) {
+        return scanService.mealAvailability(employeeId, date, excludedId);
     }
 
-    @Operation(summary = "Lista todos los consumos del día paginados (manuales, externos y huella) para edición; los de huella solo pueden cancelarse/reactivarse (solo ADMIN/RRHH)")
+    @Operation(summary = "Lista los consumos de la fecha indicada, por defecto hoy; los de huella solo pueden cancelarse/reactivarse (solo ADMIN/RRHH)")
     @GetMapping
     public Page<ConsumptionDetailResponse> list(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) Long restaurantId,
             @RequestParam(required = false) Boolean cancelled,
-            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate date,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
             @PageableDefault(size = 20) Pageable pageable) {
         return manualConsumptionService.listManual(search, restaurantId, cancelled, date, pageable);
     }

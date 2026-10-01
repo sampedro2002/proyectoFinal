@@ -11,6 +11,10 @@ import java.util.Optional;
 
 public interface ExternalPersonRepository extends JpaRepository<ExternalPerson, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM ExternalPerson p WHERE p.id = :id")
+    Optional<ExternalPerson> findByIdForUpdate(@Param("id") Long id);
+
     Optional<ExternalPerson> findByIdentityCard(String identityCard);
 
     boolean existsByIdentityCard(String identityCard);

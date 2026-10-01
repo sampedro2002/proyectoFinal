@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import api from '../api/client.js';
+import ConsumptionDateFields, { businessDateNow, businessTime } from '../components/ConsumptionDateFields.jsx';
 import ConfirmModal from '../components/ConfirmModal.jsx';
 
 const MEALS = [
@@ -95,14 +96,7 @@ export default function EditManualConsumptions() {
   const [restaurantId, setRestaurantId] = useState('');
   const [restaurants, setRestaurants]   = useState([]);
   const [showCancelled, setShowCancelled] = useState(false);
-  const [date, setDate]                 = useState(() => {
-    const d = new Date(); const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  });
-  const maxDate = (() => {
-    const d = new Date(); const p = (n) => String(n).padStart(2, '0');
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-  })();
+  const [date, setDate] = useState(businessDateNow);
   const [editTarget, setEditTarget]     = useState(null);
   const [saving, setSaving]             = useState(false);
   const [loadError, setLoadError]       = useState('');
@@ -122,6 +116,7 @@ export default function EditManualConsumptions() {
 
   const titularSeqRef = useRef(0);
   const proxySeqRef   = useRef(0);
+  const listSeqRef = useRef(0);
 
   const showToast = (msg, type) => {
     setToast({ msg, type });
@@ -168,24 +163,28 @@ export default function EditManualConsumptions() {
   }, [proxyTerm, editTarget]);
 
   /* ───── carga de lista ───── */
-  const fetchList = useCallback(async (p) => {
+  const fetchList = useCallback(async (p = 0) => {
+    const seq = ++listSeqRef.current;
     setLoadError('');
     try {
       const q = new URLSearchParams();
+      if (!date) { setRows([]); setTotalPages(0); return; }
+      q.set('date', date);
       if (search)       q.set('search', search);
       if (restaurantId) q.set('restaurantId', restaurantId);
       if (!showCancelled) q.set('cancelled', 'false');
-      q.set('date', date);
-      q.set('page', p ?? page);
+      q.set('page', p);
       q.set('size', '20');
       const res = await api.get(`/manual-consumptions?${q}`);
+      if (seq !== listSeqRef.current) return;
       setRows(res.data.content ?? []);
       setTotalPages(res.data.totalPages ?? 0);
     } catch (err) {
+      if (seq !== listSeqRef.current) return;
       setRows([]);
       setLoadError(err.response?.data?.message || 'No se pudieron cargar los consumos');
     }
-  }, [search, restaurantId, showCancelled, date, page]);
+  }, [search, restaurantId, showCancelled, date]);
 
   useEffect(() => { fetchList(0); setPage(0); }, [fetchList]);
 
@@ -209,21 +208,15 @@ export default function EditManualConsumptions() {
       const res = await api.get(`/manual-consumptions/${row.id}`);
       const d = res.data;
 
-      let avail = null;
-      if (d.employeeId) {
-        try {
-          const availRes = await api.get(`/manual-consumptions/availability/${d.employeeId}`, { params: { date: d.businessDate } });
-          avail = availRes.data;
-        } catch (e) {}
-      }
-
       const proxyName = d.proxyEmployeeName || d.proxyExternalPersonName || '';
       setEditTarget({
         ...d,
-        _originalMealName: d.mealName,
+        consumptionTime: businessTime(d.consumedAt),
+        contingency: false,
+        reason: '',
         _titularLabel: d.employeeName ? `${d.employeeName} · ${d.identityCard || ''}` : '',
         _proxyLabel:   proxyName,
-        _avail: avail,
+        _avail: null,
       });
       setTitularTerm(d.employeeName ? `${d.employeeName}${d.identityCard ? ' · ' + d.identityCard : ''}` : '');
       setProxyTerm(proxyName);
@@ -247,7 +240,7 @@ export default function EditManualConsumptions() {
     try {
       await api.post(`/manual-consumptions/${id}/cancel`);
       showToast('Consumo cancelado', 'ok');
-      fetchList();
+      fetchList(page);
     } catch { showToast('Error al cancelar', 'err'); }
     setConfirmId(null);
   };
@@ -256,15 +249,16 @@ export default function EditManualConsumptions() {
     try {
       await api.post(`/manual-consumptions/${id}/uncancel`);
       showToast('Consumo reactivado', 'ok');
-      fetchList();
-    } catch { showToast('Error al reactivar', 'err'); }
+      fetchList(page);
+    } catch (err) { showToast(err.response?.data?.message || 'Error al reactivar', 'err'); }
   };
 
   const handleEdit = async (e) => {
     e.preventDefault();
-    const isExternal = editTarget.method === 'EXTERNAL';
+    const isExternal = editTarget.externalPersonId != null;
     if (!isExternal && !editTarget.employeeId) { setFormError('Seleccione una persona titular.'); return; }
     if (!editTarget.mealName)   { setFormError('Seleccione el tipo de comida.'); return; }
+    if (!editTarget.reason.trim()) { setFormError('Indique el motivo de la corrección.'); return; }
     if (editTarget.proxyEmployeeId && editTarget.proxyEmployeeId === editTarget.employeeId) {
       setFormError('La persona que retira no puede ser la misma que la titular.');
       return;
@@ -273,6 +267,10 @@ export default function EditManualConsumptions() {
     setFormError('');
     try {
       const body = {
+        businessDate: editTarget.businessDate,
+        consumptionTime: editTarget.consumptionTime || null,
+        contingency: editTarget.contingency,
+        reason: editTarget.reason.trim(),
         // El titular de un consumo externo es fijo: no se envía employeeId.
         employeeId:            isExternal ? null : editTarget.employeeId,
         restaurantId:          editTarget.restaurantId,
@@ -283,7 +281,7 @@ export default function EditManualConsumptions() {
       await api.put(`/manual-consumptions/${editTarget.id}`, body);
       showToast('Consumo actualizado', 'ok');
       closeEdit();
-      fetchList();
+      fetchList(page);
     } catch (err) {
       setFormError(err.response?.data?.message || 'Error al actualizar');
     } finally { setSaving(false); }
@@ -301,12 +299,6 @@ export default function EditManualConsumptions() {
       return;
     }
     
-    let avail = null;
-    try {
-      const { data } = await api.get(`/manual-consumptions/availability/${emp.id}`, { params: { date: editTarget?.businessDate } });
-      avail = data;
-    } catch (e) {}
-
     setFormError('');
     setTitularTerm(`${emp.fullName} · ${emp.identityCard}`);
     setEditTarget(t => ({
@@ -314,7 +306,8 @@ export default function EditManualConsumptions() {
       employeeId:    emp.id,
       mealName:      null, // force re-selection of meal
       _titularLabel: `${emp.fullName} · ${emp.identityCard}`,
-      _avail: avail || { allowsLunch: emp.allowsLunch, allowsSnack: emp.allowsSnack ?? emp.effectiveSnack, hadAlmuerzo: false, hadMerienda: false }
+      _avail: null,
+      identityCard: emp.identityCard,
     }));
     setShowTitular(false);
   };
@@ -355,15 +348,30 @@ export default function EditManualConsumptions() {
     setEditTarget(t => t ? { ...t, proxyEmployeeId: null, proxyExternalPersonId: null } : t);
   };
 
-  const todayStr = new Date(`${date}T00:00:00`).toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  useEffect(() => {
+    const employeeId = editTarget?.employeeId;
+    const selectedDate = editTarget?.businessDate;
+    const excludedId = editTarget?.id;
+    if (!employeeId || !selectedDate) return;
+    let active = true;
+    setEditTarget((t) => t ? { ...t, _avail: null } : t);
+    api.get(`/manual-consumptions/availability/${employeeId}`, {
+      params: { date: selectedDate, excludedId },
+    }).then(({ data }) => {
+      if (active) setEditTarget((t) => t ? { ...t, _avail: data } : t);
+    }).catch((err) => {
+      if (active) setFormError(err.response?.data?.message || 'No se pudo consultar la disponibilidad para esa fecha.');
+    });
+    return () => { active = false; };
+  }, [editTarget?.employeeId, editTarget?.businessDate, editTarget?.id]);
 
   /* ───── render ───── */
   return (
     <div>
       <div className="topbar">
         <div>
-          <h2 style={{ margin: 0 }}>Editar Consumos</h2>
-          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>{todayStr}</div>
+          <h2 style={{ margin: 0 }}>Editar consumos</h2>
+          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 2, fontWeight: 500 }}>{date}</div>
         </div>
       </div>
 
@@ -375,13 +383,10 @@ export default function EditManualConsumptions() {
       {/* ── filtros ── */}
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="row" style={{ flexWrap: 'wrap', gap: 8 }}>
-          <input
-            type="date"
-            value={date}
-            max={maxDate}
-            onChange={e => setDate(e.target.value || maxDate)}
-            title="Fecha de los consumos"
-          />
+          <div className="field">
+            <label>Fecha del consumo</label>
+            <input type="date" required value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
           <input
             placeholder="Buscar persona o cédula..."
             value={search}
@@ -506,7 +511,10 @@ export default function EditManualConsumptions() {
             </div>
 
             {/* ── Titular ── */}
-            {editTarget.method === 'EXTERNAL' ? (
+            <ConsumptionDateFields editing value={editTarget} disabled={saving}
+              onChange={(next) => setEditTarget({ ...next, _avail: next.businessDate !== editTarget.businessDate ? null : next._avail })} />
+            <p className="muted">Ingresado en el sistema: {new Date(editTarget.createdAt).toLocaleString('es-EC', { timeZone: 'America/Guayaquil' })}</p>
+            {editTarget.externalPersonId != null ? (
               <div className="field">
                 <label>Titular (persona externa)</label>
                 <input
@@ -577,7 +585,7 @@ export default function EditManualConsumptions() {
                   // Consumo EXTERNO: la persona externa tiene ambos platos
                   // permitidos y no hay disponibilidad que consultar (el backend
                   // sigue validando el duplicado del día).
-                  if (editTarget.method === 'EXTERNAL') {
+                  if (editTarget.externalPersonId != null) {
                     return (
                       <div className="row" style={{ gap: 16 }}>
                         {MEALS.map(m => (
@@ -613,7 +621,7 @@ export default function EditManualConsumptions() {
 
                   const consumedMeals = allowedMeals.filter(m => {
                     const consumed = m.value === 'Almuerzo' ? avail.hadAlmuerzo : avail.hadMerienda;
-                    return consumed && editTarget._originalMealName !== m.value;
+                    return consumed;
                   });
 
                   return (
@@ -622,7 +630,7 @@ export default function EditManualConsumptions() {
                         {allowedMeals.map(m => {
                           const consumed = m.value === 'Almuerzo' ? avail.hadAlmuerzo : avail.hadMerienda;
                           // Permitir si la comida es la que ya tiene guardada ESTE registro
-                          const isDisabled = consumed && editTarget._originalMealName !== m.value;
+                          const isDisabled = consumed;
                           
                           return (
                             <label
@@ -637,14 +645,14 @@ export default function EditManualConsumptions() {
                                   if (e.target.checked) setEditTarget({ ...editTarget, mealName: m.value });
                                 }}
                               />
-                              {m.label}{isDisabled ? ' (ya registrada hoy)' : ''}
+                              {m.label}{isDisabled ? ' (ya registrada en esta fecha)' : ''}
                             </label>
                           );
                         })}
                       </div>
                       {consumedMeals.length > 0 && (
                         <div style={{ color: 'var(--err, #ef4444)', fontSize: 13, marginTop: 6, fontWeight: 500 }}>
-                          El titular ya consumió su {consumedMeals.map(m => m.label).join(' y ')} hoy.
+                          El titular ya tiene {consumedMeals.map(m => m.label).join(' y ')} registrado el {editTarget.businessDate}.
                         </div>
                       )}
                     </div>

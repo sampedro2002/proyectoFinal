@@ -89,7 +89,7 @@ public class ExportService {
              "Tipo", "Descripción"};
     private static final String[] EMP_HEADERS =
             {"Cédula", "Nombre", "Almuerzo", "Merienda", "Estado",
-             "N.º Huellas", "Observación"};
+             "N.º Huellas", "Observación", "Tipo de personal"};
 
     public byte[] toCsv(List<ConsumptionRow> rows, String title) {
         StringBuilder sb = new StringBuilder();
@@ -685,7 +685,8 @@ public class ExportService {
               .append(r.effectiveSnack() ? "Sí" : "No").append(';')
               .append(csv(r.status())).append(';')
               .append(r.fingerprintCount()).append(';')
-              .append(csv(r.observation())).append('\n');
+              .append(csv(r.observation())).append(';')
+              .append(csv(r.personnelType().getLabel())).append('\n');
         }
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -714,6 +715,7 @@ public class ExportService {
                 row.createCell(4).setCellValue(safe(r.status()));
                 row.createCell(5).setCellValue(r.fingerprintCount());
                 row.createCell(6).setCellValue(safe(r.observation()));
+                row.createCell(7).setCellValue(r.personnelType().getLabel());
             }
             for (int i = 0; i < EMP_HEADERS.length; i++) sheet.autoSizeColumn(i);
             wb.write(out);

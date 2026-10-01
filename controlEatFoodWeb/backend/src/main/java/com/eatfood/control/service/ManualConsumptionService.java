@@ -8,7 +8,6 @@ import com.eatfood.control.repository.ConsumptionRepository;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.ExternalPersonRepository;
 import com.eatfood.control.repository.RestaurantRepository;
-import com.eatfood.control.repository.ScheduleRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -17,8 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Slf4j
@@ -30,7 +28,7 @@ public class ManualConsumptionService {
     private final EmployeeRepository employeeRepository;
     private final ExternalPersonRepository externalPersonRepository;
     private final RestaurantRepository restaurantRepository;
-    private final ScheduleRepository scheduleRepository;
+    private final ManualConsumptionPolicy manualPolicy;
     private final AuditService auditService;
 
     /**
@@ -55,13 +53,10 @@ public class ManualConsumptionService {
     }
 
     @Transactional(readOnly = true)
-    public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled, LocalDate date, Pageable pageable) {
-        LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
-        if (date != null && date.isAfter(today)) {
-            throw new BusinessException("FUTURE_DATE", "No se puede consultar una fecha futura.");
-        }
-        LocalDate day = date != null ? date : today;
-        return consumptionRepository.findConsumptionsForEdit(search, restaurantId, cancelled, day, pageable)
+    public Page<ConsumptionDetailResponse> listManual(String search, Long restaurantId, Boolean cancelled,
+                                                       LocalDate date, Pageable pageable) {
+        LocalDate selected = date != null ? date : LocalDate.now(ManualConsumptionPolicy.ZONE);
+        return consumptionRepository.findConsumptionsForEdit(search, restaurantId, cancelled, selected, pageable)
                 .map(this::toDetail);
     }
 
@@ -74,21 +69,16 @@ public class ManualConsumptionService {
 
     @Transactional
     public ConsumptionDetailResponse update(Long id, UpdateManualConsumptionRequest req) {
-        Consumption c = consumptionRepository.findById(id)
+        Consumption c = consumptionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
-
-        // El horario solo rige para consumos de hoy; los de días anteriores (registrados
-        // desde papel tras un corte) se pueden corregir a cualquier hora.
-        LocalDate today = LocalDate.now(ZoneId.of("America/Guayaquil"));
-        if (c.getBusinessDate().equals(today)) {
-            Schedule sch = scheduleRepository.findFirstByOrderByIdAsc().orElse(null);
-            if (sch == null || !sch.isActive() || !sch.contains(LocalTime.now(ZoneId.of("America/Guayaquil")))) {
-                throw new BusinessException("OUT_OF_SCHEDULE", "Fuera del horario permitido para editar registros.");
-            }
-        }
 
         if (c.getMethod() != Method.MANUAL && c.getMethod() != Method.EXTERNAL) {
             throw new BusinessException("NOT_MANUAL", "Solo se pueden editar consumos manuales o externos.");
+        }
+        OffsetDateTime when = manualPolicy.resolve(req.businessDate(), req.consumptionTime(),
+                req.contingency(), req.reason(), c);
+        if (req.proxyEmployeeId() != null && req.proxyExternalPersonId() != null) {
+            throw new BusinessException("INVALID_PROXY", "Seleccione una sola persona que retira.");
         }
 
         // El titular de un consumo EXTERNO es una persona externa y es FIJO: no se
@@ -117,7 +107,7 @@ public class ManualConsumptionService {
             }
         }
 
-        String before = snapshot(c);
+        String before = manualPolicy.snapshot(c);
 
         if (req.restaurantId() != null) {
             Restaurant r = restaurantRepository.findById(req.restaurantId())
@@ -151,7 +141,7 @@ public class ManualConsumptionService {
         boolean titularChanged = req.employeeId() != null && c.getEmployee() != null
                 && !req.employeeId().equals(c.getEmployee().getId());
         if (titularChanged) {
-            Employee newTitular = employeeRepository.findById(req.employeeId())
+            Employee newTitular = employeeRepository.findByIdForUpdate(req.employeeId())
                     .orElseThrow(() -> new NotFoundException("Empleado no encontrado: " + req.employeeId()));
             if (newTitular.getStatus() != com.eatfood.control.domain.EmployeeStatus.ACTIVE) {
                 throw new BusinessException("INACTIVE_EMPLOYEE", "El nuevo empleado titular seleccionado está inactivo.");
@@ -164,13 +154,6 @@ public class ManualConsumptionService {
                         newTitular.getFullName() + " no tiene permitido " + mealToCheck);
             }
 
-            List<String> consumedToday = consumptionRepository
-                    .findMealNamesByEmployeeIdAndBusinessDate(newTitular.getId(), c.getBusinessDate());
-            if (consumedToday.contains(mealToCheck)) {
-                throw new BusinessException("DUPLICATE",
-                        newTitular.getFullName() + " ya tiene " + mealToCheck + " registrado hoy");
-            }
-
             c.setEmployee(newTitular);
             String proxyName = c.proxyName() != null ? c.proxyName() : "Admin";
             c.setObservation(proxyName + " retira de " + newTitular.getFullName());
@@ -181,7 +164,6 @@ public class ManualConsumptionService {
             // la comida nueva. Si solo cambia la comida (mismo titular), hay que validar
             // aquí para no crear un plato no permitido ni un duplicado del día.
             if (!titularChanged) {
-                List<String> consumedToday;
                 if (c.getEmployee() != null) {
                     Employee titular = c.getEmployee();
                     boolean allowed = "Merienda".equals(req.mealName()) ? titular.effectiveSnack() : titular.isAllowsLunch();
@@ -189,18 +171,6 @@ public class ManualConsumptionService {
                         throw new BusinessException("NOT_ALLOWED",
                                 titular.getFullName() + " no tiene permitido " + req.mealName());
                     }
-                    consumedToday = consumptionRepository
-                            .findMealNamesByEmployeeIdAndBusinessDate(titular.getId(), c.getBusinessDate());
-                } else {
-                    // Persona externa: ambos platos están permitidos; solo se valida
-                    // que no repita el mismo plato en el día.
-                    consumedToday = consumptionRepository
-                            .findMealNamesByExternalPersonIdAndBusinessDate(
-                                    c.getExternalPerson().getId(), c.getBusinessDate());
-                }
-                if (consumedToday.contains(req.mealName())) {
-                    throw new BusinessException("DUPLICATE",
-                            c.titularName() + " ya tiene " + req.mealName() + " registrado hoy");
                 }
             }
             c.setMealName(req.mealName());
@@ -210,15 +180,22 @@ public class ManualConsumptionService {
             c.setObservation(req.observation());
         }
 
+        if (!"Almuerzo".equals(c.getMealName()) && !"Merienda".equals(c.getMealName())) {
+            throw new BusinessException("INVALID_MEAL", "Seleccione Almuerzo o Merienda.");
+        }
+        lockTitular(c);
+        if (!c.isCancelled()) validateDuplicate(c, when.toLocalDate());
+        c.setBusinessDate(when.toLocalDate());
+        c.setConsumedAt(when);
         c = consumptionRepository.save(c);
-        auditService.record("Consumption", String.valueOf(id), "UPDATE", before, snapshot(c));
+        manualPolicy.audit(c, "UPDATE", before, req.contingency(), req.reason());
         log.info("[MANUAL-EDIT] ✓ consumoId={} actualizado", id);
         return toDetail(c);
     }
 
     @Transactional
     public void cancel(Long id) {
-        Consumption c = consumptionRepository.findById(id)
+        Consumption c = consumptionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
         c.setCancelled(true);
         consumptionRepository.save(c);
@@ -228,12 +205,33 @@ public class ManualConsumptionService {
 
     @Transactional
     public void uncancel(Long id) {
-        Consumption c = consumptionRepository.findById(id)
+        Consumption c = consumptionRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new NotFoundException("Consumo no encontrado: " + id));
+        if (!c.isCancelled()) return;
+        lockTitular(c);
+        validateDuplicate(c, c.getBusinessDate());
         c.setCancelled(false);
         consumptionRepository.save(c);
         auditService.record("Consumption", String.valueOf(id), "UNCANCEL", null, "cancelado=false");
         log.info("[MANUAL-UNCANCEL] ✓ consumoId={} reactivado", id);
+    }
+
+    private void lockTitular(Consumption c) {
+        if (c.getEmployee() != null) {
+            employeeRepository.findByIdForUpdate(c.getEmployee().getId()).orElseThrow();
+        } else {
+            externalPersonRepository.findByIdForUpdate(c.getExternalPerson().getId()).orElseThrow();
+        }
+    }
+
+    private void validateDuplicate(Consumption c, LocalDate date) {
+        List<String> meals = consumptionRepository.findActiveMeals(
+                c.getEmployee() != null ? c.getEmployee().getId() : null,
+                c.getExternalPerson() != null ? c.getExternalPerson().getId() : null, date, c.getId());
+        if (meals.contains(c.getMealName())) {
+            throw new BusinessException("DUPLICATE", c.titularName() + " ya tiene "
+                    + c.getMealName() + " registrado el " + date + ".");
+        }
     }
 
     private ConsumptionDetailResponse toDetail(Consumption c) {
@@ -258,14 +256,4 @@ public class ManualConsumptionService {
                 c.getCreatedAt() != null ? c.getCreatedAt().toString() : null);
     }
 
-    private String snapshot(Consumption c) {
-        String titular = c.getEmployee() != null
-                ? "emp:" + c.getEmployee().getId()
-                : "ext:" + (c.getExternalPerson() != null ? c.getExternalPerson().getId() : "?");
-        String proxy = c.getProxyEmployee() != null
-                ? "emp:" + c.getProxyEmployee().getId()
-                : (c.getProxyExternalPerson() != null ? "ext:" + c.getProxyExternalPerson().getId() : null);
-        return String.format("titular=%s|proxy=%s|rest=%s|comida=%s|cancel=%s",
-                titular, proxy, c.getRestaurant().getId(), c.getMealName(), c.isCancelled());
-    }
 }

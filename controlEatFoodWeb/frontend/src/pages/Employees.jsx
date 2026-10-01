@@ -14,7 +14,12 @@ const FINGERS = [
 
 const empty = {
   identityCard: '', isPassport: false, fullName: '', observation: '',
-  status: 'ACTIVE', allowsLunch: true, allowsSnack: false,
+  status: 'ACTIVE', allowsLunch: true, allowsSnack: false, personnelType: 'NOMINA',
+};
+
+const PERSONNEL_TYPES = {
+  NOMINA: 'Empleado de nómina',
+  SERVICIOS_PROFESIONALES: 'Servicios profesionales',
 };
 
 const emptyExt = {
@@ -272,6 +277,7 @@ export default function Employees() {
     setFingerIndex(0); setTab('data');
     setForm({
       ...emp,
+      personnelType: emp.personnelType ?? 'NOMINA',
       isPassport: emp.identityCard && !isValidCedulaEC(emp.identityCard),
       observation:   emp.observation ?? '',
       allowsLunch:   emp.allowsLunch ?? true,
@@ -316,6 +322,7 @@ export default function Employees() {
       status: form.status,
       allowsLunch: form.allowsLunch,
       allowsSnack: form.allowsSnack,
+      personnelType: form.personnelType,
     };
     try {
       if (form.id) {
@@ -492,7 +499,9 @@ export default function Employees() {
                 {filtered.map(e => (
                   <tr key={e.id}>
                     <td>{e.identityCard}</td>
-                    <td>{e.fullName}</td>
+                    <td>{e.fullName}<div className="muted" style={{ fontSize: 12 }}>
+                      {PERSONNEL_TYPES[e.personnelType ?? 'NOMINA'] || e.personnelType}
+                    </div></td>
                     <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
                     <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
                     <td>{e.fingerprintCount}/3</td>
@@ -615,6 +624,15 @@ export default function Employees() {
                   <label>Nombres</label>
                   <input value={form.fullName} required
                          onChange={e => setForm({ ...form, fullName: e.target.value })} />
+                </div>
+                <div className="field">
+                  <label>Tipo de personal</label>
+                  <select required value={form.personnelType}
+                    onChange={e => setForm({ ...form, personnelType: e.target.value })}>
+                    {Object.entries(PERSONNEL_TYPES).map(([value, label]) => (
+                      <option key={value} value={value}>{label}</option>
+                    ))}
+                  </select>
                 </div>
                 <div className="row">
                   <label>

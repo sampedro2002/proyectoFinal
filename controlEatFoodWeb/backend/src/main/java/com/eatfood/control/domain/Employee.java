@@ -26,6 +26,12 @@ public class Employee extends Auditable {
     @Builder.Default
     private EmployeeStatus status = EmployeeStatus.ACTIVE;
 
+    @Enumerated(EnumType.STRING)
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.VARCHAR)
+    @Column(name = "tipo_personal", nullable = false, length = 30)
+    @Builder.Default
+    private PersonnelType personnelType = PersonnelType.NOMINA;
+
     @Column(name = "permite_almuerzo", nullable = false)
     @Builder.Default
     private boolean allowsLunch = true;
