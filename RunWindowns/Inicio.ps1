@@ -1847,6 +1847,23 @@ function ConvertFrom-NssmOutput {
     return ((($Raw | Out-String) -replace "`0", '').Trim())
 }
 
+function Get-ServiceAppParameters {
+    # Argumentos de java.exe para el servicio. Las rutas van entre comillas
+    # porque pueden tener espacios (ej. "SEMESTRE 6").
+    # Windows PowerShell 5.1 (el que lanza Inicio.bat) BORRA las comillas
+    # internas al pasar un argumento a un .exe nativo: NSSM guardaba
+    # -jar C:\...\SEMESTRE 6\...jar sin comillas y java fallaba con
+    # "Unable to access jarfile C:\...\SEMESTRE" (servicio en SERVICE_PAUSED).
+    # Hay que escaparlas como \" para que lleguen intactas. PowerShell 7.3+ ya
+    # las escapa solo (salvo en modo Legacy), y ahi escaparlas otra vez las rompe.
+    param([string]$JarPath, [string]$YmlPath)
+    $q = '"'
+    $legacyArgs = $PSVersionTable.PSVersion -lt [version]'7.3' -or
+        (Get-Variable PSNativeCommandArgumentPassing -ValueOnly -ErrorAction SilentlyContinue) -eq 'Legacy'
+    if ($legacyArgs) { $q = '\"' }
+    return "-jar $q$JarPath$q --spring.profiles.active=prod --spring.config.additional-location=file:$q$YmlPath$q"
+}
+
 function Ensure-Nssm {
     # nssm.cc es un unico servidor y responde intermitente (503 "Service Unavailable"
     # observado en pruebas reales, exitoso al reintentar segundos despues). Se reintenta
@@ -1979,7 +1996,7 @@ function Step-ConfigureService {
     $javaExe = $javaCmd.Source
     $jarPath = $jarFile.FullName
 
-    & $NssmExe install $ServiceName $javaExe "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
+    & $NssmExe install $ServiceName $javaExe (Get-ServiceAppParameters $jarPath $ProdYmlPath) | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log "Error al registrar servicio." 'ERROR'; return $false }
 
     # Fijar la cuenta del servicio. NSSM con LocalSystem no lleva password;
@@ -2181,7 +2198,7 @@ function Update-App {
         $jarFile = Get-ChildItem (Join-Path $BackendDir "target") -Filter "*.jar" | Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1
         if ($jarFile) {
             $jarPath = $jarFile.FullName
-            & $NssmExe set $ServiceName AppParameters "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
+            & $NssmExe set $ServiceName AppParameters (Get-ServiceAppParameters $jarPath $ProdYmlPath) | Out-Null
         }
         & $NssmExe start $ServiceName 2>&1 | Out-Null
         Start-Sleep -Seconds 3
