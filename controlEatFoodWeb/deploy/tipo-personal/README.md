@@ -16,8 +16,8 @@ desde el formulario de empleados despues del despliegue. No inferir la categoria
    si produccion tiene otra V3 o versiones posteriores, detenerse y reconciliar el historial.
    No borrar filas del historial ni usar `repair` para ocultar diferencias.
 4. En un horario de baja actividad, ejecutar el archivo completo
-   [V3__tipo_personal.sql](../../backend/src/main/resources/db/migration/V3__tipo_personal.sql).
-   Este es el script de cambio manual y la migracion de Flyway: no hay una segunda copia.
+   [V3__persona_externa_y_tipo_personal.sql](../../backend/src/main/resources/db/migration/V3__persona_externa_y_tipo_personal.sql).
+   Este archivo tambien crea persona_externa; es el script manual y la migracion de Flyway (no hay segunda copia).
    Usar MySQL Workbench o el cliente `mysql`, que interpretan `DELIMITER`.
    Configurar el cliente para detenerse ante errores; no usar `--force`.
 5. Ejecutar [03_verificacion.sql](03_verificacion.sql). Debe haber cero categorias invalidas
