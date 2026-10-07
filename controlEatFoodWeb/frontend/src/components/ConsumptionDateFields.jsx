@@ -12,9 +12,14 @@ export function businessTime(value) {
   }).format(new Date(value));
 }
 
-export default function ConsumptionDateFields({ value, onChange, editing = false, disabled = false }) {
+/**
+ * mode='emergency': registro por contingencia fijo (sin casilla) y motivo siempre
+ * obligatorio. El padre es quien envía contingency=true.
+ */
+export default function ConsumptionDateFields({ value, onChange, editing = false, disabled = false, mode = 'default' }) {
+  const emergency = mode === 'emergency';
   const otherDate = value.businessDate !== businessDateNow();
-  const reasonRequired = editing || otherDate || value.contingency;
+  const reasonRequired = emergency || editing || otherDate || value.contingency;
   const set = (field, next) => onChange({ ...value, [field]: next });
   return (
     <fieldset disabled={disabled} style={{ border: 0, padding: 0, margin: '0 0 16px', minWidth: 0 }}>
@@ -34,11 +39,13 @@ export default function ConsumptionDateFields({ value, onChange, editing = false
       {value.businessDate > businessDateNow() && (
         <p>Se contabilizará como consumo de la fecha futura y no permitirá repetir esa comida ese día.</p>
       )}
-      <label>
-        <input type="checkbox" checked={value.contingency}
-          onChange={(e) => set('contingency', e.target.checked)} />{' '}
-        Registro por contingencia (permite guardar fuera del horario de comidas)
-      </label>
+      {!emergency && (
+        <label>
+          <input type="checkbox" checked={value.contingency}
+            onChange={(e) => set('contingency', e.target.checked)} />{' '}
+          Registro por contingencia (permite guardar fuera del horario de comidas)
+        </label>
+      )}
       <div className="field" style={{ marginTop: 8 }}>
         <label>Motivo {reasonRequired ? '(obligatorio)' : '(opcional)'}</label>
         <textarea value={value.reason} required={reasonRequired} maxLength={500} rows={2}

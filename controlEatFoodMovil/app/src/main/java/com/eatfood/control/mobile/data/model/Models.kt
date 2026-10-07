@@ -38,7 +38,9 @@ data class EmployeeRequest(
     val isPassport: Boolean?,
     val status: String?,
     val allowsLunch: Boolean?,
-    val allowsSnack: Boolean?
+    val allowsSnack: Boolean?,
+    /** NOMINA (por defecto al crear) o SERVICIOS_PROFESIONALES; null conserva al editar. */
+    val personnelType: String? = null
 )
 
 data class EmployeeResponse(
@@ -50,7 +52,9 @@ data class EmployeeResponse(
     val allowsLunch: Boolean,
     val allowsSnack: Boolean,
     val effectiveSnack: Boolean,
-    val fingerprintCount: Int
+    val fingerprintCount: Int,
+    /** NOMINA o SERVICIOS_PROFESIONALES. */
+    val personnelType: String? = null
 )
 
 /** Respuesta paginada de Spring Data (sólo los campos que usamos). */
@@ -203,7 +207,9 @@ data class ConsumptionRow(
     val offline: Boolean,
     val method: String? = null,
     val proxyEmployeeName: String? = null,
-    val cancelled: Boolean = false
+    val cancelled: Boolean = false,
+    /** NOMINA, SERVICIOS_PROFESIONALES o EXTERNO. */
+    val personnelGroup: String? = null
 )
 
 data class DashboardStats(
@@ -243,7 +249,11 @@ data class ApiError(
 )
 
 /**
- * Registro manual "retira por otro" (solo ADMIN). Debe coincidir EXACTAMENTE con el
+ * Registro manual interno (solo ADMIN): retira por otro o retira personalmente.
+ * businessDate: yyyy-MM-dd (Ecuador); consumptionTime: HH:mm[:ss], null = hora actual.
+ * contingency permite registrar fuera de horario; reason (máximo 500) es obligatorio
+ * en contingencia o fechas distintas de hoy. Para esas fechas se requiere hora.
+ * Debe coincidir EXACTAMENTE con el
  * DTO del backend (ScanDtos.ManualScanRequest): quien retira es un empleado
  * (proxyEmployeeId) O una persona externa ya registrada (proxyExternalPersonId) —
  * como mucho uno de los dos; ambos pueden ser nulos cuando cada titular retira su comida.
@@ -253,7 +263,10 @@ data class ManualScanRequest(
     val proxyExternalPersonId: Long? = null,
     val restaurantId: Long,
     val titulars: List<ManualScanItem>,
-    val date: String? = null
+    val businessDate: String? = null,
+    val consumptionTime: String? = null,
+    val contingency: Boolean? = false,
+    val reason: String? = null
 )
 
 /**
@@ -267,6 +280,7 @@ data class ManualScanItem(
     val mealTypeCodes: List<String>
 )
 
+/** Registro externo con los mismos campos de fecha, hora, contingencia y motivo que el interno. */
 data class ExternalScanRequest(
     val identityCard: String,
     val fullName: String,
@@ -279,7 +293,10 @@ data class ExternalScanRequest(
     // (proxyExternalPersonId) — como mucho uno de los dos.
     val proxyEmployeeId: Long? = null,
     val proxyExternalPersonId: Long? = null,
-    val date: String? = null
+    val businessDate: String? = null,
+    val consumptionTime: String? = null,
+    val contingency: Boolean? = false,
+    val reason: String? = null
 )
 
 /**
@@ -322,7 +339,8 @@ data class ManualScanResponse(
 )
 
 /**
- * Disponibilidad de comidas del empleado para el registro manual de hoy.
+ * Disponibilidad de comidas del empleado para la fecha consultada, excluyendo
+ * opcionalmente el consumo editado mediante excludedId.
  * availableCodes trae los códigos aún registrables (permitidos y no consumidos):
  * "BREAKFAST" = Almuerzo, "LUNCH" = Merienda.
  */
@@ -361,6 +379,10 @@ data class ConsumptionDetailResponse(
     val createdAt: String?
 )
 
+/** Corrección manual: reason siempre obligatorio (máximo 500), incluso para hoy.
+ * businessDate usa yyyy-MM-dd y consumptionTime HH:mm[:ss] en America/Guayaquil.
+ * Sin contingency=true se valida el horario de comidas.
+ */
 data class UpdateManualConsumptionRequest(
     val proxyEmployeeId: Long? = null,
     // Al venir no nulo, el apoderado pasa a ser esta persona externa registrada
@@ -369,5 +391,9 @@ data class UpdateManualConsumptionRequest(
     val employeeId: Long? = null,
     val restaurantId: Long? = null,
     val mealName: String? = null,
-    val observation: String? = null
+    val observation: String? = null,
+    val businessDate: String? = null,
+    val consumptionTime: String? = null,
+    val contingency: Boolean? = false,
+    val reason: String? = null
 )

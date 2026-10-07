@@ -104,6 +104,9 @@ public final class ScanDtos {
             Long externalPersonId,
             @NotNull List<String> mealTypeCodes) {}
 
+    /** Cupo diario de quien retira; titularKeys = "E:id" / "X:id" de los titulares ya contados. */
+    public record ProxyUsageResponse(int used, int limit, int remaining, List<String> titularKeys) {}
+
     public record ManualScanResponse(
             String status,
             String message,

@@ -93,14 +93,29 @@ Gestión de plantillas biométricas del SDK ZK9500 para identificación 1:N.
 - `POST /api/schedules` → Guardar/actualizar horario.
 
 ### Registro Manual de Consumos (ADMIN / RRHH)
-El campo/parámetro `date` (`YYYY-MM-DD`) es opcional: por defecto hoy, no puede ser futuro. Con una fecha anterior no se valida el horario (registros llevados en papel).
-- `POST /api/manual-consumptions` → Registro manual. Cuerpo `ManualScanRequest` (`proxyEmployeeId?`, `proxyExternalPersonId?`, `restaurantId`, `titulars`, `date?`). Con ambos proxies nulos, cada titular retira su propia comida ("Retira su comida"); solo se rechaza enviar los dos a la vez.
-- `POST /api/manual-consumptions/external` → Persona externa. Cuerpo `ExternalScanRequest` (incluye `date?`).
-- `GET /api/manual-consumptions/availability/{employeeId}?date=` → Comidas permitidas y aún no consumidas ese día.
+Los cuerpos `ManualScanRequest`, `ExternalScanRequest` y `UpdateManualConsumptionRequest` incluyen estos campos; el antiguo campo JSON `date` se eliminó:
+
+| Campo | Formato y comportamiento |
+| --- | --- |
+| `businessDate` | Fecha `yyyy-MM-dd` en America/Guayaquil. Permite fechas pasadas y futuras. |
+| `consumptionTime` | Hora de Ecuador `HH:mm` o `HH:mm:ss`; null usa la hora actual al crear y conserva la hora al editar. Obligatoria para altas de otra fecha. |
+| `contingency` | Boolean, false por defecto. true permite registrar fuera del horario de comidas. |
+| `reason` | Máximo 500 caracteres. Obligatorio en contingencia, fechas distintas de hoy y SIEMPRE al editar. El móvil envía el motivo sin espacios en los extremos. |
+
+Registro normal: businessDate = hoy en Ecuador, consumptionTime = null, contingency = false, reason = null. Una fecha anterior por sí sola no omite la validación de horario: se requiere contingency = true. La edición móvil solicita hora y motivo, igual que la web.
+
+- `POST /api/manual-consumptions` → Registro manual. Cuerpo `ManualScanRequest` (`proxyEmployeeId?`, `proxyExternalPersonId?`, `restaurantId`, `titulars` y los cuatro campos anteriores). Los proxies son excluyentes. Si quien retira es también titular, se guarda como "Retira personalmente" sin apoderado. El móvil envía la misma persona como proxy y titular en "Retira el mismo"; en emergencia permite sumar su comida propia junto con otros titulares.
+- `POST /api/manual-consumptions/external` → Persona externa. Cuerpo `ExternalScanRequest`: identityCard, fullName, mealTypeCode, restaurantId, observation?, isPassport?, proxies opcionales y los cuatro campos anteriores.
+- `GET /api/manual-consumptions/availability/{employeeId}?date=yyyy-MM-dd&excludedId=id` → Comidas permitidas y aún no consumidas ese día; excludedId excluye del cálculo el consumo editado. `date` sigue siendo un parámetro de consulta.
 - `GET /api/manual-consumptions/proxy-candidates?term=` → Candidatos a "quien retira".
 - `GET /api/manual-consumptions?date=` → Consumos del día (paginado) para edición.
-- `PUT /api/manual-consumptions/{id}` → Editar (también de días anteriores).
+- `PUT /api/manual-consumptions/{id}` → Editar con `UpdateManualConsumptionRequest`: proxies, employeeId?, restaurantId?, mealName?, observation? y los cuatro campos anteriores. Motivo siempre obligatorio.
 - `POST /api/manual-consumptions/{id}/cancel` y `/uncancel` → Cancelar / reactivar.
+
+### Tipo de personal
+`EmployeeRequest` y `EmployeeResponse` incluyen `personnelType`: `NOMINA` ("Empleado de nómina") o `SERVICIOS_PROFESIONALES` ("Servicios profesionales"). Si se omite al crear, usa NOMINA; si se omite al editar, conserva el valor. El móvil lo envía también al cambiar el estado.
+
+`ConsumptionRow` incluye `personnelGroup`: `NOMINA`, `SERVICIOS_PROFESIONALES` o `EXTERNO`.
 
 ---
 

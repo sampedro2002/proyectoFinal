@@ -36,8 +36,14 @@ import com.eatfood.control.mobile.data.prefs.SessionStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
+import com.eatfood.control.mobile.util.ECUADOR_ZONE
+import com.eatfood.control.mobile.util.ecuadorToday
 import java.util.concurrent.atomic.AtomicBoolean
+
+private fun personnelLabel(type: String?): String =
+    if (type == "SERVICIOS_PROFESIONALES") "Servicios profesionales" else "Empleado de nómina"
 
 // ───────────────────────────── Dashboard ─────────────────────────────────────
 @Composable
@@ -51,7 +57,7 @@ fun DashboardScreen() {
     LaunchedEffect(Unit) {
         try {
             stats = api.dashboard()
-            val to = LocalDate.now(); val from = to.minusDays(6)
+            val to = ecuadorToday(); val from = to.minusDays(6)
             trend = runCatching { api.trend(from.toString(), to.toString()) }.getOrDefault(emptyList())
         } catch (e: Exception) { error = e.apiMessage("No se pudo cargar el panel") }
     }
@@ -184,7 +190,7 @@ fun EmployeesScreen(canModify: Boolean) {
                 items(filtered) { e ->
                     RowItem(
                         title = e.fullName,
-                        subtitle = "CI ${e.identityCard} · ${e.fingerprintCount}/3 huellas",
+                        subtitle = "CI ${e.identityCard} · ${e.fingerprintCount}/3 huellas · ${personnelLabel(e.personnelType)}",
                         trailing = e.status ?: "",
                         onClick = { actionsFor = e }
                     )
@@ -215,7 +221,8 @@ fun EmployeesScreen(canModify: Boolean) {
                                     isPassport = !com.eatfood.control.mobile.util.CedulaValidator.isValid(emp.identityCard),
                                     status = "INACTIVE",
                                     allowsLunch = emp.allowsLunch,
-                                    allowsSnack = emp.allowsSnack
+                                    allowsSnack = emp.allowsSnack,
+                                    personnelType = emp.personnelType
                                 ))
                             }
                                 .onSuccess { reload() }
@@ -248,6 +255,8 @@ private fun EmployeeDialog(
     snackbar: SnackbarHostState,
     scope: kotlinx.coroutines.CoroutineScope
 ) {
+    var personnelType by remember { mutableStateOf(existing?.personnelType ?: "NOMINA") }
+    var personnelMenu by remember { mutableStateOf(false) }
     var identity by remember { mutableStateOf(existing?.identityCard ?: "") }
     var fullName by remember { mutableStateOf(existing?.fullName ?: "") }
     var observation by remember { mutableStateOf(existing?.observation ?: "") }
@@ -265,6 +274,15 @@ private fun EmployeeDialog(
                     Switch(isPassport, { isPassport = it })
                     Spacer(Modifier.width(8.dp))
                     Text("Es Pasaporte")
+                }
+                Text("Tipo de personal")
+                Box {
+                    OutlinedButton(onClick = { personnelMenu = true }) { Text(personnelLabel(personnelType)) }
+                    DropdownMenu(personnelMenu, { personnelMenu = false }) {
+                        listOf("NOMINA", "SERVICIOS_PROFESIONALES").forEach { type ->
+                            DropdownMenuItem(text = { Text(personnelLabel(type)) }, onClick = { personnelType = type; personnelMenu = false })
+                        }
+                    }
                 }
                 OutlinedTextField(identity, { identity = it }, label = { Text(if (isPassport) "Pasaporte" else "Cédula") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(fullName, { fullName = it }, label = { Text("Nombre completo") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -298,7 +316,7 @@ private fun EmployeeDialog(
                     observation = observation.trim().ifBlank { null },
                     isPassport = isPassport,
                     status = if (inactive) "INACTIVE" else "ACTIVE",
-                    allowsLunch = allowsLunch, allowsSnack = allowsSnack
+                    allowsLunch = allowsLunch, allowsSnack = allowsSnack, personnelType = personnelType
                 )
                 scope.launch {
                     runCatching {
@@ -920,7 +938,8 @@ private fun ProxyCandidateSearchField(
         val q = term.trim()
         if (q.length < 2) { suggestions = emptyList(); return@LaunchedEffect }
         delay(300)
-        suggestions = runCatching { api.proxyCandidates(q) }.getOrDefault(emptyList())
+        val candidates = runCatching { api.proxyCandidates(q) }.getOrDefault(emptyList())
+        if (isActive && term.trim() == q) suggestions = candidates
     }
     Column(Modifier.fillMaxWidth()) {
         OutlinedTextField(
@@ -956,7 +975,16 @@ fun ExtraMealsScreen() {
     var restaurants by remember { mutableStateOf<List<RestaurantResponse>>(emptyList()) }
     var selectedRestaurantId by remember { mutableStateOf<Long?>(null) }
 
-    // "proxy" = retira por otro; "external" = persona externa (mismas dos pestañas de la web).
+    var internalMode by remember { mutableStateOf<String?>(null) }
+    var emergency by remember { mutableStateOf(false) }
+    var dateFields by remember { mutableStateOf(ConsumptionDateValue()) }
+    var self by remember { mutableStateOf<TitularUi?>(null) }
+    var selfEnabled by remember { mutableStateOf(false) }
+    var availabilityBusy by remember { mutableStateOf(false) }
+    var availabilityVersion by remember { mutableStateOf(0) }
+    var availableDate by remember { mutableStateOf<String?>(null) }
+    var pendingTitulars by remember { mutableStateOf(0) }
+    // "proxy" = registro interno; "external" = persona externa (mismas dos pestañas de la web).
     var mode by remember { mutableStateOf("proxy") }
 
     // Retira por otro: quien retira y cada titular pueden ser un empleado ACTIVO o
@@ -1000,42 +1028,78 @@ fun ExtraMealsScreen() {
         delay(400)
         runCatching { api.externalPersonLookup(card) }
             .onSuccess { r ->
+                if (!isActive || extCard.trim() != card) return@onSuccess
                 if (r.found) {
                     extFound = true; extFoundSource = r.source ?: ""; extName = r.fullName ?: ""
                 } else {
                     extFound = false; extFoundSource = ""
                 }
             }
-            .onFailure { extFound = false; extFoundSource = "" }
-        extLookupLoading = false
+            .onFailure { if (isActive && extCard.trim() == card) { extFound = false; extFoundSource = "" } }
+        if (isActive && extCard.trim() == card) extLookupLoading = false
     }
 
-    // Agrega un titular consultando su disponibilidad y pre-seleccionando lo registrable
-    // (permitido y no consumido hoy). Solo aplica a empleados: una persona externa no
-    // tiene restricción de comidas (igual que al registrarla directamente).
+    suspend fun loadPerson(c: ProxyCandidate, date: String): TitularUi {
+        val av = if (c.type == "EMPLOYEE") api.mealAvailability(c.id, date) else null
+        return TitularUi(c.id, c.type, c.fullName ?: "", c.identityCard ?: "",
+            av?.allowsLunch ?: true, av?.allowsSnack ?: true,
+            av?.hadAlmuerzo ?: false, av?.hadMerienda ?: false,
+            av?.availableCodes ?: listOf("BREAKFAST", "LUNCH"))
+    }
+
+    fun changeDate(next: ConsumptionDateValue) {
+        if (next.businessDate != dateFields.businessDate) {
+            availabilityVersion++
+            availableDate = null
+            availabilityBusy = true
+        }
+        dateFields = next
+        results = emptyList()
+    }
+
+    LaunchedEffect(dateFields.businessDate, proxy, internalMode, emergency, mode, availabilityVersion) {
+        val date = dateFields.businessDate
+        val version = availabilityVersion
+        val selectedProxy = proxy
+        val previousSelf = self
+        val needsSelf = mode == "proxy" && internalMode != null && (internalMode == "self" || emergency)
+        availabilityBusy = true
+        runCatching {
+            for (person in titulars.toList()) {
+                val fresh = loadPerson(ProxyCandidate(person.type, person.id, person.identityCard, person.fullName), date)
+                if (!isActive || version != availabilityVersion || date != dateFields.businessDate) return@LaunchedEffect
+                titulars = titulars.map { current ->
+                    if (current.id == person.id && current.type == person.type)
+                        fresh.copy(mealCodes = current.mealCodes.filter { it in fresh.mealCodes }) else current
+                }
+            }
+            val freshSelf = if (needsSelf && selectedProxy != null) loadPerson(selectedProxy, date) else null
+            if (isActive && version == availabilityVersion && selectedProxy == proxy) {
+                self = if (freshSelf != null && previousSelf != null && previousSelf.id == freshSelf.id && previousSelf.type == freshSelf.type)
+                    freshSelf.copy(mealCodes = previousSelf.mealCodes.filter { it in freshSelf.mealCodes }) else freshSelf
+                availableDate = date
+            }
+        }.onFailure {
+            if (isActive && version == availabilityVersion) {
+                availableDate = null
+                titulars = titulars.map { it.copy(mealCodes = emptyList()) }; self = null
+                snackbar.showSnackbar(it.apiMessage("No se pudo consultar la disponibilidad para esa fecha."))
+            }
+        }
+        if (isActive && version == availabilityVersion) availabilityBusy = false
+    }
+
     suspend fun addTitular(c: ProxyCandidate) {
         if (titulars.any { it.id == c.id && it.type == c.type }) return
-        var allowsLunch = true
-        var allowsSnack = true
-        var hadAlmuerzo = false
-        var hadMerienda = false
-        var codes: List<String>? = null
-        if (c.type == "EMPLOYEE") {
-            val av = runCatching { api.mealAvailability(c.id) }.getOrNull()
-            allowsLunch = av?.allowsLunch ?: false
-            allowsSnack = av?.allowsSnack ?: false
-            hadAlmuerzo = av?.hadAlmuerzo ?: false
-            hadMerienda = av?.hadMerienda ?: false
-            codes = av?.availableCodes
-        }
-        val availableCodes = codes ?: buildList {
-            if (allowsLunch) add("BREAKFAST")
-            if (allowsSnack) add("LUNCH")
-        }
-        titulars = titulars + TitularUi(
-            c.id, c.type, c.fullName ?: "", c.identityCard ?: "",
-            allowsLunch, allowsSnack, hadAlmuerzo, hadMerienda, availableCodes
-        )
+        val date = dateFields.businessDate
+        val version = availabilityVersion
+        pendingTitulars++
+        try { runCatching { loadPerson(c, date) }.onSuccess { person ->
+            if (version == availabilityVersion && date == dateFields.businessDate &&
+                (internalMode == "proxy") && !(proxy?.id == c.id && proxy?.type == c.type) &&
+                titulars.none { it.id == c.id && it.type == c.type }) titulars = titulars + person
+        }.onFailure { snackbar.showSnackbar(it.apiMessage("No se pudo consultar la disponibilidad para esa fecha.")) }
+        } finally { pendingTitulars-- }
         results = emptyList()
     }
 
@@ -1052,329 +1116,427 @@ fun ExtraMealsScreen() {
         ) {
             Text("Registro manual de consumo", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(4.dp))
-            Text(
-                if (mode == "proxy")
-                    "Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque las comidas. Solo se puede registrar dentro del horario configurado; se evita duplicar un plato ya registrado."
-                else
-                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de personas registradas. Solo se puede registrar dentro del horario configurado.",
+            if (mode == "external") Text(
+                    "Registre un consumo para una persona externa (visitante, contratista). No necesita estar en la lista de personas registradas. Active emergencia para registrar fuera del horario.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(Modifier.height(12.dp))
 
-            // Pestañas de modo (equivalen a los botones "Retira por otro" / "Persona externa").
+            // Pestañas de registro interno y persona externa.
             Row(Modifier.fillMaxWidth()) {
                 FilterChip(
                     selected = mode == "proxy",
-                    onClick = { mode = "proxy"; results = emptyList() },
-                    label = { Text("Retira por otro") },
+                    onClick = { mode = "proxy"; internalMode = null; proxy = null; self = null; titulars = emptyList(); emergency = false; changeDate(ConsumptionDateValue()); selfEnabled = false; availableDate = null; availabilityVersion++ },
+                    enabled = !busy,
+                    label = { Text("Registro interno") },
                     modifier = Modifier.weight(1f)
                 )
                 Spacer(Modifier.width(8.dp))
                 FilterChip(
                     selected = mode == "external",
-                    onClick = { mode = "external"; results = emptyList() },
+                    onClick = { mode = "external"; internalMode = null; proxy = null; self = null; titulars = emptyList(); emergency = false; changeDate(ConsumptionDateValue()); selfEnabled = false; availableDate = null; availabilityVersion++ },
+                    enabled = !busy,
                     label = { Text("Persona externa") },
                     modifier = Modifier.weight(1f)
                 )
             }
             Spacer(Modifier.height(16.dp))
 
-            // Restaurante (obligatorio en el backend). Selector con ExposedDropdownMenuBox.
-            Text("Restaurante:", style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.height(4.dp))
-            var catMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(
-                expanded = catMenu,
-                onExpandedChange = { if (restaurants.isNotEmpty()) catMenu = !catMenu },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                OutlinedTextField(
-                    value = restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "Seleccione restaurante",
-                    onValueChange = {},
-                    readOnly = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                    restaurants.forEach { c ->
-                        DropdownMenuItem(
-                            text = { Text(c.name) },
-                            onClick = { selectedRestaurantId = c.id; catMenu = false }
-                        )
-                    }
+            if (mode == "proxy") {
+                Row {
+                    FilterChip(internalMode == "proxy", onClick = { internalMode = if (internalMode == "proxy") null else "proxy"; proxy = null; self = null; titulars = emptyList(); selfEnabled = false; emergency = false; changeDate(ConsumptionDateValue()); availabilityVersion++ }, label = { Text("Retira por otro") }, enabled = !busy)
+                    Spacer(Modifier.width(8.dp))
+                    FilterChip(internalMode == "self", onClick = { internalMode = if (internalMode == "self") null else "self"; proxy = null; self = null; titulars = emptyList(); selfEnabled = false; emergency = false; changeDate(ConsumptionDateValue()); availabilityVersion++ }, label = { Text("Retira el mismo") }, enabled = !busy)
                 }
             }
-            Spacer(Modifier.height(16.dp))
-
             if (mode == "proxy") {
-                // ── Persona que retira (empleado o persona externa) ─────────────────
-                Text("Persona que retira", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(4.dp))
-                if (proxy == null) {
-                    ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { c ->
-                        if (titulars.any { it.id == c.id && it.type == c.type }) {
-                            scope.launch { snackbar.showSnackbar("La persona que retira no puede ser al mismo tiempo titular. Quítala de la lista de titulares primero.") }
-                        } else {
-                            proxy = c
-                        }
-                    }
-                } else {
-                    Card(Modifier.fillMaxWidth()) {
-                        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(proxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
-                                Text("CI ${proxy!!.identityCard ?: "—"}" + if (proxy!!.type == "EXTERNAL") " · Persona externa" else "",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            TextButton(onClick = { proxy = null }) { Text("Cambiar") }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(16.dp))
-                // ── Titulares ──────────────────────────────────────────────────────
-                Text("Agregar titular", style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.height(4.dp))
-                ProxyCandidateSearchField("Busque y seleccione titulares para agregar…", api) { c ->
-                    if (proxy != null && proxy!!.id == c.id && proxy!!.type == c.type) {
-                        scope.launch { snackbar.showSnackbar("El titular no puede ser el mismo que la persona que retira.") }
-                    } else {
-                        scope.launch { addTitular(c) }
-                    }
-                }
-
-                if (titulars.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    Text("Titulares (${titulars.size})", style = MaterialTheme.typography.labelLarge)
-                    titulars.forEach { t ->
-                        Spacer(Modifier.height(8.dp))
-                        Card(Modifier.fillMaxWidth()) {
-                            Column(Modifier.padding(12.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(t.fullName, fontWeight = FontWeight.Bold)
-                                        Text("CI ${t.identityCard}" + if (t.type == "EXTERNAL") " · Persona externa" else "",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    TextButton(onClick = {
-                                        titulars = titulars.filterNot { it.id == t.id && it.type == t.type }
-                                    }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
-                                }
-                                if (!t.allowsLunch && !t.allowsSnack) {
-                                    Text("Sin comidas habilitadas para esta persona.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                } else {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        if (t.allowsLunch) {
-                                            Checkbox(
-                                                checked = t.mealCodes.contains("BREAKFAST"),
-                                                onCheckedChange = { toggleTitularMeal(t.id, t.type, "BREAKFAST", it) },
-                                                enabled = !t.hadAlmuerzo
-                                            )
-                                            Text("Almuerzo" + if (t.hadAlmuerzo) " (ya registrado)" else "")
-                                            Spacer(Modifier.width(16.dp))
-                                        }
-                                        if (t.allowsSnack) {
-                                            Checkbox(
-                                                checked = t.mealCodes.contains("LUNCH"),
-                                                onCheckedChange = { toggleTitularMeal(t.id, t.type, "LUNCH", it) },
-                                                enabled = !t.hadMerienda
-                                            )
-                                            Text("Merienda" + if (t.hadMerienda) " (ya registrada)" else "")
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(20.dp))
-                val canSubmit = !busy && proxy != null && selectedRestaurantId != null &&
-                    titulars.any { it.mealCodes.isNotEmpty() }
-                Button(
-                    enabled = canSubmit,
-                    onClick = {
-                        busy = true
-                        scope.launch {
-                            val items = titulars.filter { it.mealCodes.isNotEmpty() }
-                                .map {
-                                    ManualScanItem(
-                                        employeeId = if (it.type == "EMPLOYEE") it.id else null,
-                                        externalPersonId = if (it.type == "EXTERNAL") it.id else null,
-                                        mealTypeCodes = it.mealCodes
-                                    )
-                                }
-                            val res = mutableListOf<String>()
-                            var ok = false
-                            runCatching {
-                                api.manualScan(
-                                    ManualScanRequest(
-                                        proxyEmployeeId = if (proxy!!.type == "EMPLOYEE") proxy!!.id else null,
-                                        proxyExternalPersonId = if (proxy!!.type == "EXTERNAL") proxy!!.id else null,
-                                        restaurantId = selectedRestaurantId!!,
-                                        titulars = items
-                                    )
-                                )
-                            }.onSuccess { r ->
-                                res.add(r.message ?: r.status)
-                                ok = r.status == "SUCCESS"
-                            }.onFailure { e -> res.add(e.apiMessage("Error")) }
-                            results = res
-                            if (ok) {
-                                snackbar.showSnackbar("Registros guardados con éxito")
-                                proxy = null; titulars = emptyList()
-                            } else {
-                                snackbar.showSnackbar("No se registró todo. Revise el detalle abajo.")
-                            }
-                            busy = false
-                        }
+                Text(
+                    when (internalMode) {
+                        "proxy" -> "Una persona retira comidas a nombre de uno o varios titulares. Para cada titular marque los tipos de comida. Se omiten los platos no permitidos o ya registrados hoy."
+                        "self" -> "El propio empleado (o persona externa registrada) retira su comida. Se muestran solo las comidas que tiene disponibles hoy."
+                        else -> "Seleccione el tipo de registro."
                     },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (mode == "external" || internalMode != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(emergency, { emergency = it; selfEnabled = false; changeDate(ConsumptionDateValue()); availabilityVersion++ }, enabled = !busy)
+                    Text("Registro de emergencia")
+                }
+                if (emergency) {
+                    Text(EMERGENCY_HELP + if (mode == "proxy" && (internalMode == "proxy")) " Quien retira puede registrar también su propia comida." else "")
+                    ConsumptionDateFields(dateFields, ::changeDate, enabled = !busy)
+                }
 
-            } else {
-                // ── Persona externa ────────────────────────────────────────────────
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Switch(isPassport, { isPassport = it })
-                    Spacer(Modifier.width(8.dp))
-                    Text("Es Pasaporte")
-                }
-                OutlinedTextField(
-                    value = extCard,
-                    onValueChange = { extCard = it; extFound = false; extFoundSource = ""; extName = "" },
-                    label = { Text(if (isPassport) "Pasaporte" else "Cédula") },
-                    singleLine = true, modifier = Modifier.fillMaxWidth()
-                )
-                if (extLookupLoading) {
-                    Text("Verificando…", style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = extName,
-                    onValueChange = { if (!extFound) extName = it },
-                    label = { Text("Nombre completo") },
-                    singleLine = true, readOnly = extFound,
+                // Restaurante (obligatorio en el backend). Selector con ExposedDropdownMenuBox.
+                Text("Restaurante:", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(4.dp))
+                var catMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = catMenu,
+                    onExpandedChange = { if (restaurants.isNotEmpty()) catMenu = !catMenu },
                     modifier = Modifier.fillMaxWidth()
-                )
-                if (extFound) {
-                    Text(
-                        "✓ Persona ya registrada" + (if (extFoundSource == "EMPLOYEE") " (empleado)" else " (persona externa)") + ". Nombre autocompletado.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = com.eatfood.control.mobile.ui.theme.Success
+                ) {
+                    OutlinedTextField(
+                        value = restaurants.firstOrNull { it.id == selectedRestaurantId }?.name ?: "Seleccione restaurante",
+                        onValueChange = {},
+                        readOnly = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
+                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                        restaurants.forEach { c ->
+                            DropdownMenuItem(
+                                text = { Text(c.name) },
+                                onClick = { selectedRestaurantId = c.id; catMenu = false }
+                            )
+                        }
+                    }
                 }
-                Spacer(Modifier.height(12.dp))
-                Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(extAlmuerzo, { extAlmuerzo = it })
-                    Text("Almuerzo", Modifier.clickable { extAlmuerzo = !extAlmuerzo })
-                    Spacer(Modifier.width(20.dp))
-                    Checkbox(extMerienda, { extMerienda = it })
-                    Text("Merienda", Modifier.clickable { extMerienda = !extMerienda })
-                }
-                Spacer(Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(extProxyEnabled, {
-                        extProxyEnabled = it
-                        if (!it) extProxy = null
-                    })
-                    Text("Retira otra persona", Modifier.clickable {
-                        extProxyEnabled = !extProxyEnabled
-                        if (!extProxyEnabled) extProxy = null
-                    })
-                }
-                if (extProxyEnabled) {
+                Spacer(Modifier.height(16.dp))
+
+                if (mode == "proxy") {
+                    // ── Persona que retira (empleado o persona externa) ─────────────────
+                    Text(if (internalMode == "self") "Empleado" else "Persona que retira", style = MaterialTheme.typography.labelLarge)
                     Spacer(Modifier.height(4.dp))
-                    if (extProxy == null) {
-                        ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { extProxy = it }
+                    if (proxy == null) {
+                        ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { c ->
+                            if (busy) return@ProxyCandidateSearchField
+                            val wasTitular = titulars.any { it.id == c.id && it.type == c.type }
+                            if (wasTitular && !emergency && (internalMode == "proxy")) {
+                                scope.launch { snackbar.showSnackbar("La persona que retira no puede ser al mismo tiempo titular. Quítala de la lista de titulares primero.") }
+                            } else {
+                                if (wasTitular) titulars = titulars.filterNot { it.id == c.id && it.type == c.type }
+                                proxy = c; self = null; selfEnabled = wasTitular; availabilityVersion++; availableDate = null
+                            }
+                        }
                     } else {
                         Card(Modifier.fillMaxWidth()) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(extProxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
-                                    Text("CI ${extProxy!!.identityCard ?: "—"}" + if (extProxy!!.type == "EXTERNAL") " · Persona externa" else "",
+                                    Text(proxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
+                                    Text("CI ${proxy!!.identityCard ?: "—"}" + if (proxy!!.type == "EXTERNAL") " · Persona externa" else "",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                TextButton(onClick = { extProxy = null }) { Text("Cambiar") }
+                                TextButton(enabled = !busy, onClick = { proxy = null; self = null; availabilityVersion++ }) { Text("Cambiar") }
                             }
                         }
                     }
-                }
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = observation, onValueChange = { observation = it },
-                    label = { Text("Observación (opcional)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(20.dp))
-                val canSubmit = !busy && (extAlmuerzo || extMerienda) &&
-                    extName.isNotBlank() && extCard.isNotBlank() && selectedRestaurantId != null &&
-                    (!extProxyEnabled || extProxy != null)
-                Button(
-                    enabled = canSubmit,
-                    onClick = {
-                        val card = extCard.trim()
-                        if (!isPassport && !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
-                            scope.launch { snackbar.showSnackbar("La cédula no es válida (10 dígitos con verificador).") }
-                            return@Button
-                        }
-                        if (isPassport && com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
-                            scope.launch { snackbar.showSnackbar("Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.") }
-                            return@Button
-                        }
-                        busy = true
-                        scope.launch {
-                            val codes = buildList {
-                                if (extAlmuerzo) add("BREAKFAST")
-                                if (extMerienda) add("LUNCH")
+
+                    Spacer(Modifier.height(16.dp))
+                    // ── Titulares ──────────────────────────────────────────────────────
+                    if (internalMode == "proxy") {
+                        Text("Agregar titular", style = MaterialTheme.typography.labelLarge)
+                        Spacer(Modifier.height(4.dp))
+                        ProxyCandidateSearchField("Busque y seleccione titulares para agregar…", api) { c ->
+                            if (busy) return@ProxyCandidateSearchField
+                            if (proxy != null && proxy!!.id == c.id && proxy!!.type == c.type) {
+                                if (emergency) selfEnabled = true
+                                else scope.launch { snackbar.showSnackbar("El titular no puede ser el mismo que la persona que retira.") }
+                            } else {
+                                scope.launch { addTitular(c) }
                             }
-                            val obs = observation.trim().ifBlank { null }
-                            val res = mutableListOf<String>()
-                            var anyCreated = false
-                            var anyError = false
-                            for (code in codes) {
+                        }
+                    }
+                    if (((internalMode == "self") || emergency) && proxy != null) {
+                        if (self == null) Text("Consultando comidas disponibles…")
+                        self?.let { person ->
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Text(person.fullName, fontWeight = FontWeight.Bold)
+                                    if (internalMode == "proxy") Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(selfEnabled, { selfEnabled = it }, enabled = !busy)
+                                        Text("Registrar también su propia comida")
+                                    }
+                                    if ((internalMode == "self") || selfEnabled) {
+                                        if (!person.allowsLunch && !person.allowsSnack) Text("Sin comidas habilitadas para esta persona.")
+                                        listOf("BREAKFAST" to "Almuerzo", "LUNCH" to "Merienda").forEach { (code, label) ->
+                                            val allowed = if (code == "BREAKFAST") person.allowsLunch else person.allowsSnack
+                                            val had = if (code == "BREAKFAST") person.hadAlmuerzo else person.hadMerienda
+                                            if (allowed) Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Checkbox(had || code in person.mealCodes, { checked ->
+                                                    self = person.copy(mealCodes = if (checked) person.mealCodes + code else person.mealCodes - code)
+                                                }, enabled = !had && !busy && !availabilityBusy)
+                                                Text(label + if (had) " (ya registrada)" else "")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if ((internalMode == "proxy") && titulars.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("Titulares (${titulars.size})", style = MaterialTheme.typography.labelLarge)
+                        titulars.forEach { t ->
+                            Spacer(Modifier.height(8.dp))
+                            Card(Modifier.fillMaxWidth()) {
+                                Column(Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(t.fullName, fontWeight = FontWeight.Bold)
+                                            Text("CI ${t.identityCard}" + if (t.type == "EXTERNAL") " · Persona externa" else "",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                        TextButton(onClick = {
+                                            titulars = titulars.filterNot { it.id == t.id && it.type == t.type }
+                                        }) { Text("Quitar", color = MaterialTheme.colorScheme.error) }
+                                    }
+                                    if (!t.allowsLunch && !t.allowsSnack) {
+                                        Text("Sin comidas habilitadas para esta persona.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (t.allowsLunch) {
+                                                Checkbox(
+                                                    checked = t.hadAlmuerzo || t.mealCodes.contains("BREAKFAST"),
+                                                    onCheckedChange = { toggleTitularMeal(t.id, t.type, "BREAKFAST", it) },
+                                                    enabled = !t.hadAlmuerzo && !busy && !availabilityBusy
+                                                )
+                                                Text("Almuerzo" + if (t.hadAlmuerzo) " (ya registrado)" else "")
+                                                Spacer(Modifier.width(16.dp))
+                                            }
+                                            if (t.allowsSnack) {
+                                                Checkbox(
+                                                    checked = t.hadMerienda || t.mealCodes.contains("LUNCH"),
+                                                    onCheckedChange = { toggleTitularMeal(t.id, t.type, "LUNCH", it) },
+                                                    enabled = !t.hadMerienda && !busy && !availabilityBusy
+                                                )
+                                                Text("Merienda" + if (t.hadMerienda) " (ya registrada)" else "")
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(20.dp))
+                    val selectedPeople = (if (internalMode == "self") emptyList() else titulars) +
+                        listOfNotNull(self.takeIf { (internalMode == "self") || (emergency && selfEnabled) })
+                    val canSubmit = !busy && !availabilityBusy && pendingTitulars == 0 && availableDate == dateFields.businessDate
+                    Button(
+                        enabled = canSubmit,
+                        onClick = {
+                            val error = when {
+                                proxy == null -> if (internalMode == "self") "Seleccione el empleado." else "Seleccione la persona que retira."
+                                selectedRestaurantId == null -> "Seleccione un restaurante."
+                                emergency && dateFields.validationError() != null -> dateFields.validationError()
+                                selectedPeople.isEmpty() -> "Agregue al menos un titular."
+                                selectedPeople.none { it.mealCodes.isNotEmpty() } -> "Seleccione al menos un tipo de comida."
+                                else -> null
+                            }
+                            if (error != null) { scope.launch { snackbar.showSnackbar(error) }; return@Button }
+                            val payload = if (emergency) dateFields.copy(contingency = true) else ConsumptionDateValue()
+                            busy = true
+                            scope.launch {
+                                val items = selectedPeople.filter { it.mealCodes.isNotEmpty() }
+                                    .map {
+                                        ManualScanItem(
+                                            employeeId = if (it.type == "EMPLOYEE") it.id else null,
+                                            externalPersonId = if (it.type == "EXTERNAL") it.id else null,
+                                            mealTypeCodes = it.mealCodes
+                                        )
+                                    }
+                                val res = mutableListOf<String>()
+                                var ok = false
                                 runCatching {
-                                    api.manualScanExternal(
-                                        ExternalScanRequest(
-                                            identityCard = card,
-                                            fullName = extName.trim(),
-                                            mealTypeCode = code,
+                                    api.manualScan(
+                                        ManualScanRequest(
+                                            proxyEmployeeId = if (proxy!!.type == "EMPLOYEE") proxy!!.id else null,
+                                            proxyExternalPersonId = if (proxy!!.type == "EXTERNAL") proxy!!.id else null,
                                             restaurantId = selectedRestaurantId!!,
-                                            observation = obs,
-                                            isPassport = isPassport,
-                                            proxyEmployeeId = if (extProxyEnabled && extProxy?.type == "EMPLOYEE") extProxy?.id else null,
-                                            proxyExternalPersonId = if (extProxyEnabled && extProxy?.type == "EXTERNAL") extProxy?.id else null
+                                            titulars = items,
+                                            businessDate = payload.businessDate,
+                                            consumptionTime = payload.consumptionTime.ifBlank { null },
+                                            contingency = payload.contingency,
+                                            reason = if (payload.contingency) payload.reason.trim() else null
                                         )
                                     )
                                 }.onSuccess { r ->
-                                    res.add("${r.mealName ?: code}: ${r.message ?: r.status}")
-                                    if (r.status == "SUCCESS") anyCreated = true else anyError = true
-                                }.onFailure { e -> res.add("$code: ${e.apiMessage("Error")}"); anyError = true }
+                                    res.add((r.message ?: r.status) + " (Fecha: ${payload.businessDate})")
+                                    ok = r.status == "SUCCESS"
+                                }.onFailure { e -> res.add(e.apiMessage("Error")) }
+                                results = res
+                                if (ok) {
+                                    titulars = emptyList(); self = null; selfEnabled = (internalMode == "self"); availableDate = null; availabilityVersion++
+                                    snackbar.showSnackbar("Registros guardados con éxito (Fecha: ${payload.businessDate})")
+                                } else {
+                                    snackbar.showSnackbar("No se registró todo. Revise el detalle abajo.")
+                                }
+                                busy = false
                             }
-                            results = res
-                            if (anyCreated && !anyError) {
-                                snackbar.showSnackbar("Registros guardados con éxito")
-                                extName = ""; extCard = ""; observation = ""
-                                extAlmuerzo = false; extMerienda = false; isPassport = false
-                                extProxyEnabled = false; extProxy = null
-                            } else if (anyCreated) {
-                                snackbar.showSnackbar("Registrado parcialmente. Revise el detalle abajo.")
-                            } else {
-                                snackbar.showSnackbar("No se registró nada. Revise el detalle abajo.")
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
+
+                } else {
+                    // ── Persona externa ────────────────────────────────────────────────
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Switch(isPassport, { isPassport = it })
+                        Spacer(Modifier.width(8.dp))
+                        Text("Es Pasaporte")
+                    }
+                    OutlinedTextField(
+                        value = extCard,
+                        onValueChange = { extCard = it; extFound = false; extFoundSource = ""; extName = "" },
+                        label = { Text(if (isPassport) "Pasaporte" else "Cédula") },
+                        singleLine = true, modifier = Modifier.fillMaxWidth()
+                    )
+                    if (extLookupLoading) {
+                        Text("Verificando…", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = extName,
+                        onValueChange = { if (!extFound) extName = it },
+                        label = { Text("Nombre completo") },
+                        singleLine = true, readOnly = extFound,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (extFound) {
+                        Text(
+                            "✓ Persona ya registrada" + (if (extFoundSource == "EMPLOYEE") " (empleado)" else " (persona externa)") + ". Nombre autocompletado.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = com.eatfood.control.mobile.ui.theme.Success
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Text("Servicios a registrar:", style = MaterialTheme.typography.labelLarge)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(extAlmuerzo, { extAlmuerzo = it })
+                        Text("Almuerzo", Modifier.clickable { extAlmuerzo = !extAlmuerzo })
+                        Spacer(Modifier.width(20.dp))
+                        Checkbox(extMerienda, { extMerienda = it })
+                        Text("Merienda", Modifier.clickable { extMerienda = !extMerienda })
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(extProxyEnabled, {
+                            extProxyEnabled = it
+                            if (!it) extProxy = null
+                        })
+                        Text("Retira otra persona", Modifier.clickable {
+                            extProxyEnabled = !extProxyEnabled
+                            if (!extProxyEnabled) extProxy = null
+                        })
+                    }
+                    if (extProxyEnabled) {
+                        Spacer(Modifier.height(4.dp))
+                        if (extProxy == null) {
+                            ProxyCandidateSearchField("Busque por nombre o cédula a quien retira…", api) { extProxy = it }
+                        } else {
+                            Card(Modifier.fillMaxWidth()) {
+                                Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(extProxy!!.fullName ?: "", fontWeight = FontWeight.Bold)
+                                        Text("CI ${extProxy!!.identityCard ?: "—"}" + if (extProxy!!.type == "EXTERNAL") " · Persona externa" else "",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    TextButton(onClick = { extProxy = null }) { Text("Cambiar") }
+                                }
                             }
-                            busy = false
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = observation, onValueChange = { observation = it },
+                        label = { Text("Observación (opcional)") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(20.dp))
+                    val canSubmit = !busy
+                    Button(
+                        enabled = canSubmit,
+                        onClick = {
+                            val error = when {
+                                extName.isBlank() -> "Ingrese el nombre."
+                                selectedRestaurantId == null -> "Seleccione un restaurante."
+                                !extAlmuerzo && !extMerienda -> "Seleccione al menos un tipo de comida."
+                                extProxyEnabled && extProxy == null -> "Seleccione la persona que retira."
+                                emergency -> dateFields.validationError()
+                                else -> null
+                            }
+                            if (error != null) { scope.launch { snackbar.showSnackbar(error) }; return@Button }
+                            val payload = if (emergency) dateFields.copy(contingency = true) else ConsumptionDateValue()
+                            val card = extCard.trim()
+                            if (!isPassport && !com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
+                                scope.launch { snackbar.showSnackbar("La cédula ingresada no es una cédula ecuatoriana válida (10 dígitos con verificador).") }
+                                return@Button
+                            }
+                            if (isPassport && com.eatfood.control.mobile.util.CedulaValidator.isValid(card)) {
+                                scope.launch { snackbar.showSnackbar("Ese número corresponde a una cédula ecuatoriana válida; no puede registrarse como pasaporte.") }
+                                return@Button
+                            }
+                            busy = true
+                            scope.launch {
+                                val codes = buildList {
+                                    if (extAlmuerzo) add("BREAKFAST")
+                                    if (extMerienda) add("LUNCH")
+                                }
+                                val obs = observation.trim().ifBlank { null }
+                                val res = mutableListOf<String>()
+                                var anyCreated = false
+                                var anyError = false
+                                for (code in codes) {
+                                    if (anyError) break
+                                    runCatching {
+                                        api.manualScanExternal(
+                                            ExternalScanRequest(
+                                                identityCard = card,
+                                                fullName = extName.trim(),
+                                                mealTypeCode = code,
+                                                restaurantId = selectedRestaurantId!!,
+                                                observation = obs,
+                                                isPassport = isPassport,
+                                                proxyEmployeeId = if (extProxyEnabled && extProxy?.type == "EMPLOYEE") extProxy?.id else null,
+                                                proxyExternalPersonId = if (extProxyEnabled && extProxy?.type == "EXTERNAL") extProxy?.id else null,
+                                                businessDate = payload.businessDate,
+                                                consumptionTime = payload.consumptionTime.ifBlank { null },
+                                                contingency = payload.contingency,
+                                                reason = if (payload.contingency) payload.reason.trim() else null
+                                            )
+                                        )
+                                    }.onSuccess { r ->
+                                        res.add("${r.mealName ?: code}: ${r.message ?: r.status} (Fecha: ${payload.businessDate})")
+                                        if (r.status == "SUCCESS") anyCreated = true else anyError = true
+                                    }.onFailure { e -> res.add("$code: ${e.apiMessage("Error")}"); anyError = true }
+                                }
+                                results = res
+                                if (anyCreated && !anyError) {
+                                    snackbar.showSnackbar("Registros guardados con éxito (Fecha: ${payload.businessDate})")
+                                    extName = ""; extCard = ""; observation = ""
+                                    extAlmuerzo = false; extMerienda = false; isPassport = false
+                                    extProxyEnabled = false; extProxy = null
+                                } else if (anyCreated) {
+                                    snackbar.showSnackbar("Registrado parcialmente. Revise el detalle abajo.")
+                                } else {
+                                    snackbar.showSnackbar("No se registró nada. Revise el detalle abajo.")
+                                }
+                                busy = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (busy) "Guardando…" else "Registrar consumo") }
+                }
+
             }
+
+            TextButton(enabled = !busy, onClick = {
+                internalMode = null; proxy = null; titulars = emptyList(); self = null; selfEnabled = false
+                extName = ""; extCard = ""; isPassport = false; observation = ""
+                extAlmuerzo = false; extMerienda = false; extProxyEnabled = false; extProxy = null
+                extFound = false; extFoundSource = ""
+                emergency = false; changeDate(ConsumptionDateValue()); availableDate = null; availabilityVersion++
+            }) { Text("Limpiar") }
 
             if (results.isNotEmpty()) {
                 Spacer(Modifier.height(16.dp))
@@ -1529,12 +1691,12 @@ fun EditConsumptionsScreen() {
 
     // Modal de edición
     editing?.let { c ->
-        var selRestaurantId by remember { mutableStateOf(c.restaurantId) }
-        var selMeal by remember { mutableStateOf(c.mealName ?: "Almuerzo") }
+        var selRestaurantId by remember(c.id) { mutableStateOf(c.restaurantId) }
+        var selMeal by remember(c.id) { mutableStateOf(c.mealName ?: "Almuerzo") }
         // Quien retira actual (empleado o persona externa ya registrada), reconstruido
         // como ProxyCandidate para reusar el mismo buscador unificado que el registro
         // manual. Solo se puede "retirar por" alguien ya registrado en el sistema.
-        var selProxy by remember {
+        var selProxy by remember(c.id) {
             mutableStateOf(
                 when {
                     c.proxyEmployeeId != null -> ProxyCandidate("EMPLOYEE", c.proxyEmployeeId, null, c.proxyEmployeeName)
@@ -1543,6 +1705,26 @@ fun EditConsumptionsScreen() {
                 }
             )
         }
+        var editDate by remember(c.id) { mutableStateOf(ConsumptionDateValue(
+            businessDate = c.businessDate ?: ecuadorToday().toString(),
+            consumptionTime = c.consumedAt?.let { timestamp ->
+                runCatching { OffsetDateTime.parse(timestamp).atZoneSameInstant(ECUADOR_ZONE).format(DateTimeFormatter.ofPattern("HH:mm:ss")) }.getOrDefault("")
+            } ?: ""
+        )) }
+        var editAvailability by remember(c.id) { mutableStateOf<MealAvailabilityResponse?>(null) }
+        var editAvailabilityLoading by remember(c.id) { mutableStateOf(false) }
+        LaunchedEffect(c.id, editDate.businessDate) {
+            editAvailability = null
+            val employeeId = c.employeeId ?: return@LaunchedEffect
+            val date = editDate.businessDate
+            editAvailabilityLoading = true
+            runCatching { api.mealAvailability(employeeId, date, c.id) }.onSuccess {
+                if (isActive && editDate.businessDate == date) editAvailability = it
+            }.onFailure {
+                if (isActive) snackbar.showSnackbar(it.apiMessage("No se pudo consultar la disponibilidad para esa fecha."))
+            }
+            if (isActive) editAvailabilityLoading = false
+        }
         var saving by remember { mutableStateOf(false) }
         var dialogError by remember { mutableStateOf("") }
 
@@ -1550,7 +1732,15 @@ fun EditConsumptionsScreen() {
             onDismissRequest = { editing = null },
             title = { Text("Editar Consumo #${c.id}") },
             text = {
-                Column {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    ConsumptionDateFields(editDate, {
+                        if (it.businessDate != editDate.businessDate) {
+                            editAvailability = null
+                            editAvailabilityLoading = c.employeeId != null
+                        }
+                        editDate = it
+                        dialogError = ""
+                    }, editing = true, enabled = !saving)
                     OutlinedTextField(
                         value = c.employeeName ?: "",
                         onValueChange = {},
@@ -1585,9 +1775,9 @@ fun EditConsumptionsScreen() {
                     }
                     Spacer(Modifier.height(8.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilterChip(selected = selMeal == "Almuerzo", onClick = { selMeal = "Almuerzo" }, label = { Text("Almuerzo") })
+                        FilterChip(enabled = !saving && !editAvailabilityLoading && (c.employeeId == null || editAvailability?.availableCodes?.contains("BREAKFAST") == true), selected = selMeal == "Almuerzo", onClick = { selMeal = "Almuerzo" }, label = { Text("Almuerzo") })
                         Spacer(Modifier.width(8.dp))
-                        FilterChip(selected = selMeal == "Merienda", onClick = { selMeal = "Merienda" }, label = { Text("Merienda") })
+                        FilterChip(enabled = !saving && !editAvailabilityLoading && (c.employeeId == null || editAvailability?.availableCodes?.contains("LUNCH") == true), selected = selMeal == "Merienda", onClick = { selMeal = "Merienda" }, label = { Text("Merienda") })
                     }
                     Spacer(Modifier.height(12.dp))
                     Text("Retira por (opcional)", style = MaterialTheme.typography.labelLarge)
@@ -1630,6 +1820,14 @@ fun EditConsumptionsScreen() {
             },
             confirmButton = {
                 TextButton(enabled = !saving, onClick = {
+                    val error = editDate.validationError(editing = true)
+                    if (error != null) { dialogError = error; return@TextButton }
+                    if (selProxy?.type == "EMPLOYEE" && selProxy?.id == c.employeeId) {
+                        dialogError = "La persona que retira no puede ser la misma que la titular."; return@TextButton
+                    }
+                    if (c.employeeId != null && (editAvailabilityLoading || editAvailability?.availableCodes?.contains(if (selMeal == "Almuerzo") "BREAKFAST" else "LUNCH") != true)) {
+                        dialogError = "La comida seleccionada no está disponible para esa fecha."; return@TextButton
+                    }
                     saving = true
                     scope.launch {
                         runCatching {
@@ -1637,7 +1835,11 @@ fun EditConsumptionsScreen() {
                                 restaurantId = selRestaurantId,
                                 mealName = selMeal,
                                 proxyEmployeeId = if (selProxy?.type == "EMPLOYEE") selProxy?.id else null,
-                                proxyExternalPersonId = if (selProxy?.type == "EXTERNAL") selProxy?.id else null
+                                proxyExternalPersonId = if (selProxy?.type == "EXTERNAL") selProxy?.id else null,
+                                businessDate = editDate.businessDate,
+                                consumptionTime = editDate.consumptionTime.ifBlank { null },
+                                contingency = editDate.contingency,
+                                reason = editDate.reason.trim()
                             ))
                         }.onSuccess { editing = null; reload(); snackbar.showSnackbar("Actualizado") }
                          .onFailure { snackbar.showSnackbar(it.apiMessage("Error al actualizar")) }

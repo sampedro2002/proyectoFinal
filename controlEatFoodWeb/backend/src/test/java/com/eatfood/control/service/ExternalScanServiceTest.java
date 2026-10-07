@@ -210,9 +210,10 @@ class ExternalScanServiceTest {
     }
 
     @Test
-    void manualScan_personaExternaNoPuedeRetirarDeSiMisma() {
+    void manualScan_mismaCedulaQueQuienRetira_seRegistraComoRetiroPersonal() {
         // Misma cédula en empleado y persona externa (caso borde: externa registrada
-        // antes de ser contratada). Se detecta por cédula y se omite al titular.
+        // antes de ser contratada). Se detecta por cédula y se trata como "retira el
+        // mismo": consumo sin apoderado.
         ExternalPerson misma = registrarExterna(empleado.getIdentityCard(), empleado.getFullName());
 
         ManualScanRequest req = new ManualScanRequest(
@@ -221,9 +222,12 @@ class ExternalScanServiceTest {
 
         ManualScanResponse res = scanService.manualScan(req);
 
-        assertThat(res.status()).isEqualTo("ERROR");
-        assertThat(res.created()).isEqualTo(0);
-        assertThat(consumptionRepository.findAll()).isEmpty();
+        assertThat(res.status()).isEqualTo("SUCCESS");
+        assertThat(res.created()).isEqualTo(1);
+        Consumption c = consumptionRepository.findAll().get(0);
+        assertThat(c.getProxyEmployee()).isNull();
+        assertThat(c.getProxyExternalPerson()).isNull();
+        assertThat(c.getObservation()).isEqualTo("Retira personalmente");
     }
 
     @Test

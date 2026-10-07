@@ -79,7 +79,8 @@ public class ReportService {
                 c.getMethod() != null ? c.getMethod().name() : com.eatfood.control.domain.Method.FINGERPRINT.name(),
                 c.getProxyEmployee() != null ? surnameFirst(c.getProxyEmployee().getFullName()) : c.proxyName(),
                 c.proxyIsExternal(),
-                c.isCancelled());
+                c.isCancelled(),
+                c.titularPersonnelGroup());
     }
 
     /**

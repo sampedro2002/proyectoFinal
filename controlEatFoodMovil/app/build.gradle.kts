@@ -13,8 +13,8 @@ android {
         applicationId = "com.eatfood.control.mobile"
         minSdk = 29          // Android 10.0 (Q)
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         // URL del backend por defecto. 10.0.2.2 = host del PC visto desde el emulador.
         // En un teléfono real se cambia desde la pantalla de Ajustes de la app.

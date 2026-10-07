@@ -46,6 +46,14 @@ public class ManualScanController {
         return manualConsumptionService.proxyCandidates(term);
     }
 
+    @Operation(summary = "Contador diario de titulares atendidos por quien retira (solo ADMIN/RRHH)")
+    @GetMapping("/proxy-usage")
+    public ProxyUsageResponse proxyUsage(@RequestParam(required = false) Long employeeId,
+            @RequestParam(required = false) Long externalPersonId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return scanService.proxyUsage(employeeId, externalPersonId, date);
+    }
+
     @Operation(summary = "Comidas disponibles de un empleado en la fecha indicada; por defecto hoy (solo ADMIN/RRHH)")
     @GetMapping("/availability/{employeeId}")
     public MealAvailabilityResponse availability(@PathVariable Long employeeId,

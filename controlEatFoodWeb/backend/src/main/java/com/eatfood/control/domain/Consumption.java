@@ -103,6 +103,15 @@ public class Consumption {
         return externalPerson != null ? externalPerson.getFullName() : null;
     }
 
+    /**
+     * Grupo del titular para los reportes: su tipo de personal si es empleado
+     * (NOMINA | SERVICIOS_PROFESIONALES) o "EXTERNO" si es persona externa.
+     */
+    public String titularPersonnelGroup() {
+        if (employee == null) return "EXTERNO";
+        return employee.getPersonnelType() != null ? employee.getPersonnelType().name() : PersonnelType.NOMINA.name();
+    }
+
     /** Cédula/pasaporte del titular del consumo, sea empleado o persona externa. */
     public String titularIdentityCard() {
         if (employee != null) return employee.getIdentityCard();

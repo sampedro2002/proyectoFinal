@@ -7,7 +7,7 @@
 
 DROP PROCEDURE IF EXISTS cef_v3_tipo_personal;
 
-DELIMITER $$;
+DELIMITER $$
 CREATE PROCEDURE cef_v3_tipo_personal()
 SQL SECURITY INVOKER
 BEGIN

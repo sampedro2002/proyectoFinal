@@ -34,6 +34,30 @@ public interface ConsumptionRepository extends JpaRepository<Consumption, Long> 
                                  @Param("date") LocalDate date,
                                  @Param("excludedId") Long excludedId);
 
+    /** Ids de empleados titulares atendidos por el apoderado en la fecha, sin anulados. */
+    @Query("""
+            SELECT DISTINCT e.id FROM Consumption c
+            JOIN c.employee e
+            LEFT JOIN c.proxyEmployee pe LEFT JOIN c.proxyExternalPerson px
+            WHERE c.cancelled = FALSE AND c.businessDate = :date
+              AND ((:employeeId IS NOT NULL AND pe.id = :employeeId)
+                   OR (:externalPersonId IS NOT NULL AND px.id = :externalPersonId))
+            """)
+    List<Long> findEmployeeTitularIdsByProxy(@Param("employeeId") Long employeeId,
+            @Param("externalPersonId") Long externalPersonId, @Param("date") LocalDate date);
+
+    /** Ids de personas externas titulares atendidas por el apoderado en la fecha, sin anulados. */
+    @Query("""
+            SELECT DISTINCT e.id FROM Consumption c
+            JOIN c.externalPerson e
+            LEFT JOIN c.proxyEmployee pe LEFT JOIN c.proxyExternalPerson px
+            WHERE c.cancelled = FALSE AND c.businessDate = :date
+              AND ((:employeeId IS NOT NULL AND pe.id = :employeeId)
+                   OR (:externalPersonId IS NOT NULL AND px.id = :externalPersonId))
+            """)
+    List<Long> findExternalTitularIdsByProxy(@Param("employeeId") Long employeeId,
+            @Param("externalPersonId") Long externalPersonId, @Param("date") LocalDate date);
+
     boolean existsByEmployeeIdAndBusinessDate(Long employeeId, LocalDate businessDate);
 
     /** "First" porque un empleado puede tener hasta 2 consumos el mismo día (almuerzo y merienda). */

@@ -36,6 +36,7 @@ class ManualProxyScanServiceTest {
     @Autowired private EmployeeRepository employeeRepository;
     @Autowired private RestaurantRepository restaurantRepository;
     @Autowired private ScheduleRepository scheduleRepository;
+    @Autowired private com.eatfood.control.repository.ExternalPersonRepository externalPersonRepository;
 
     private Employee pepe;
     private Employee juan;
@@ -134,5 +135,166 @@ class ManualProxyScanServiceTest {
         ManualScanResponse res = scanService.manualScan(req);
         assertThat(res.status()).isEqualTo("ERROR");
         assertThat(res.created()).isEqualTo(0);
+    }
+
+    @Test
+    void manualScan_pepeRetiraParaSiMismo_creaConsumoSinApoderado() {
+        ManualScanResponse res = scanService.manualScan(new ManualScanRequest(
+                pepe.getId(), null, restaurant.getId(),
+                List.of(new ManualScanItem(pepe.getId(), null, List.of("BREAKFAST")))));
+
+        assertThat(res.status()).isEqualTo("SUCCESS");
+        assertThat(res.created()).isEqualTo(1);
+        var consumptions = consumptionRepository.findAll();
+        assertThat(consumptions).hasSize(1);
+        Consumption c = consumptions.get(0);
+        assertThat(c.getEmployee().getId()).isEqualTo(pepe.getId());
+        assertThat(c.getMethod()).isEqualTo(Method.MANUAL);
+        assertThat(c.getProxyEmployee()).isNull();
+        assertThat(c.getProxyExternalPerson()).isNull();
+        assertThat(c.getObservation()).isEqualTo("Retira personalmente");
+    }
+
+    @Test
+    void manualScan_pepeRetiraParaSiYParaJuan_soloElDeJuanLlevaApoderado() {
+        ManualScanResponse res = scanService.manualScan(new ManualScanRequest(
+                pepe.getId(), null, restaurant.getId(),
+                List.of(
+                        new ManualScanItem(pepe.getId(), null, List.of("BREAKFAST")),
+                        new ManualScanItem(juan.getId(), null, List.of("BREAKFAST")))));
+
+        assertThat(res.created()).isEqualTo(2);
+        var consumptions = consumptionRepository.findAll();
+        Consumption propio = consumptions.stream()
+                .filter(c -> c.getEmployee().getId().equals(pepe.getId())).findFirst().orElseThrow();
+        Consumption deJuan = consumptions.stream()
+                .filter(c -> c.getEmployee().getId().equals(juan.getId())).findFirst().orElseThrow();
+        assertThat(propio.getProxyEmployee()).isNull();
+        assertThat(propio.getObservation()).isEqualTo("Retira personalmente");
+        assertThat(deJuan.getProxyEmployee().getId()).isEqualTo(pepe.getId());
+        assertThat(deJuan.getObservation()).isEqualTo("Pepe retira de Juan");
+    }
+
+    @Test
+    void manualScan_comidaPropiaYaRegistrada_seOmiteComoDuplicado() {
+        var item = List.of(new ManualScanItem(pepe.getId(), null, List.of("BREAKFAST")));
+        scanService.manualScan(new ManualScanRequest(pepe.getId(), null, restaurant.getId(), item));
+
+        ManualScanResponse res = scanService.manualScan(
+                new ManualScanRequest(pepe.getId(), null, restaurant.getId(), item));
+
+        assertThat(res.status()).isEqualTo("DUPLICATE");
+        assertThat(res.created()).isEqualTo(0);
+        assertThat(consumptionRepository.findAll()).hasSize(1);
+    }
+
+    @Test
+    void apoderadoExternoCuentaTitularesDeAmbosTiposYExcluyeSuComida() {
+        ExternalPerson proxy = externalPersonRepository.save(ExternalPerson.builder()
+                .identityCard("PX-" + UUID.randomUUID().toString().substring(0, 8)).fullName("Apoderado externo").build());
+        ExternalPerson titular = externalPersonRepository.save(ExternalPerson.builder()
+                .identityCard("TX-" + UUID.randomUUID().toString().substring(0, 8)).fullName("Titular externo").build());
+        var items = new java.util.ArrayList<>(titulares(9));
+        items.add(new ManualScanItem(null, titular.getId(), List.of("BREAKFAST", "LUNCH")));
+        items.add(new ManualScanItem(null, proxy.getId(), List.of("BREAKFAST")));
+        var response = scanService.manualScan(new ManualScanRequest(null, proxy.getId(), restaurant.getId(), items));
+        assertThat(response.created()).isEqualTo(12);
+        assertThat(scanService.proxyUsage(null, proxy.getId(), null))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(10, 0);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null).used()).isZero();
+        assertThat(scanService.manualScan(new ManualScanRequest(null, proxy.getId(), restaurant.getId(), titulares(1))).status())
+                .isEqualTo("LIMIT_REACHED");
+    }
+
+    @Test
+    void anularUnaComidaNoLiberaCupoSiQuedaOtraActiva() {
+        registrar(List.of(new ManualScanItem(juan.getId(), null, List.of("BREAKFAST", "LUNCH"))));
+        Consumption cancelled = consumptionRepository.findAll().get(0);
+        cancelled.setCancelled(true);
+        consumptionRepository.saveAndFlush(cancelled);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(1, 9);
+    }
+
+    private List<ManualScanItem> titulares(int count) {
+        return java.util.stream.IntStream.range(0, count).mapToObj(i -> {
+            Employee employee = employeeRepository.save(Employee.builder()
+                    .identityCard("T-" + UUID.randomUUID().toString().substring(0, 8)).fullName("Titular " + i)
+                    .status(EmployeeStatus.ACTIVE).allowsLunch(true).allowsSnack(true).deleted(false).build());
+            return new ManualScanItem(employee.getId(), null, List.of("BREAKFAST"));
+        }).toList();
+    }
+
+    private ManualScanResponse registrar(List<ManualScanItem> items) {
+        return scanService.manualScan(new ManualScanRequest(pepe.getId(), null, restaurant.getId(), items));
+    }
+
+    @Test
+    void diezTitularesYUndecimoEnOtroRegistro() {
+        assertThat(registrar(titulares(10)).created()).isEqualTo(10);
+        var response = registrar(titulares(1));
+        assertThat(response.status()).isEqualTo("LIMIT_REACHED");
+        assertThat(response.created()).isZero();
+        assertThat(response.message()).contains("10 personas", "Pepe");
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(10, 0);
+    }
+
+    @Test
+    void undecimoDentroDelMismoRequestSeOmite() {
+        var response = registrar(titulares(11));
+        assertThat(response.status()).isEqualTo("SUCCESS");
+        assertThat(response.created()).isEqualTo(10);
+        assertThat(response.message()).contains("Omitidos:", "10 personas");
+    }
+
+    @Test
+    void meriendaDeTitularYaContadoNoConsumeOtroCupo() {
+        var items = titulares(10);
+        registrar(items);
+        assertThat(registrar(List.of(new ManualScanItem(items.get(0).employeeId(), null, List.of("LUNCH")))).created()).isEqualTo(1);
+        var usage = scanService.proxyUsage(pepe.getId(), null, null);
+        assertThat(usage.used()).isEqualTo(10);
+        assertThat(usage.titularKeys()).hasSize(10).contains("E:" + items.get(0).employeeId());
+    }
+
+    @Test
+    void anuladosNoCuentanYLiberanCupo() {
+        registrar(titulares(10));
+        Consumption cancelled = consumptionRepository.findAll().get(0);
+        cancelled.setCancelled(true);
+        consumptionRepository.saveAndFlush(cancelled);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(9, 1);
+        assertThat(registrar(titulares(1)).created()).isEqualTo(1);
+    }
+
+    @Test
+    void comidaPropiaNoCuentaInclusoConCupoCompleto() {
+        registrar(titulares(10));
+        assertThat(registrar(List.of(new ManualScanItem(pepe.getId(), null, List.of("BREAKFAST", "LUNCH")))).created()).isEqualTo(2);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null).used()).isEqualTo(10);
+    }
+
+    @Test
+    void contingenciaEnOtraFechaTieneSuContador() {
+        registrar(titulares(10));
+        var date = java.time.LocalDate.now(java.time.ZoneId.of("America/Guayaquil")).minusDays(1);
+        var response = scanService.manualScan(new ManualScanRequest(pepe.getId(), null, restaurant.getId(),
+                titulares(1), date, LocalTime.NOON, true, "Control en papel"));
+        assertThat(response.created()).isEqualTo(1);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, date))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(1, 9);
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null).used()).isEqualTo(10);
+    }
+
+    @Test
+    void contadorVacioYValidacionDeApoderadoUnico() {
+        assertThat(scanService.proxyUsage(pepe.getId(), null, null))
+                .extracting(ProxyUsageResponse::used, ProxyUsageResponse::remaining).containsExactly(0, 10);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> scanService.proxyUsage(null, null, null))
+                .isInstanceOf(com.eatfood.control.exception.BusinessException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> scanService.proxyUsage(pepe.getId(), 1L, null))
+                .isInstanceOf(com.eatfood.control.exception.BusinessException.class);
     }
 }

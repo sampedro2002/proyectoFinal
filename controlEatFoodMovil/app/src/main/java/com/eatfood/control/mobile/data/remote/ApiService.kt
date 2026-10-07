@@ -142,7 +142,8 @@ interface ApiService {
     @GET("manual-consumptions/availability/{employeeId}")
     suspend fun mealAvailability(
         @Path("employeeId") employeeId: Long,
-        @Query("date") date: String? = null
+        @Query("date") date: String? = null,
+        @Query("excludedId") excludedId: Long? = null
     ): MealAvailabilityResponse
 
     /** Candidatos a "quien retira": empleados ACTIVOS y personas externas registradas. */

@@ -250,7 +250,7 @@ Coloca las DLL del SDK en `backend/native/` (ver `backend/native/README.md`).
  - **Gestión de Fallos**: El sistema registra y audita los escaneos fallidos (`FailedScan`) para analizar problemas de lectura o intentos no autorizados.
  - **Registro Manual de Consumos**: El administrador y RRHH pueden administrar consumos manuales completos (crear, listar, editar, cancelar y reactivar) desde el panel web o la app móvil. Se valida el permiso por comida y que no se repita un plato el mismo día; el horario se valida solo para registros de hoy.
  - **Fecha en registros manuales**: el registro (y la edición) admite elegir la fecha del consumo, nunca futura, para cargar lo llevado en papel tras un corte de internet o energía. Con fecha anterior no se valida el horario; la hora guardada es el inicio del horario configurado.
- - **Retira su propia comida**: modo del registro manual sin apoderado (la persona retira su propio plato). `proxyEmployeeId` y `proxyExternalPersonId` pueden ir ambos nulos; solo se rechaza enviar los dos a la vez.
+ - **Registro interno**: formulario único para comida propia, la de hasta 10 personas distintas por día o ambas. Quien retira debe ser un empleado activo o una persona externa registrada (exactamente uno). Su comida propia no consume cupo y se guarda sin apoderado. Registro de emergencia permite elegir fecha/hora con motivo auditado.
  - **Persona Externa**: El administrador puede registrar consumos para personas no empleadas (visitantes, contratistas) sin necesidad de crearlas previamente. El sistema las guarda en la tabla **`persona_externa`**, totalmente separada de `empleado` (el consumo referencia `consumo.persona_externa_id`): aparecen en el feed del kiosk y en reportes, pero jamás en la gestión ni en la exportación de empleados. Si la cédula ya pertenece a un empleado, el registro externo se rechaza. La lista y edición de personas externas se hace desde la misma vista "Añadir persona externa".
  - **Control de Dispositivos**: Gestión centralizada de los puntos de catering y sus dispositivos asociados.
  - **Exportación de Datos**: Generación de reportes detallados exportables (CSV/Excel/PDF) para análisis externo, con escapado anti inyección de fórmulas en CSV. Se incluye la descarga directa del **Reporte Diario de Kiosco** en cualquiera de estos formatos. Las vistas incluyen **filtros avanzados** y las tablas están **ordenadas alfabéticamente** para una mejor lectura y experiencia de usuario.
@@ -292,7 +292,7 @@ Existe una aplicación móvil complementaria en **[`../controlEatFoodMovil`](../
 - Login con JWT (mismas credenciales que el panel web).
 - Dashboard con estadísticas del día.
 - CRUD de empleados, cargos, caterings, horarios y huellas (con lector ZK9500 vía USB OTG).
-- **Almuerzos Extra**: registro manual de consumos para empleados existentes o **personas externas**, con selector de comida, **selector de fecha** y los modos **"Retira por otro"** (proxy) y **"Retira su comida"**.
+- **Almuerzos Extra**: registro manual para empleados o personas externas mediante un formulario único de comida propia y de hasta 10 titulares distintos por día. La opción **Registro de emergencia** permite seleccionar fecha y hora con motivo obligatorio.
 
 📲 **Descarga:** el APK (`Instalar.apk`) está publicado en [GitHub Releases](https://github.com/sampedro2002/proyectoFinal/releases/latest); no hace falta compilar la app para usarla.
 - Reportes y auditoría.
