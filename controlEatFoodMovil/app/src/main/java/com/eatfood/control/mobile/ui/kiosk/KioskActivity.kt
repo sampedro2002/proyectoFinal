@@ -66,6 +66,7 @@ import com.eatfood.control.mobile.data.remote.isConnectivityError
 import com.eatfood.control.mobile.ui.ReaderStatusPill
 import com.eatfood.control.mobile.ui.theme.*
 import com.eatfood.control.mobile.util.ToneFeedback
+import com.eatfood.control.mobile.util.VoiceFeedback
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -227,6 +228,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
     val scanApi = remember(store.serverUrl, resumeTick) { ApiClient.scanApi(context) }
     val dao = remember { AppDatabase.get(context).pendingScanDao() }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { VoiceFeedback.init(context) }
 
     var session by remember { mutableStateOf(initialSession) }
     var online by remember { mutableStateOf(isOnline(context)) }
@@ -395,6 +397,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                 } else {
                     ToneFeedback.error()
                 }
+                result?.let { VoiceFeedback.announce(it) }
                 return
             } catch (e: retrofit2.HttpException) {
                 val parsed = e.apiError()
@@ -412,6 +415,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                 if (e.code() in 400..499) {
                     result = ScanResponse("ERROR", e.apiMessage("Error del servidor"), null, null, null, consumedAt)
                     ToneFeedback.error()
+                    VoiceFeedback.announce(result!!)
                     return
                 }
                 // 5xx u otros errores HTTP → degradar a offline (pueden ser transitorios)
@@ -428,6 +432,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
                 // ciegas, para no esconder bugs reales detrás de un "REGISTRO EN COLA".
                 result = ScanResponse("ERROR", e.apiMessage("No se pudo validar la huella"), null, null, null, consumedAt)
                 ToneFeedback.error()
+                VoiceFeedback.announce(result!!)
                 return
             }
         }
@@ -435,6 +440,7 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
         refreshQueued()
         result = ScanResponse("QUEUED", "REGISTRO EN COLA (OFFLINE)", null, null, null, consumedAt)
         ToneFeedback.success()
+        VoiceFeedback.announce(result!!)
     }
 
     // Feed de consumos del día (equivalente al feedPanel del Kiosk web)

@@ -17,6 +17,13 @@
     <!-- USB OTG para el lector de huellas ZK9500 -->
     <uses-feature android:name="android.hardware.usb.host" android:required="false" />
 
+    <!-- Android 11+: necesario para que TextToSpeech vea el motor de voz instalado. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name=".EatFoodApp"
         android:allowBackup="true"
