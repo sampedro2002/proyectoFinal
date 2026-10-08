@@ -1979,7 +1979,8 @@ function Step-ConfigureService {
     $javaExe = $javaCmd.Source
     $jarPath = $jarFile.FullName
 
-    & $NssmExe install $ServiceName $javaExe "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
+    # PS 5.1 no escapa comillas internas al llamar .exe nativos: usar \" para que NSSM las reciba (ruta con espacios).
+    & $NssmExe install $ServiceName $javaExe "-jar \`"$jarPath\`" --spring.profiles.active=prod --spring.config.additional-location=file:\`"$ProdYmlPath\`"" | Out-Null
     if ($LASTEXITCODE -ne 0) { Write-Log "Error al registrar servicio." 'ERROR'; return $false }
 
     # Fijar la cuenta del servicio. NSSM con LocalSystem no lleva password;
@@ -2181,7 +2182,7 @@ function Update-App {
         $jarFile = Get-ChildItem (Join-Path $BackendDir "target") -Filter "*.jar" | Where-Object { $_.Name -notmatch 'sources|javadoc' } | Select-Object -First 1
         if ($jarFile) {
             $jarPath = $jarFile.FullName
-            & $NssmExe set $ServiceName AppParameters "-jar `"$jarPath`" --spring.profiles.active=prod --spring.config.additional-location=file:`"$ProdYmlPath`"" | Out-Null
+            & $NssmExe set $ServiceName AppParameters "-jar \`"$jarPath\`" --spring.profiles.active=prod --spring.config.additional-location=file:\`"$ProdYmlPath\`"" | Out-Null
         }
         & $NssmExe start $ServiceName 2>&1 | Out-Null
         Start-Sleep -Seconds 3
