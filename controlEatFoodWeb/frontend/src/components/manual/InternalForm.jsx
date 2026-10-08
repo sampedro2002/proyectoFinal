@@ -25,6 +25,7 @@ function RegistrationForm({ meals, restaurants, restaurantId, setRestaurantId, o
   const [titularTerm, setTitularTerm] = useState('');
   const [titulars, setTitulars] = useState([]);
   const [usage, setUsage] = useState(null);
+  const [showOthers, setShowOthers] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -76,7 +77,7 @@ function RegistrationForm({ meals, restaurants, restaurantId, setRestaurantId, o
   function selectProxy(person) {
     selfSeq.current++; usageSeq.current++;
     proxyRef.current = person;
-    setProxy(person); setSelf(null); setUsage(null); clearFeedback();
+    setProxy(person); setSelf(null); setUsage(null); setShowOthers(false); clearFeedback();
     if (!person) return;
     const wasTitular = titulars.some(t => samePerson(t, person));
     if (wasTitular) setTitulars(arr => arr.filter(t => !samePerson(t, person)));
@@ -162,7 +163,7 @@ function RegistrationForm({ meals, restaurants, restaurantId, setRestaurantId, o
 
   return (
     <form onSubmit={submit}>
-      <p className="muted">Busque a la persona que retira. Puede registrar su propia comida, la de hasta 10 personas por día, o ambas. Se omiten los platos no permitidos o ya registrados.</p>
+      <p className="muted">Seleccione a la persona que retira. Si retira para otros, agréguelos abajo.</p>
       <div className="field">
         <label style={checkLabelStyle}><input type="checkbox" checked={emergency} disabled={loading}
           onChange={e => toggleEmergency(e.target.checked)} />Registro de emergencia</label>
@@ -175,19 +176,27 @@ function RegistrationForm({ meals, restaurants, restaurantId, setRestaurantId, o
       {proxy && !self && <p className="muted">Consultando comidas disponibles…</p>}
       {self && <TitularCard titular={self} meals={meals} tag="(quien retira)"
         onToggleMeal={(code, checked) => setSelf(t => toggleMeal(t, code, checked))} />}
-      <EmployeePicker label="Agregar titular (opcional)" term={titularTerm} setTerm={setTitularTerm}
-        suggestions={titularSearch.suggestions} show={titularSearch.show} setShow={titularSearch.setShow}
-        onPick={addTitular} selected={null} placeholder="Busque y seleccione titulares para agregar…"
-        disabled={loading || !proxy || !usage} />
-      {proxy && <div className="field">
-        <label>{usage
-          ? `Titulares (${titulars.length}) · ${usage.used + newCount(titulars)}/${usage.limit} personas ${dateFields.businessDate === businessDateNow() ? 'hoy' : 'el ' + dateFields.businessDate}`
-          : 'Consultando contador de titulares…'}</label>
-        {atLimit && <p className="muted">{LIMIT_MESSAGE}</p>}
-        <div style={{ display: 'grid', gap: 8 }}>{titulars.map(t => <TitularCard key={`${t.type}-${t.id}`} titular={t} meals={meals}
-          onToggleMeal={(code, checked) => setTitulars(arr => arr.map(p => samePerson(p, t) ? toggleMeal(p, code, checked) : p))}
-          onRemove={() => setTitulars(arr => arr.filter(p => !samePerson(p, t)))} />)}</div>
+      {self && titulars.length > 0 && !self.mealCodes.length &&
+        <p className="muted">Marque su comida si quien retira también la consume.</p>}
+      {proxy && !showOthers && !titulars.length && <div className="field">
+        <button type="button" className="ghost" onClick={() => setShowOthers(true)} disabled={loading || !usage}>
+          + Retira también para otras personas</button>
       </div>}
+      {proxy && (showOthers || titulars.length > 0) && <>
+        <EmployeePicker label="Agregar titular" term={titularTerm} setTerm={setTitularTerm}
+          suggestions={titularSearch.suggestions} show={titularSearch.show} setShow={titularSearch.setShow}
+          onPick={addTitular} selected={null} placeholder="Busque y seleccione titulares para agregar…"
+          disabled={loading || !usage} />
+        <div className="field">
+          <label>{usage
+            ? `Titulares (${titulars.length}) · ${usage.used + newCount(titulars)}/${usage.limit} personas ${dateFields.businessDate === businessDateNow() ? 'hoy' : 'el ' + dateFields.businessDate}`
+            : 'Consultando contador de titulares…'}</label>
+          {atLimit && <p className="muted">{LIMIT_MESSAGE}</p>}
+          <div style={{ display: 'grid', gap: 8 }}>{titulars.map(t => <TitularCard key={`${t.type}-${t.id}`} titular={t} meals={meals}
+            onToggleMeal={(code, checked) => setTitulars(arr => arr.map(p => samePerson(p, t) ? toggleMeal(p, code, checked) : p))}
+            onRemove={() => setTitulars(arr => arr.filter(p => !samePerson(p, t)))} />)}</div>
+        </div>
+      </>}
       <RestaurantSelect restaurants={restaurants} value={restaurantId} onChange={setRestaurantId} />
       {error && <p className="error-text">{error}</p>}<ResultBox result={result} />
       <div className="row" style={{ marginTop: 12 }}>

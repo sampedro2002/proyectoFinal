@@ -247,10 +247,22 @@ private fun KioskPanel(initialSession: DeviceConnectResponse, onDisconnect: () -
 
     suspend fun refreshQueued() { queued = runCatching { dao.count() }.getOrDefault(0) }
 
+    // Ids ya vistos en el feed: los registros manuales que aparezcan después se anuncian por voz.
+    val seenFeedIds = remember { mutableSetOf<Long>() }
+    val feedLoaded = remember { booleanArrayOf(false) }
+
     suspend fun refreshFeed() {
         runCatching {
             val response = scanApi.todayFeed(session.sessionToken)
             feed = response.entries ?: emptyList()
+            val withId = feed.filter { it.id != null }
+            if (feedLoaded[0]) {
+                // Los de huella ya se anunciaron al escanear; aquí solo manual / persona externa.
+                val fresh = withId.count { it.id !in seenFeedIds && it.method != "FINGERPRINT" }
+                repeat(minOf(fresh, 3)) { VoiceFeedback.announce("SUCCESS") }
+            }
+            seenFeedIds.addAll(withId.map { it.id!! })
+            feedLoaded[0] = true
             apiError = false
             // Actualizar el nombre del restaurante si cambió
             val newName = response.restaurantName

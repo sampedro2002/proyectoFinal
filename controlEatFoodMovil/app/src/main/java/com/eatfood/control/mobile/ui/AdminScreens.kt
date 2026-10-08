@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import java.time.OffsetDateTime
 import java.time.format.DateTimeFormatter
 import com.eatfood.control.mobile.util.ECUADOR_ZONE
+import com.eatfood.control.mobile.util.VoiceFeedback
 import com.eatfood.control.mobile.util.ecuadorToday
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -969,6 +970,7 @@ private fun ProxyCandidateSearchField(
 fun ExtraMealsScreen() {
     val context = LocalContext.current
     val api = remember(SessionStore.get(context).serverUrl) { ApiClient.api(context) }
+    LaunchedEffect(Unit) { VoiceFeedback.init(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
@@ -1362,7 +1364,8 @@ fun ExtraMealsScreen() {
                                 }.onSuccess { r ->
                                     res.add((r.message ?: r.status) + " (Fecha: ${payload.businessDate})")
                                     ok = r.status == "SUCCESS"
-                                }.onFailure { e -> res.add(e.apiMessage("Error")) }
+                                    VoiceFeedback.announce(r.status)
+                                }.onFailure { e -> res.add(e.apiMessage("Error")); VoiceFeedback.announce("ERROR") }
                                 results = res
                                 if (ok) {
                                     titulars = emptyList(); self = null; selfEnabled = (internalMode == "self"); availableDate = null; availabilityVersion++
@@ -1508,7 +1511,8 @@ fun ExtraMealsScreen() {
                                     }.onSuccess { r ->
                                         res.add("${r.mealName ?: code}: ${r.message ?: r.status} (Fecha: ${payload.businessDate})")
                                         if (r.status == "SUCCESS") anyCreated = true else anyError = true
-                                    }.onFailure { e -> res.add("$code: ${e.apiMessage("Error")}"); anyError = true }
+                                        VoiceFeedback.announce(r.status)
+                                    }.onFailure { e -> res.add("$code: ${e.apiMessage("Error")}"); anyError = true; VoiceFeedback.announce("ERROR") }
                                 }
                                 results = res
                                 if (anyCreated && !anyError) {
