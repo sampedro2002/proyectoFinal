@@ -85,7 +85,7 @@ public class ReportService {
 
     /**
      * Los empleados se registran con nombres seguidos de sus dos apellidos.
-     * En reportes se presentan como "Apellidos, Nombres" para facilitar su
+     * En reportes se presentan como "Apellidos Nombres" para facilitar su
      * identificación y conservar el formato en pantalla y en todas las exportaciones.
      */
     static String surnameFirst(String fullName) {
@@ -97,7 +97,7 @@ public class ReportService {
         int surnameStart = Math.max(1, parts.length - 2);
         String surnames = String.join(" ", java.util.Arrays.copyOfRange(parts, surnameStart, parts.length));
         String names = String.join(" ", java.util.Arrays.copyOfRange(parts, 0, surnameStart));
-        return surnames + ", " + names;
+        return surnames + " " + names;
     }
 
     @Transactional(readOnly = true)

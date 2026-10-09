@@ -9,7 +9,7 @@ class ReportServiceTest {
     @Test
     void surnameFirst_placesTheTwoSurnamesBeforeTheGivenNames() {
         assertThat(ReportService.surnameFirst("María José Pérez López"))
-                .isEqualTo("Pérez López, María José");
+                .isEqualTo("Pérez López María José");
     }
 
     @Test
