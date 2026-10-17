@@ -1,7 +1,5 @@
 package com.eatfood.control.dto;
 
-import com.eatfood.control.domain.PersonnelType;
-
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -15,7 +13,7 @@ public final class EmployeeDtos {
             String status,
             Boolean allowsLunch,
             Boolean allowsSnack,
-            PersonnelType personnelType) {}
+            String personnelType) {}
 
     public record EmployeeResponse(
             Long id,
@@ -28,5 +26,5 @@ public final class EmployeeDtos {
             // Alias de allowsSnack para compatibilidad con la APK móvil (consume effectiveSnack).
             boolean effectiveSnack,
             int fingerprintCount,
-            PersonnelType personnelType) {}
+            String personnelType) {}
 }

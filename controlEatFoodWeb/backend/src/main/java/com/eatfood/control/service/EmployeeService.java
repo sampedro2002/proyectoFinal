@@ -22,6 +22,7 @@ public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final FingerprintRepository fingerprintRepository;
     private final AuditService auditService;
+    private final com.eatfood.control.repository.PersonnelTypeRepository personnelTypes;
 
     @Transactional(readOnly = true)
     public Page<EmployeeResponse> search(String term, Pageable pageable) {
@@ -102,7 +103,12 @@ public class EmployeeService {
         if (req.allowsLunch() != null) e.setAllowsLunch(req.allowsLunch());
         if (req.allowsSnack() != null) e.setAllowsSnack(req.allowsSnack());
         // Clientes anteriores omiten el campo: conservar la categoría al editar/reactivar.
-        if (req.personnelType() != null) e.setPersonnelType(req.personnelType());
+        if (req.personnelType() != null) {
+            String code = req.personnelType().trim();
+            if (!personnelTypes.findByCode(code).filter(com.eatfood.control.domain.PersonnelTypeEntity::isActive).isPresent())
+                throw new BusinessException("INVALID_PERSONNEL_TYPE", "El tipo de personal indicado no existe o está inactivo.");
+            e.setPersonnelType(code);
+        }
     }
 
     private static String blankToNull(String v) {

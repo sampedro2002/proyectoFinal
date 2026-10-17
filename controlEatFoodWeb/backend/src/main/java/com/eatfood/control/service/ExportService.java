@@ -2,7 +2,7 @@ package com.eatfood.control.service;
 
 import com.eatfood.control.dto.EmployeeDtos.EmployeeResponse;
 import com.eatfood.control.dto.ReportDtos.ConsumptionRow;
-import com.eatfood.control.dto.ReportDtos.PersonnelGroup;
+
 import com.eatfood.control.exception.BusinessException;
 import com.lowagie.text.Document;
 import com.lowagie.text.Element;
@@ -37,6 +37,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.eatfood.control.repository.PersonnelTypeRepository;
 
 import java.awt.Color;
 import java.io.ByteArrayOutputStream;
@@ -45,13 +47,20 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 @Slf4j
 @Service
 public class ExportService {
+
+    private final PersonnelTypeRepository personnelTypes;
+
+    public ExportService() { this.personnelTypes = null; }
+
+    @Autowired
+    public ExportService(PersonnelTypeRepository personnelTypes) { this.personnelTypes = personnelTypes; }
 
     private static final DateTimeFormatter DT = DateTimeFormatter.ofPattern("h:mm:ss a", java.util.Locale.US);
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -371,15 +380,29 @@ public class ExportService {
     // ------------------------------------------------------------------------
 
     /** Grupo de filas de una sección, en el orden de PersonnelGroup. */
-    record Section(PersonnelGroup group, List<ConsumptionRow> rows) {}
-
-    static List<Section> sections(List<ConsumptionRow> rows) {
-        Map<PersonnelGroup, List<ConsumptionRow>> byGroup = new EnumMap<>(PersonnelGroup.class);
-        for (ConsumptionRow r : rows) {
-            byGroup.computeIfAbsent(PersonnelGroup.of(r.personnelGroup()), g -> new ArrayList<>()).add(r);
+    record Section(String code, String label, List<ConsumptionRow> rows) {}
+    List<Section> sections(List<ConsumptionRow> rows) {
+        Map<String,List<ConsumptionRow>> grouped=new LinkedHashMap<>();
+        for(ConsumptionRow r:rows) grouped.computeIfAbsent(r.personnelGroup()==null?"NOMINA":r.personnelGroup(),k->new ArrayList<>()).add(r);
+        List<Section> result=new ArrayList<>();
+        if (personnelTypes != null) {
+            for (var type : personnelTypes.findAllByOrderBySortOrderAscNameAsc()) {
+                List<ConsumptionRow> typeRows = grouped.remove(type.getCode());
+                if (typeRows != null) result.add(new Section(type.getCode(), type.getName(), typeRows));
+            }
+        } else {
+            for(String c:List.of("NOMINA","SERVICIOS_PROFESIONALES")) if(grouped.containsKey(c)) result.add(section(c,grouped.remove(c)));
         }
-        return byGroup.entrySet().stream().map(e -> new Section(e.getKey(), e.getValue())).toList();
+        List<ConsumptionRow> ext=grouped.remove("EXTERNO"); grouped.forEach((c,v)->result.add(section(c,v))); if(ext!=null)result.add(section("EXTERNO",ext)); return result;
     }
+    /** Nombre legible del tipo de personal; si no está en el catálogo, el código tal cual. */
+    private String typeLabel(String code) {
+        if (code == null) return "";
+        if (personnelTypes == null) return section(code, List.of()).label();
+        return personnelTypes.findByCode(code).map(com.eatfood.control.domain.PersonnelTypeEntity::getName).orElse(code);
+    }
+
+    private static Section section(String c,List<ConsumptionRow> r){String label=switch(c){case "NOMINA"->"Empleados de nómina";case "SERVICIOS_PROFESIONALES"->"Servicios profesionales";case "EXTERNO"->"Personas externas";default->c;};return new Section(c,label,r);}
 
     /** "Almuerzo 10 · Merienda 4 · Total 14" para el subtotal de una sección. */
     private String subtotalText(List<ConsumptionRow> rows) {
@@ -420,17 +443,17 @@ public class ExportService {
                   .append(csv(v[2])).append(';').append(csv(v[3])).append(';')
                   .append(csv(v[4])).append(';').append(csv(v[5])).append(';')
                   .append(v[6]).append(';').append(csv(v[7])).append(';')
-                  .append(csv(s.group().getLabel())).append('\n');
+                  .append(csv(s.label())).append('\n');
             }
         }
         sb.append("\n");
         sb.append("RESUMEN POR TIPO DE PERSONAL").append("\n");
         for (Section s : sections) {
             for (Map.Entry<String, Long> e : buildPlateCounts(s.rows()).entrySet()) {
-                sb.append(csv(s.group().getLabel())).append(';').append(csv(e.getKey())).append(';')
+                sb.append(csv(s.label())).append(';').append(csv(e.getKey())).append(';')
                   .append(e.getValue()).append('\n');
             }
-            sb.append(csv(s.group().getLabel())).append(";Total;").append(s.rows().size()).append('\n');
+            sb.append(csv(s.label())).append(";Total;").append(s.rows().size()).append('\n');
         }
         sb.append("\n");
         sb.append("RESUMEN DE PLATOS").append("\n");
@@ -483,7 +506,7 @@ public class ExportService {
             }
             for (Section s : sections) {
                 Cell title = sheet.createRow(rn++).createCell(0);
-                title.setCellValue(s.group().getLabel().toUpperCase());
+                title.setCellValue(s.label().toUpperCase());
                 title.setCellStyle(sectionStyle);
 
                 Row header = sheet.createRow(rn++);
@@ -558,7 +581,7 @@ public class ExportService {
                 doc.add(new Paragraph("Sin registros.", new Font(Font.HELVETICA, 10, Font.ITALIC, BRAND_MUTED)));
             }
             for (Section s : sections) {
-                Paragraph heading = new Paragraph(s.group().getLabel().toUpperCase(), sectionFont);
+                Paragraph heading = new Paragraph(s.label().toUpperCase(), sectionFont);
                 heading.setSpacingBefore(6);
                 heading.setSpacingAfter(6);
                 doc.add(heading);
@@ -637,7 +660,7 @@ public class ExportService {
               .append(csv(r.status())).append(';')
               .append(r.fingerprintCount()).append(';')
               .append(csv(r.observation())).append(';')
-              .append(csv(r.personnelType().getLabel())).append('\n');
+              .append(csv(typeLabel(r.personnelType()))).append('\n');
         }
         return sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -666,7 +689,7 @@ public class ExportService {
                 row.createCell(4).setCellValue(safe(r.status()));
                 row.createCell(5).setCellValue(r.fingerprintCount());
                 row.createCell(6).setCellValue(safe(r.observation()));
-                row.createCell(7).setCellValue(r.personnelType().getLabel());
+                row.createCell(7).setCellValue(typeLabel(r.personnelType()));
             }
             for (int i = 0; i < EMP_HEADERS.length; i++) sheet.autoSizeColumn(i);
             wb.write(out);

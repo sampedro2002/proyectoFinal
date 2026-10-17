@@ -43,9 +43,6 @@ import com.eatfood.control.mobile.util.VoiceFeedback
 import com.eatfood.control.mobile.util.ecuadorToday
 import java.util.concurrent.atomic.AtomicBoolean
 
-private fun personnelLabel(type: String?): String =
-    if (type == "SERVICIOS_PROFESIONALES") "Servicios profesionales" else "Empleado de nómina"
-
 // ───────────────────────────── Dashboard ─────────────────────────────────────
 @Composable
 fun DashboardScreen() {
@@ -138,12 +135,17 @@ fun EmployeesScreen(canModify: Boolean) {
     var editing by remember { mutableStateOf<EmployeeResponse?>(null) }
     var creating by remember { mutableStateOf(false) }
     var actionsFor by remember { mutableStateOf<EmployeeResponse?>(null) }
+    var personnelTypes by remember { mutableStateOf<List<PersonnelTypeDto>>(emptyList()) }
 
     suspend fun reload() {
         try { items = api.employees(term.ifBlank { null }, 0, 100).content ?: emptyList() }
         catch (e: Exception) { snackbar.showSnackbar(e.apiMessage()) }
     }
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(Unit) {
+        reload()
+        personnelTypes = runCatching { api.personnelTypes(true) }.getOrDefault(emptyList())
+    }
+    fun personnelName(code: String?): String = personnelTypes.firstOrNull { it.code == code }?.name ?: (code ?: "NOMINA")
 
     val filtered = remember(items, statusFilter) {
         if (statusFilter == "ALL") items
@@ -191,7 +193,7 @@ fun EmployeesScreen(canModify: Boolean) {
                 items(filtered) { e ->
                     RowItem(
                         title = e.fullName,
-                        subtitle = "CI ${e.identityCard} · ${e.fingerprintCount}/3 huellas · ${personnelLabel(e.personnelType)}",
+                        subtitle = "CI ${e.identityCard} · ${e.fingerprintCount}/3 huellas · ${personnelName(e.personnelType)}",
                         trailing = e.status ?: "",
                         onClick = { actionsFor = e }
                     )
@@ -241,7 +243,7 @@ fun EmployeesScreen(canModify: Boolean) {
             existing = editing,
             onDismiss = { creating = false; editing = null },
             onSaved = { creating = false; editing = null; scope.launch { reload() } },
-            api = api, snackbar = snackbar, scope = scope
+            api = api, snackbar = snackbar, scope = scope, personnelTypes = personnelTypes
         )
     }
 }
@@ -254,7 +256,8 @@ private fun EmployeeDialog(
     onSaved: () -> Unit,
     api: com.eatfood.control.mobile.data.remote.ApiService,
     snackbar: SnackbarHostState,
-    scope: kotlinx.coroutines.CoroutineScope
+    scope: kotlinx.coroutines.CoroutineScope,
+    personnelTypes: List<PersonnelTypeDto>
 ) {
     var personnelType by remember { mutableStateOf(existing?.personnelType ?: "NOMINA") }
     var personnelMenu by remember { mutableStateOf(false) }
@@ -278,10 +281,10 @@ private fun EmployeeDialog(
                 }
                 Text("Tipo de personal")
                 Box {
-                    OutlinedButton(onClick = { personnelMenu = true }) { Text(personnelLabel(personnelType)) }
+                    OutlinedButton(onClick = { personnelMenu = true }) { Text(personnelTypes.firstOrNull { it.code == personnelType }?.name ?: personnelType) }
                     DropdownMenu(personnelMenu, { personnelMenu = false }) {
-                        listOf("NOMINA", "SERVICIOS_PROFESIONALES").forEach { type ->
-                            DropdownMenuItem(text = { Text(personnelLabel(type)) }, onClick = { personnelType = type; personnelMenu = false })
+                        personnelTypes.filter { it.active || it.code == personnelType }.forEach { type ->
+                            DropdownMenuItem(text = { Text(type.name) }, onClick = { personnelType = type.code; personnelMenu = false })
                         }
                     }
                 }

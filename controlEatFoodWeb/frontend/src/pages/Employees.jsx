@@ -17,11 +17,6 @@ const empty = {
   status: 'ACTIVE', allowsLunch: true, allowsSnack: false, personnelType: 'NOMINA',
 };
 
-const PERSONNEL_TYPES = {
-  NOMINA: 'Empleado de nómina',
-  SERVICIOS_PROFESIONALES: 'Servicios profesionales',
-};
-
 const emptyExt = {
   identityCard: '', isPassport: false, fullName: '', observation: '',
 };
@@ -43,6 +38,7 @@ export default function Employees() {
   const [personType, setPersonType] = useState('employee'); // 'employee' | 'external'
 
   const [items, setItems]         = useState([]);
+  const [personnelTypes, setPersonnelTypes] = useState([]);
   const [term, setTerm]           = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [error, setError]         = useState('');
@@ -73,6 +69,14 @@ export default function Employees() {
   const formIdRef = useRef(null);
   const loadSeq = useRef(0);
 
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/personnel-types').then(({ data }) => {
+      if (!cancelled) setPersonnelTypes(data);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
 
   async function load() {
     // Descarta respuestas obsoletas: el debounce y el botón "Buscar"/Enter pueden disparar
@@ -84,6 +88,11 @@ export default function Employees() {
       const { data } = await api.get('/employees', { params: { term, size: 200, sort: 'fullName,asc' } });
       if (seq !== loadSeq.current) return;
       setItems(data.content || data);
+      const activeCodes = new Set(personnelTypes.map(type => type.code));
+      if ((data.content || data).some(emp => emp.personnelType && !activeCodes.has(emp.personnelType))) {
+        const { data: allTypes } = await api.get('/personnel-types', { params: { includeInactive: true } });
+        if (seq === loadSeq.current) setPersonnelTypes(allTypes);
+      }
       setError('');
     } catch (err) {
       if (seq !== loadSeq.current) return;
@@ -108,7 +117,7 @@ export default function Employees() {
   useEffect(() => {
     const t = setTimeout(() => { load(); }, 350);
     return () => clearTimeout(t);
-  }, [term]);
+  }, [term, personnelTypes]);
 
   // ── Carga de personas externas con debounce ──
   async function loadExternals() {
@@ -284,6 +293,8 @@ export default function Employees() {
       allowsSnack:   emp.allowsSnack ?? emp.effectiveSnack ?? false,
     });
   }
+
+  const personnelName = code => personnelTypes.find(type => type.code === code)?.name || code || 'NOMINA';
 
   function closeForm() {
     // Corta cualquier captura de huella en curso; si no, su promesa sigue resolviendo
@@ -500,7 +511,7 @@ export default function Employees() {
                   <tr key={e.id}>
                     <td>{e.identityCard}</td>
                     <td>{e.fullName}<div className="muted" style={{ fontSize: 12 }}>
-                      {PERSONNEL_TYPES[e.personnelType ?? 'NOMINA'] || e.personnelType}
+                      {personnelName(e.personnelType ?? 'NOMINA')}
                     </div></td>
                     <td>{e.allowsLunch ? 'Sí' : 'No'}</td>
                     <td>{(e.allowsSnack ?? e.effectiveSnack) ? 'Sí' : 'No'}</td>
@@ -629,9 +640,12 @@ export default function Employees() {
                   <label>Tipo de personal</label>
                   <select required value={form.personnelType}
                     onChange={e => setForm({ ...form, personnelType: e.target.value })}>
-                    {Object.entries(PERSONNEL_TYPES).map(([value, label]) => (
-                      <option key={value} value={value}>{label}</option>
+                    {personnelTypes.filter(type => type.active || (form.id && type.code === form.personnelType)).map(type => (
+                      <option key={type.id} value={type.code}>{type.name}</option>
                     ))}
+                    {form.personnelType && !personnelTypes.some(type => type.code === form.personnelType) && (
+                      <option value={form.personnelType}>{personnelName(form.personnelType)}</option>
+                    )}
                   </select>
                 </div>
                 <div className="row">

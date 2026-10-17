@@ -7,6 +7,7 @@ import Employees from './pages/Employees.jsx';
 import Restaurants from './pages/Restaurants.jsx';
 import Users from './pages/Users.jsx';
 import Schedules from './pages/Schedules.jsx';
+import PersonnelTypes from './pages/PersonnelTypes.jsx';
 import Reports from './pages/Reports.jsx';
 import Audit from './pages/Audit.jsx';
 import ManualScan from './pages/ManualScan.jsx';
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="restaurants" element={<Protected roles={['ADMIN']}><Restaurants /></Protected>} />
         <Route path="users" element={<Protected roles={['ADMIN']}><Users /></Protected>} />
         <Route path="schedules" element={<Protected roles={['ADMIN']}><Schedules /></Protected>} />
+        <Route path="personnel-types" element={<Protected roles={['ADMIN']}><PersonnelTypes /></Protected>} />
         <Route path="reports" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><Reports /></Protected>} />
         <Route path="audit" element={<Protected roles={['ADMIN']}><Audit /></Protected>} />
         <Route path="manual-scan" element={<Protected roles={['ADMIN', 'RECURSOS_HUMANOS']}><ManualScan /></Protected>} />

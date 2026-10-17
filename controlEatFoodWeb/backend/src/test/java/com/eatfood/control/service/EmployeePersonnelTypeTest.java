@@ -1,7 +1,7 @@
 package com.eatfood.control.service;
 
 import com.eatfood.control.domain.Employee;
-import com.eatfood.control.domain.PersonnelType;
+import com.eatfood.control.domain.PersonnelTypeEntity;
 import com.eatfood.control.dto.EmployeeDtos.EmployeeRequest;
 import com.eatfood.control.repository.EmployeeRepository;
 import com.eatfood.control.repository.FingerprintRepository;
@@ -24,20 +24,22 @@ class EmployeePersonnelTypeTest {
     @Mock private EmployeeRepository employees;
     @Mock private FingerprintRepository fingerprints;
     @Mock private AuditService audit;
+    @Mock private com.eatfood.control.repository.PersonnelTypeRepository types;
     @InjectMocks private EmployeeService service;
 
-    private EmployeeRequest request(PersonnelType type) {
+    private EmployeeRequest request(String type) {
         return new EmployeeRequest("TEST-123", "Persona Prueba", null, true,
                 null, null, null, type);
     }
 
     private Employee professional() {
         return Employee.builder().id(7L).identityCard("TEST-123").fullName("Persona Prueba")
-                .personnelType(PersonnelType.SERVICIOS_PROFESIONALES).allowsSnack(true).build();
+                .personnelType("SERVICIOS_PROFESIONALES").allowsSnack(true).build();
     }
 
     @BeforeEach
     void saveSameEntity() {
+        lenient().when(types.findByCode(anyString())).thenAnswer(i -> Optional.of(PersonnelTypeEntity.builder().code(i.getArgument(0)).active(true).build()));
         when(employees.save(any(Employee.class))).thenAnswer(inv -> {
             Employee e = inv.getArgument(0);
             if (e.getId() == null) e.setId(7L);
@@ -48,14 +50,14 @@ class EmployeePersonnelTypeTest {
     @Test
     void oldClientCreatesPayrollEmployee() {
         var result = service.create(request(null));
-        assertThat(result.personnelType()).isEqualTo(PersonnelType.NOMINA);
+        assertThat(result.personnelType()).isEqualTo("NOMINA");
         verify(audit).record(eq("Employee"), eq("7"), eq("CREATE"), isNull(), contains("tipoPersonal=NOMINA"));
     }
 
     @Test
     void createsProfessionalWithoutChangingMealPermissions() {
-        var result = service.create(request(PersonnelType.SERVICIOS_PROFESIONALES));
-        assertThat(result.personnelType()).isEqualTo(PersonnelType.SERVICIOS_PROFESIONALES);
+        var result = service.create(request("SERVICIOS_PROFESIONALES"));
+        assertThat(result.personnelType()).isEqualTo("SERVICIOS_PROFESIONALES");
         assertThat(result.allowsLunch()).isTrue();
         assertThat(result.allowsSnack()).isFalse();
     }
@@ -67,7 +69,7 @@ class EmployeePersonnelTypeTest {
         when(fingerprints.countByEmployeeIdAndActiveTrue(7L)).thenReturn(3L);
         var result = service.update(7L, request(null));
         assertThat(result.id()).isEqualTo(7L);
-        assertThat(result.personnelType()).isEqualTo(PersonnelType.SERVICIOS_PROFESIONALES);
+        assertThat(result.personnelType()).isEqualTo("SERVICIOS_PROFESIONALES");
         assertThat(result.fingerprintCount()).isEqualTo(3);
         assertThat(result.allowsSnack()).isTrue();
         verify(fingerprints).countByEmployeeIdAndActiveTrue(7L);
@@ -82,7 +84,7 @@ class EmployeePersonnelTypeTest {
         var result = service.create(request(null));
         assertThat(result.id()).isEqualTo(7L);
         assertThat(existing.isDeleted()).isFalse();
-        assertThat(result.personnelType()).isEqualTo(PersonnelType.SERVICIOS_PROFESIONALES);
+        assertThat(result.personnelType()).isEqualTo("SERVICIOS_PROFESIONALES");
         verify(employees).save(existing);
         verify(audit).record(eq("Employee"), eq("7"), eq("REACTIVATE"),
                 contains("tipoPersonal=SERVICIOS_PROFESIONALES"), contains("tipoPersonal=SERVICIOS_PROFESIONALES"));
@@ -92,8 +94,8 @@ class EmployeePersonnelTypeTest {
     void explicitCategoryChangeRecordsBeforeAndAfter() {
         Employee existing = professional();
         when(employees.findById(7L)).thenReturn(Optional.of(existing));
-        var result = service.update(7L, request(PersonnelType.NOMINA));
-        assertThat(result.personnelType()).isEqualTo(PersonnelType.NOMINA);
+        var result = service.update(7L, request("NOMINA"));
+        assertThat(result.personnelType()).isEqualTo("NOMINA");
         ArgumentCaptor<String> before = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<String> after = ArgumentCaptor.forClass(String.class);
         verify(audit).record(eq("Employee"), eq("7"), eq("UPDATE"), before.capture(), after.capture());

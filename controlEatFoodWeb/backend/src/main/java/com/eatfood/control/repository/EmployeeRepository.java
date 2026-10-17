@@ -34,6 +34,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     boolean existsByIdentityCardAndDeletedFalse(String identityCard);
 
+    boolean existsByPersonnelTypeAndStatusAndDeletedFalse(String personnelType, com.eatfood.control.domain.EmployeeStatus status);
+
+
     List<Employee> findByDeletedFalseOrderByFullName();
 
     @Query("""

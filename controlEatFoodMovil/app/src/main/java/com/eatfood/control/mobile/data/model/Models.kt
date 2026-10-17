@@ -57,6 +57,14 @@ data class EmployeeResponse(
     val personnelType: String? = null
 )
 
+data class PersonnelTypeDto(
+    val id: Long,
+    val code: String,
+    val name: String,
+    val sortOrder: Int,
+    val active: Boolean
+)
+
 /** Respuesta paginada de Spring Data (sólo los campos que usamos). */
 data class Page<T>(
     val content: List<T>?,

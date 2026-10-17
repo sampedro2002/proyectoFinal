@@ -109,7 +109,7 @@ public class Consumption {
      */
     public String titularPersonnelGroup() {
         if (employee == null) return "EXTERNO";
-        return employee.getPersonnelType() != null ? employee.getPersonnelType().name() : PersonnelType.NOMINA.name();
+        return employee.getPersonnelType() != null ? employee.getPersonnelType() : "NOMINA";
     }
 
     /** Cédula/pasaporte del titular del consumo, sea empleado o persona externa. */

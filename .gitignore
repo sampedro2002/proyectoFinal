@@ -49,3 +49,7 @@ RunWindowns/credenciales.txt
 
 # CodeGraph (Ã­ndice local)
 .codegraph/
+
+# Instrucciones locales para agentes (no se suben)
+AGENTS.md
+CLAUDE.md
