@@ -279,7 +279,7 @@ private fun EmployeeDialog(
                     Spacer(Modifier.width(8.dp))
                     Text("Es Pasaporte")
                 }
-                Text("Tipo de personal")
+                Text("Tipo de persona")
                 Box {
                     OutlinedButton(onClick = { personnelMenu = true }) { Text(personnelTypes.firstOrNull { it.code == personnelType }?.name ?: personnelType) }
                     DropdownMenu(personnelMenu, { personnelMenu = false }) {

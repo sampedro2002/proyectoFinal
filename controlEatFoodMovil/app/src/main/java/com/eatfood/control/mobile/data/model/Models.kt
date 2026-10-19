@@ -65,6 +65,8 @@ data class PersonnelTypeDto(
     val active: Boolean
 )
 
+data class PersonnelTypeRequest(val name: String, val sortOrder: Int, val active: Boolean = true)
+
 /** Respuesta paginada de Spring Data (sólo los campos que usamos). */
 data class Page<T>(
     val content: List<T>?,

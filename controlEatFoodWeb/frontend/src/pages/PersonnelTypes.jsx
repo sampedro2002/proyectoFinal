@@ -15,7 +15,7 @@ export default function PersonnelTypes() {
       setItems(data);
       setLoadError('');
     } catch (err) {
-      setLoadError(err.response?.data?.message || 'No se pudieron cargar los tipos de personal');
+      setLoadError(err.response?.data?.message || 'No se pudieron cargar los tipos de persona');
     }
   }
   useEffect(() => { load(); }, []);
@@ -36,7 +36,7 @@ export default function PersonnelTypes() {
   function changeActive(type) {
     const nextActive = !type.active;
     setConfirm({
-      title: nextActive ? 'Activar tipo de personal' : 'Desactivar tipo de personal',
+      title: nextActive ? 'Activar tipo de persona' : 'Desactivar tipo de persona',
       message: `¿Desea ${nextActive ? 'activar' : 'desactivar'} “${type.name}”?`,
       onConfirm: async () => {
         setConfirm(null);
@@ -59,7 +59,7 @@ export default function PersonnelTypes() {
 
   return <div>
     <div className="topbar">
-      <h2 style={{ margin: 0 }}>Tipos de personal</h2>
+      <h2 style={{ margin: 0 }}>Tipo de persona</h2>
       <button onClick={() => { setError(''); setForm({ name: '', sortOrder: items.length + 1, active: true }); }}>+ Nuevo</button>
     </div>
     {loadError && <p className="error-text">{loadError}</p>}
@@ -75,13 +75,13 @@ export default function PersonnelTypes() {
               <button className="ghost" onClick={() => changeActive(type)}>{type.active ? 'Desactivar' : 'Activar'}</button>
             </td>
           </tr>)}
-          {items.length === 0 && <tr><td colSpan="5" style={{ color: 'var(--muted)' }}>Sin tipos de personal.</td></tr>}
+          {items.length === 0 && <tr><td colSpan="5" style={{ color: 'var(--muted)' }}>Sin tipos de persona.</td></tr>}
         </tbody>
       </table>
     </div>
     {form && <div className="modal-overlay">
       <form className="card modal-card" style={{ maxWidth: 420 }} onSubmit={save}>
-        <div className="topbar"><h3 style={{ margin: 0 }}>{form.id ? 'Editar tipo de personal' : 'Nuevo tipo de personal'}</h3>
+        <div className="topbar"><h3 style={{ margin: 0 }}>{form.id ? 'Editar tipo de persona' : 'Nuevo tipo de persona'}</h3>
           <button type="button" className="ghost" onClick={() => setForm(null)}>×</button></div>
         <div className="field"><label>Nombre</label><input required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} /></div>
         <div className="field"><label>Orden</label><input type="number" required value={form.sortOrder} onChange={e => setForm({ ...form, sortOrder: e.target.value })} /></div>

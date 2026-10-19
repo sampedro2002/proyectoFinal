@@ -41,6 +41,15 @@ interface ApiService {
     @GET("personnel-types")
     suspend fun personnelTypes(@Query("includeInactive") includeInactive: Boolean? = null): List<PersonnelTypeDto>
 
+    @POST("personnel-types")
+    suspend fun createPersonnelType(@Body body: PersonnelTypeRequest): PersonnelTypeDto
+
+    @PUT("personnel-types/{id}")
+    suspend fun updatePersonnelType(@Path("id") id: Long, @Body body: PersonnelTypeRequest): PersonnelTypeDto
+
+    @POST("external-persons")
+    suspend fun createExternalPerson(@Body body: ExternalPersonRequest): ExternalPersonResponse
+
     // ── Personas externas ────────────────────────────────────────────────────────
     @GET("external-persons")
     suspend fun externalPersons(

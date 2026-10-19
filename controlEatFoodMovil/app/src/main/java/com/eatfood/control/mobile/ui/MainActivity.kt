@@ -207,7 +207,7 @@ fun MainScaffold(user: AuthResponse, onLogout: () -> Unit, onSettings: () -> Uni
                     when (current) {
                         Screen.MY_RESTAURANT -> MyRestaurantScreen()
                         Screen.DASHBOARD -> DashboardScreen()
-                        Screen.EMPLOYEES -> EmployeesScreen(canModify = "ADMIN" in roles)
+                        Screen.EMPLOYEES -> PeopleScreen(canModify = "ADMIN" in roles)
                         Screen.RESTAURANTS -> RestaurantsScreen(isAdmin = "ADMIN" in roles)
                         Screen.USERS -> UsersScreen()
                         Screen.SCHEDULES -> SchedulesScreen()

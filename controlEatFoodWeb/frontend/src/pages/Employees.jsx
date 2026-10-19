@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import PersonnelTypes from './PersonnelTypes.jsx';
 import api, { getAccessToken } from '../api/client.js';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { isValidCedulaEC } from '../utils/cedula.js';
@@ -35,7 +37,17 @@ export default function Employees() {
   const isAdmin = hasRole('ADMIN');
 
   // ── Selector de tipo de persona ──
-  const [personType, setPersonType] = useState('employee'); // 'employee' | 'external'
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedTab = searchParams.get('tab');
+  const personType = selectedTab === 'external' || (selectedTab === 'types' && isAdmin)
+    ? selectedTab : 'employee';
+  function setPersonType(value) {
+    setSearchParams(params => {
+      if (value === 'employee') params.delete('tab');
+      else params.set('tab', value);
+      return params;
+    });
+  }
 
   const [items, setItems]         = useState([]);
   const [personnelTypes, setPersonnelTypes] = useState([]);
@@ -75,7 +87,7 @@ export default function Employees() {
       if (!cancelled) setPersonnelTypes(data);
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [personType]);
 
 
   async function load() {
@@ -468,13 +480,20 @@ export default function Employees() {
           type="button"
           className={`tab ${personType === 'employee' ? 'active' : ''}`}
           onClick={() => setPersonType('employee')}
-        >Empleados</button>
+        >Personal</button>
         <button
           type="button"
           className={`tab ${personType === 'external' ? 'active' : ''}`}
           onClick={() => setPersonType('external')}
         >Personas externas</button>
+        {isAdmin && <button
+          type="button"
+          className={`tab ${personType === 'types' ? 'active' : ''}`}
+          onClick={() => setPersonType('types')}
+        >Tipo de persona</button>}
       </div>
+
+      {personType === 'types' && isAdmin && <PersonnelTypes />}
 
       {/* ══════════════ PERSONAS ══════════════ */}
       {personType === 'employee' && (
@@ -637,7 +656,7 @@ export default function Employees() {
                          onChange={e => setForm({ ...form, fullName: e.target.value })} />
                 </div>
                 <div className="field">
-                  <label>Tipo de personal</label>
+                  <label>Tipo de persona</label>
                   <select required value={form.personnelType}
                     onChange={e => setForm({ ...form, personnelType: e.target.value })}>
                     {personnelTypes.filter(type => type.active || (form.id && type.code === form.personnelType)).map(type => (

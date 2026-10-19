@@ -22,7 +22,6 @@ export default function Layout() {
         {hasRole('ADMIN') && <NavLink to="/restaurants">Restaurantes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/users">Usuarios</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/schedules">Horarios</NavLink>}
-        {hasRole('ADMIN') && <NavLink to="/personnel-types">Tipos de personal</NavLink>}
         {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/reports">Reportes</NavLink>}
         {hasRole('ADMIN') && <NavLink to="/audit">Auditoría</NavLink>}
         {(hasRole('ADMIN') || hasRole('RECURSOS_HUMANOS')) && <NavLink to="/manual-scan">Registro manual</NavLink>}
